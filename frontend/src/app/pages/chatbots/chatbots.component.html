@@ -1,0 +1,26 @@
+<div style="margin-bottom: 20px;">
+
+  <input [(ngModel)]="newChatbotName" placeholder="Chatbot name">
+
+  <button (click)="createChatbot()">Add Chatbot</button>
+
+  <button (click)="goBack()" style="margin-left: 10px;">
+    ← Back to Projects
+  </button>
+
+</div>
+
+<h2>Chatbots - Project {{ projectId }}</h2>
+
+<hr>
+
+<div *ngFor="let bot of chatbots">
+
+  <strong>Chatbot {{ bot.id }}</strong>
+
+  <button
+    [routerLink]="['/projects', projectId, 'chatbots', bot.id, 'versions']">
+    Open Versions →
+  </button>
+
+</div>

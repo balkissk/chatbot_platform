@@ -1,0 +1,14 @@
+<h2>Projects</h2>
+
+<input [(ngModel)]="newProjectName" placeholder="Project name">
+<button (click)="createProject()">Add Project</button>
+
+<hr>
+
+<div *ngFor="let p of projects">
+  <strong>{{ p.name }}</strong>
+
+  <button [routerLink]="['/projects', p.id, 'chatbots']">
+    Open Chatbots →
+  </button>
+</div>

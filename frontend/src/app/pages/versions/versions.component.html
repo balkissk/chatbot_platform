@@ -1,0 +1,45 @@
+<h2>Versions - Chatbot {{ chatbotId }}</h2>
+
+<p>Project: {{ projectId }}</p>
+
+<button (click)="createVersion()">
+  + Create Version
+</button>
+
+<hr>
+
+<div *ngFor="let v of versions"
+     [style.border]="v.status === 'published' ? '2px solid green' : '1px solid #ccc'"
+     style="padding: 10px; margin-bottom: 10px;">
+
+  <p>
+    Version {{ v.version_number }}
+
+    <span
+      style="margin-left: 10px; padding: 3px 8px; border-radius: 5px;"
+      [style.backgroundColor]="
+      v.status === 'published' ? 'green' :
+      v.status === 'archived' ? 'red' :
+      'gray'
+    "
+      style="color: white;"
+    >
+    {{ v.status }}
+  </span>
+  </p>
+
+  <button
+    (click)="publish(v.id)"
+    [disabled]="v.status === 'published'">
+    Publish
+  </button>
+
+  <button
+    (click)="archive(v.id)"
+    [disabled]="v.status === 'archived'">
+    Archive
+  </button>
+
+  <hr>
+
+</div>
