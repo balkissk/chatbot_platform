@@ -10,7 +10,7 @@ import os
 
 router = APIRouter()
 
-OPENROUTER_API_KEY = "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"  #
+
 
 def get_db():
     db = SessionLocal()
