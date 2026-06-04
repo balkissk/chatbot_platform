@@ -1,0 +1,47 @@
+<div class="shell" [class.nav-collapsed]="navCollapsed">
+  <aside class="sidebar" *ngIf="!navCollapsed">
+    <div class="brand-row">
+      <div class="brand">
+        <strong>ChatBot Factory</strong>
+        <span>INSOMEA</span>
+      </div>
+      <button class="nav-toggle" type="button" (click)="toggleNav()" aria-label="Hide navigation" title="Hide navigation">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M15 18l-6-6 6-6"></path>
+        </svg>
+      </button>
+    </div>
+
+    <nav>
+      <a *ngIf="auth.currentUser()?.role !== 'admin'" routerLink="/dashboard/projects" routerLinkActive="active">Projects</a>
+      <a routerLink="/dashboard/profile" routerLinkActive="active">Profile</a>
+      <a *ngIf="auth.currentUser()?.role === 'admin'" routerLink="/admin/dashboard" routerLinkActive="active">Dashboard</a>
+      <a *ngIf="auth.currentUser()?.role === 'admin'" routerLink="/admin/conversations" routerLinkActive="active">Conversations</a>
+      <a *ngIf="auth.currentUser()?.role === 'admin'" routerLink="/admin/users" routerLinkActive="active">Users</a>
+    </nav>
+  </aside>
+
+  <main class="workspace">
+    <header class="topbar">
+      <button
+        *ngIf="navCollapsed"
+        class="nav-toggle floating"
+        type="button"
+        (click)="toggleNav()"
+        aria-label="Show navigation"
+        title="Show navigation">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M9 18l6-6-6-6"></path>
+        </svg>
+      </button>
+      <div>
+        <p>{{ auth.currentUser()?.name }} - {{ auth.currentUser()?.role }}</p>
+      </div>
+      <button class="signout-button" (click)="auth.logout()">Sign out</button>
+    </header>
+
+    <section class="content">
+      <router-outlet></router-outlet>
+    </section>
+  </main>
+</div>

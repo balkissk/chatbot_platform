@@ -1,0 +1,115 @@
+<div class="page-header">
+  <div>
+    <p class="eyebrow">Admin</p>
+    <h2>Users</h2>
+  </div>
+</div>
+
+<section class="panel create-panel">
+  <h3>Create user</h3>
+  <form class="create-form" (ngSubmit)="createUser()">
+    <label>
+      Name
+      <input name="name" [(ngModel)]="newUser.name" autocomplete="name" />
+    </label>
+    <label>
+      Email
+      <input name="email" type="email" [(ngModel)]="newUser.email" autocomplete="email" />
+    </label>
+    <label>
+      Password
+      <input name="password" type="password" [(ngModel)]="newUser.password" autocomplete="new-password" />
+    </label>
+    <label>
+      Role
+      <select name="role" [(ngModel)]="newUser.role">
+        <option value="manager">Manager</option>
+        <option value="end_user">End user</option>
+        <option value="admin">Admin</option>
+      </select>
+    </label>
+  <button type="submit" [disabled]="creating()">{{ creating() ? 'Creating...' : 'Create' }}</button>
+  </form>
+  <p *ngIf="createError()" class="error">{{ createError() }}</p>
+</section>
+
+<section class="toolbar">
+  <label class="search">
+    Search
+    <input
+      name="search"
+      [(ngModel)]="search"
+      (ngModelChange)="updateSearch($event)"
+      placeholder="Name or email"
+    />
+  </label>
+  <label>
+    Role
+    <select name="roleFilter" [(ngModel)]="roleFilter" (ngModelChange)="updateRoleFilter($event)">
+      <option value="">All roles</option>
+      <option value="admin">Admin</option>
+      <option value="manager">Manager</option>
+      <option value="end_user">End user</option>
+    </select>
+  </label>
+  <label>
+    Status
+    <select name="statusFilter" [(ngModel)]="statusFilter" (ngModelChange)="updateStatusFilter($event)">
+      <option value="">All statuses</option>
+      <option value="active">Active</option>
+      <option value="disabled">Disabled</option>
+    </select>
+  </label>
+  <button type="button" (click)="loadUsers()">Apply</button>
+  <button type="button" class="secondary" (click)="resetFilters()">Reset</button>
+</section>
+
+<p *ngIf="error()" class="error">{{ error() }}</p>
+<p *ngIf="loading()" class="muted">Loading users...</p>
+
+<table *ngIf="!loading() && users().length > 0">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Email</th>
+      <th>Role</th>
+      <th>Status</th>
+      <th>Created</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr *ngFor="let user of users()">
+      <td>{{ user.name }}</td>
+      <td>{{ user.email }}</td>
+      <td><span class="role">{{ user.role }}</span></td>
+      <td>
+        <span class="status" [class.disabled]="user.status === 'disabled'">
+          {{ user.status }}
+        </span>
+      </td>
+      <td>{{ user.created_at | date:'mediumDate' }}</td>
+      <td>
+        <button
+          type="button"
+          class="secondary"
+          *ngIf="user.status === 'active'"
+          [disabled]="actionId() === user.id"
+          (click)="setStatus(user, 'disabled')"
+        >
+          Disable
+        </button>
+        <button
+          type="button"
+          *ngIf="user.status === 'disabled'"
+          [disabled]="actionId() === user.id"
+          (click)="setStatus(user, 'active')"
+        >
+          Activate
+        </button>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<p *ngIf="!loading() && users().length === 0" class="empty">No users found.</p>

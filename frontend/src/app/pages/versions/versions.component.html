@@ -1,45 +1,144 @@
-<h2>Versions - Chatbot {{ chatbotId }}</h2>
+<div class="page-header">
+  <div>
+    <p class="eyebrow">Chatbot {{ chatbotId }}</p>
+    <h2>Versions</h2>
+  </div>
 
-<p>Project: {{ projectId }}</p>
-
-<button (click)="createVersion()">
-  + Create Version
-</button>
-
-<hr>
-
-<div *ngFor="let v of versions"
-     [style.border]="v.status === 'published' ? '2px solid green' : '1px solid #ccc'"
-     style="padding: 10px; margin-bottom: 10px;">
-
-  <p>
-    Version {{ v.version_number }}
-
-    <span
-      style="margin-left: 10px; padding: 3px 8px; border-radius: 5px;"
-      [style.backgroundColor]="
-      v.status === 'published' ? 'green' :
-      v.status === 'archived' ? 'red' :
-      'gray'
-    "
-      style="color: white;"
-    >
-    {{ v.status }}
-  </span>
-  </p>
-
-  <button
-    (click)="publish(v.id)"
-    [disabled]="v.status === 'published'">
-    Publish
-  </button>
-
-  <button
-    (click)="archive(v.id)"
-    [disabled]="v.status === 'archived'">
-    Archive
-  </button>
-
-  <hr>
-
+  <div class="actions">
+    <button class="secondary" (click)="loadVersions()" [disabled]="loading()">
+      {{ loading() ? 'Refreshing...' : 'Refresh' }}
+    </button>
+    <button class="secondary" (click)="goBack()">Back</button>
+    <button (click)="createVersion()" [disabled]="creating()">
+      {{ creating() ? 'Creating...' : 'Create Version' }}
+    </button>
+  </div>
 </div>
+
+<p *ngIf="error()" class="error">{{ error() }}</p>
+<p *ngIf="loading()" class="muted">Loading versions...</p>
+
+<section *ngIf="!loading() && versions().length === 0" class="empty-state">
+  <h3>No versions yet</h3>
+  <p>Create a version before uploading knowledge or testing the chatbot.</p>
+</section>
+
+<section *ngIf="!loading() && versions().length > 0" class="version-grid">
+  <article
+    *ngFor="let v of versions()"
+    class="version-card"
+    [class.selected]="selectedVersionId() === v.id"
+    [class.published]="v.status === 'published'">
+    <div>
+      <span class="status-badge" [class.status-published]="v.status === 'published'" [class.status-archived]="v.status === 'archived'">
+        {{ v.status }}
+      </span>
+      <span *ngIf="v.is_active" class="status-badge active-badge">active</span>
+      <h3>Version {{ v.version_number }}</h3>
+      <p>Created {{ v.created_at | date:'mediumDate' }}</p>
+      <p *ngIf="v.published_at">Published {{ v.published_at | date:'medium' }}</p>
+      <p *ngIf="v.archived_at">Archived {{ v.archived_at | date:'medium' }}</p>
+      <p *ngIf="v.duplicated_from_version_id">Duplicated from version ID {{ v.duplicated_from_version_id }}</p>
+    </div>
+
+    <div class="card-actions">
+      <button class="secondary" (click)="selectVersion(v.id)" [disabled]="selectedVersionId() === v.id">
+        Manage RAG
+      </button>
+      <button (click)="publish(v.id)" [disabled]="v.status === 'published' || actionId() === v.id">
+        Publish
+      </button>
+      <button class="secondary" (click)="duplicate(v.id)" [disabled]="actionId() === v.id">
+        Duplicate
+      </button>
+      <button class="secondary" (click)="archive(v.id)" [disabled]="v.status === 'archived' || actionId() === v.id">
+        Archive
+      </button>
+      <button class="danger" (click)="deleteVersion(v)" [disabled]="actionId() === v.id || v.is_active || v.status === 'published'">
+        Delete
+      </button>
+    </div>
+  </article>
+</section>
+
+<section *ngIf="selectedVersionId()" class="manager-grid">
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <p class="eyebrow">RAG</p>
+        <h3>Knowledge Base</h3>
+      </div>
+      <span>Version {{ selectedVersionId() }}</span>
+    </div>
+
+    <label class="file-control">
+      <input
+        type="file"
+        accept=".txt,.md,.csv,.json"
+        (change)="onFileSelected($event)"
+        [disabled]="uploadLoading()">
+      <span>{{ uploadLoading() ? 'Uploading...' : 'Upload text file' }}</span>
+    </label>
+
+    <p *ngIf="selectedFileName" class="muted">Selected: {{ selectedFileName }}</p>
+    <p *ngIf="uploadError()" class="error">{{ uploadError() }}</p>
+
+    <div *ngIf="documents().length === 0" class="mini-empty">
+      No documents uploaded for this version.
+    </div>
+
+    <div *ngFor="let doc of documents()" class="document-row">
+      <div>
+        <strong>{{ doc.filename }}</strong>
+        <p>{{ doc.chunks_count }} chunks</p>
+      </div>
+      <button class="danger" (click)="deleteDocument(doc)">Delete</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <p class="eyebrow">Test</p>
+        <h3>Published Version Chat</h3>
+      </div>
+    </div>
+
+    <textarea
+      [(ngModel)]="chatQuestion"
+      rows="5"
+      placeholder="Ask a question from the uploaded knowledge base"></textarea>
+
+    <button (click)="askChatbot()" [disabled]="chatLoading() || !chatQuestion.trim()">
+      {{ chatLoading() ? 'Asking...' : 'Ask Chatbot' }}
+    </button>
+
+    <p *ngIf="chatError()" class="error">{{ chatError() }}</p>
+
+    <div *ngIf="chatMessages().length > 0" class="answer">
+      <h4>Answer</h4>
+      <div *ngFor="let answer of chatMessages()" class="answer-bubble">
+        <p>{{ answer.text }}</p>
+        <div class="quick-replies" *ngIf="answer.options?.length">
+          <button type="button" *ngFor="let option of answer.options" (click)="askOption(option)">
+            {{ option }}
+          </button>
+        </div>
+      </div>
+      <div class="quick-replies" *ngIf="chatMessages().length === 0 && chatOptions().length > 0">
+        <button type="button" *ngFor="let option of chatOptions()" (click)="askOption(option)">
+          {{ option }}
+        </button>
+      </div>
+    </div>
+
+    <div *ngIf="chatSources().length > 0" class="sources">
+      <h4>Sources</h4>
+      <div *ngFor="let source of chatSources()" class="source-row">
+        <strong>{{ source.filename }}</strong>
+        <small>Score: {{ source.score | number:'1.2-2' }}</small>
+        <p>{{ source.text }}</p>
+      </div>
+    </div>
+  </section>
+</section>

@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from database.db import SessionLocal
 from models.llm_config import LLMConfig
 from models.llm_config_schema import LLMConfigCreate, LLMConfigResponse
+from services.auth import require_roles
 
 router = APIRouter()
 
@@ -18,7 +19,11 @@ def get_db():
 
 # 🔥 CREATE or UPDATE
 @router.post("/llm-config", response_model=LLMConfigResponse)
-def create_or_update_config(data: LLMConfigCreate, db: Session = Depends(get_db)):
+def create_or_update_config(
+    data: LLMConfigCreate,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_roles("admin", "manager"))
+):
 
     config = db.query(LLMConfig).filter(
         LLMConfig.version_id == data.version_id
@@ -40,7 +45,11 @@ def create_or_update_config(data: LLMConfigCreate, db: Session = Depends(get_db)
 
 # 🔥 GET config
 @router.get("/llm-config/{version_id}", response_model=LLMConfigResponse)
-def get_config(version_id: int, db: Session = Depends(get_db)):
+def get_config(
+    version_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_roles("admin", "manager"))
+):
 
     config = db.query(LLMConfig).filter(
         LLMConfig.version_id == version_id

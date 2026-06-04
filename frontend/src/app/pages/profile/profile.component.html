@@ -1,0 +1,83 @@
+<div class="page-header">
+  <div>
+    <p class="eyebrow">Account</p>
+    <h2>Profile</h2>
+  </div>
+</div>
+
+<p *ngIf="loading()" class="muted">Loading profile...</p>
+<p *ngIf="error()" class="error">{{ error() }}</p>
+
+<section class="profile-grid" *ngIf="user() as currentUser">
+  <div class="panel">
+    <h3>Profile details</h3>
+    <form class="form" (ngSubmit)="updateProfile()">
+      <label>
+        Name
+        <input name="name" [(ngModel)]="name" autocomplete="name" />
+      </label>
+
+      <label>
+        Email
+        <input [value]="currentUser.email" readonly />
+      </label>
+
+      <div class="meta-grid">
+        <div>
+          <span>Role</span>
+          <strong>{{ currentUser.role }}</strong>
+        </div>
+        <div>
+          <span>Status</span>
+          <strong>{{ currentUser.status }}</strong>
+        </div>
+      </div>
+
+      <button type="submit" [disabled]="savingProfile()">
+        {{ savingProfile() ? 'Saving...' : 'Save profile' }}
+      </button>
+    </form>
+    <p *ngIf="profileMessage()" class="success">{{ profileMessage() }}</p>
+  </div>
+
+  <div class="panel">
+    <h3>Change password</h3>
+    <form class="form" (ngSubmit)="changePassword()">
+      <label>
+        Current password
+        <input
+          name="currentPassword"
+          type="password"
+          [(ngModel)]="currentPassword"
+          autocomplete="current-password"
+        />
+      </label>
+
+      <label>
+        New password
+        <input
+          name="newPassword"
+          type="password"
+          [(ngModel)]="newPassword"
+          autocomplete="new-password"
+        />
+      </label>
+
+      <label>
+        Confirm new password
+        <input
+          name="confirmPassword"
+          type="password"
+          [(ngModel)]="confirmPassword"
+          autocomplete="new-password"
+        />
+      </label>
+
+      <button type="submit" [disabled]="savingPassword()">
+        {{ savingPassword() ? 'Updating...' : 'Update password' }}
+      </button>
+    </form>
+    <p *ngIf="passwordError()" class="error">{{ passwordError() }}</p>
+    <p *ngIf="passwordMessage()" class="success">{{ passwordMessage() }}</p>
+  </div>
+</section>

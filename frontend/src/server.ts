@@ -12,6 +12,22 @@ const browserDistFolder = join(import.meta.dirname, '../browser');
 const app = express();
 const angularApp = new AngularNodeAppEngine();
 
+function jsString(value: string) {
+  return JSON.stringify(value);
+}
+
+app.get('/config.js', (_req, res) => {
+  const apiBaseUrl = process.env['PUBLIC_API_BASE_URL'] || process.env['API_BASE_URL'] || 'http://127.0.0.1:8000';
+  const frontendBaseUrl = process.env['PUBLIC_FRONTEND_BASE_URL'] || process.env['FRONTEND_URL'] || '';
+
+  res
+    .type('application/javascript')
+    .set('Cache-Control', 'no-store')
+    .send(
+      `window.__CHATBOT_FACTORY_CONFIG__={apiBaseUrl:${jsString(apiBaseUrl)},frontendBaseUrl:${jsString(frontendBaseUrl)}};`,
+    );
+});
+
 /**
  * Example Express Rest API endpoints can be defined here.
  * Uncomment and define endpoints as necessary.

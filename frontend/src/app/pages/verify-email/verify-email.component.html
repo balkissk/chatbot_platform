@@ -1,0 +1,16 @@
+<main class="auth-page">
+  <section class="auth-panel">
+    <div>
+      <p class="eyebrow">Email verification</p>
+      <h1>Verify email</h1>
+      <p class="subtitle">Your account needs a verified email address before you can sign in.</p>
+    </div>
+
+    <div class="auth-form">
+      <p *ngIf="loading()">Verifying...</p>
+      <p *ngIf="message()" class="success">{{ message() }}</p>
+      <p *ngIf="error()" class="error">{{ error() }}</p>
+      <a routerLink="/login">Back to sign in</a>
+    </div>
+  </section>
+</main>

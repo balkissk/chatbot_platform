@@ -1,0 +1,162 @@
+.page-header,
+.actions,
+.chat-header,
+.composer {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.page-header {
+  margin-bottom: 18px;
+}
+
+.eyebrow {
+  color: #36ADA3;
+  font-size: 12px;
+  font-weight: 800;
+  margin: 0 0 5px;
+  text-transform: uppercase;
+}
+
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+h2 {
+  color: #152033;
+  font-size: 28px;
+}
+
+p,
+.empty {
+  color: #667085;
+}
+
+button {
+  background: #0f5f82;
+  border: 0;
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  font-weight: 700;
+  min-height: 42px;
+  padding: 10px 13px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: .65;
+}
+
+button.secondary {
+  background: #fff;
+  border: 1px solid #bfd5dc;
+  color: #123547;
+}
+
+.test-shell {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) 320px;
+}
+
+.chat-panel,
+.notes {
+  background: #fff;
+  border: 1px solid #d8e8eb;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.chat-header span {
+  background: #eef4ff;
+  border-radius: 999px;
+  color: #0f5f82;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 7px 10px;
+}
+
+.messages {
+  background: #f4fbfb;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: min(620px, calc(100vh - 280px));
+  margin: 14px 0;
+  min-height: 420px;
+  overflow: auto;
+  padding: 14px;
+}
+
+.bubble {
+  align-self: flex-start;
+  background: #fff;
+  border: 1px solid #dbe3ee;
+  border-radius: 8px;
+  max-width: 74%;
+  padding: 10px 12px;
+}
+
+.bubble.user {
+  align-self: flex-end;
+  background: #0f5f82;
+  border-color: #0f5f82;
+}
+
+.bubble.user p {
+  color: #fff;
+}
+
+.quick-replies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.quick-replies button {
+  background: #eaf8f7;
+  border: 1px solid #a9ded9;
+  color: #36ADA3;
+  min-height: 34px;
+  padding: 6px 10px;
+}
+
+.composer input {
+  border: 1px solid #bfd5dc;
+  border-radius: 6px;
+  flex: 1;
+  font: inherit;
+  padding: 12px;
+}
+
+.notes {
+  align-self: start;
+  display: grid;
+  gap: 10px;
+}
+
+.error {
+  color: #b42318;
+  font-weight: 700;
+}
+
+@media (max-width: 980px) {
+  .page-header,
+  .actions,
+  .composer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .test-shell {
+    grid-template-columns: 1fr;
+  }
+}

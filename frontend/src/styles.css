@@ -1,1 +1,143 @@
-/* You can add global styles to this file, and also import other style files */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: #f4fbfb;
+  color: #0b1f2a;
+  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+}
+
+:root {
+  --brand-green: #36ADA3;
+  --brand-blue: #0f5f82;
+  --brand-mint: #eaf8f7;
+  --brand-border: #d8e8eb;
+  --brand-text: #0b1f2a;
+  --brand-muted: #5b7080;
+}
+
+button:not(.secondary):not(.danger):not(.icon-danger):not(.icon-button):not(.icon-only):not(.icon-action):not(.document-main):not(.session-row):not(.nav-toggle),
+.button-link {
+  background: linear-gradient(135deg, var(--brand-green), var(--brand-blue));
+  box-shadow: 0 10px 24px rgba(15, 95, 130, .14);
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+
+button:not(:disabled):hover,
+.button-link:hover {
+  transform: translateY(-1px);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--brand-green);
+  box-shadow: 0 0 0 3px rgba(54, 173, 163, .18);
+  outline: 0;
+}
+
+.panel,
+.project-card,
+.bot-card,
+.version-card,
+.empty-state,
+.toolbar,
+.create-panel,
+.auth-panel,
+.chat-shell,
+.stat-card {
+  box-shadow: 0 14px 38px rgba(15, 95, 130, .06);
+}
+
+.success {
+  color: #36ADA3;
+}
+
+.error {
+  color: #b00020;
+}
+
+.details-overlay {
+  align-items: center;
+  background: rgba(16, 22, 34, .66);
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  left: 0;
+  padding: 24px;
+  position: fixed;
+  right: 0;
+  top: 0;
+  z-index: 60;
+}
+
+.details-modal {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, .28);
+  max-height: 88vh;
+  overflow: auto;
+  padding: 32px;
+  position: relative;
+  width: min(760px, 96vw);
+}
+
+.details-modal h2 {
+  margin-bottom: 8px;
+}
+
+.detail-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 20px 0;
+}
+
+.detail-grid span {
+  background: #f4fbfb;
+  border: 1px solid #e4e9f0;
+  border-radius: 8px;
+  color: #5b7080;
+  display: grid;
+  font-size: 12px;
+  gap: 4px;
+  padding: 12px;
+}
+
+.detail-grid strong {
+  color: #0b1f2a;
+  font-size: 14px;
+}
+
+.details-modal table {
+  border-collapse: collapse;
+  margin-top: 12px;
+  width: 100%;
+}
+
+.details-modal th,
+.details-modal td {
+  border-bottom: 1px solid #e5f0f2;
+  padding: 10px;
+  text-align: left;
+}
+
+.details-modal th {
+  color: #45606f;
+  font-size: 13px;
+}
+
+@media (max-width: 980px) {
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+}

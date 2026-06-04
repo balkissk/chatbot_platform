@@ -1,0 +1,51 @@
+<div class="page-header">
+  <div>
+    <p class="eyebrow">{{ context()?.chatbot?.name || ('Chatbot ' + chatbotId) }}</p>
+    <h2>Test Flow</h2>
+  </div>
+
+  <div class="actions">
+    <button class="secondary" (click)="startTest()" [disabled]="loading() || !context()">Restart test</button>
+    <button class="secondary" (click)="goBuilder()">Back to builder</button>
+  </div>
+</div>
+
+<p *ngIf="error()" class="error">{{ error() }}</p>
+
+<section class="test-shell">
+  <section class="chat-panel">
+    <div class="chat-header">
+      <div>
+        <p class="eyebrow">Draft version</p>
+        <h3>Version {{ context()?.version?.version_number || '-' }}</h3>
+      </div>
+      <span>{{ context()?.version?.status || 'draft' }}</span>
+    </div>
+
+    <div class="messages">
+      <p class="empty" *ngIf="messages().length === 0 && !loading()">No messages yet.</p>
+
+      <article *ngFor="let item of messages()" class="bubble" [class.user]="item.role === 'user'">
+        <p>{{ item.text }}</p>
+        <div class="quick-replies" *ngIf="item.options?.length">
+          <button type="button" *ngFor="let option of item.options" (click)="send(option)" [disabled]="loading()">
+            {{ option }}
+          </button>
+        </div>
+      </article>
+
+      <article class="bubble" *ngIf="loading()">Thinking...</article>
+    </div>
+
+    <form class="composer" (ngSubmit)="send()">
+      <input [(ngModel)]="input" name="input" placeholder="Type a test message">
+      <button type="submit" [disabled]="loading() || !input.trim()">Send</button>
+    </form>
+  </section>
+
+  <aside class="notes">
+    <p class="eyebrow">How to use</p>
+    <h3>Preview the draft flow</h3>
+    <p>This page tests the current draft version before publishing. Use Restart test when you change the flow and want a clean session.</p>
+  </aside>
+</section>

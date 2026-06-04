@@ -1,0 +1,44 @@
+<main class="auth-page">
+  <section class="auth-panel">
+    <div>
+      <p class="eyebrow">Account setup</p>
+      <h1>Create access</h1>
+      <p class="subtitle">Managers build and test chatbots. End users only access the chat experience.</p>
+    </div>
+
+    <form (ngSubmit)="register()" class="auth-form">
+      <label>
+        Name
+        <input [(ngModel)]="name" name="name" autocomplete="name" required>
+      </label>
+
+      <label>
+        Email
+        <input [(ngModel)]="email" name="email" type="email" autocomplete="email" required>
+      </label>
+
+      <label>
+        Password
+        <input [(ngModel)]="password" name="password" type="password" autocomplete="new-password" required>
+      </label>
+
+      <label>
+        Role
+        <select [(ngModel)]="role" name="role">
+          <option value="manager">INSOMEA manager</option>
+          <option value="end_user">Chat user</option>
+          <option value="admin">Admin</option>
+        </select>
+      </label>
+
+      <p *ngIf="error()" class="error">{{ error() }}</p>
+      <p *ngIf="message()" class="success">{{ message() }}</p>
+
+      <button type="submit" [disabled]="loading() || !name || !email || !password">
+        {{ loading() ? 'Creating...' : 'Create account' }}
+      </button>
+
+      <a routerLink="/login">Already have an account</a>
+    </form>
+  </section>
+</main>

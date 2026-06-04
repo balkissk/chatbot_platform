@@ -1,0 +1,80 @@
+<div class="page-header">
+  <div>
+    <p class="eyebrow">Admin</p>
+    <h2>Dashboard</h2>
+  </div>
+  <button class="secondary" (click)="load()" [disabled]="loading()">
+    {{ loading() ? 'Refreshing...' : 'Refresh' }}
+  </button>
+</div>
+
+<p *ngIf="error()" class="error">{{ error() }}</p>
+<p *ngIf="loading()" class="muted">Loading dashboard...</p>
+
+<ng-container *ngIf="overview() as data">
+  <section class="stats-grid">
+    <article>
+      <span>Projects</span>
+      <strong>{{ data.total_projects }}</strong>
+    </article>
+    <article>
+      <span>Chatbots</span>
+      <strong>{{ data.total_chatbots }}</strong>
+    </article>
+    <article>
+      <span>Active chatbots</span>
+      <strong>{{ data.active_chatbots }}</strong>
+    </article>
+    <article>
+      <span>Published versions</span>
+      <strong>{{ data.published_versions }}</strong>
+    </article>
+    <article>
+      <span>Conversations</span>
+      <strong>{{ data.total_sessions }}</strong>
+    </article>
+    <article>
+      <span>Messages</span>
+      <strong>{{ data.total_messages }}</strong>
+    </article>
+    <article>
+      <span>Conversations today</span>
+      <strong>{{ data.sessions_today }}</strong>
+    </article>
+    <article>
+      <span>Messages today</span>
+      <strong>{{ data.messages_today }}</strong>
+    </article>
+  </section>
+
+  <section class="dashboard-grid">
+    <section class="panel">
+      <div class="panel-header">
+        <h3>Top chatbots</h3>
+      </div>
+      <div *ngIf="data.top_chatbots.length === 0" class="empty">No conversations yet.</div>
+      <div *ngFor="let bot of data.top_chatbots" class="row">
+        <div>
+          <strong>{{ bot.chatbot_name || ('Chatbot ' + bot.chatbot_id) }}</strong>
+          <p>ID {{ bot.chatbot_id }}</p>
+        </div>
+        <span>{{ bot.conversation_count }} conversations</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h3>Recent conversations</h3>
+        <a routerLink="/admin/conversations">View all</a>
+      </div>
+      <div *ngIf="data.recent_sessions.length === 0" class="empty">No conversation history yet.</div>
+      <a *ngFor="let session of data.recent_sessions" class="row link-row" [routerLink]="['/admin/conversations']" [queryParams]="{ sessionId: session.id }">
+        <div>
+          <strong>{{ session.chatbot_name }}</strong>
+          <p>{{ session.last_message || 'No messages' }}</p>
+        </div>
+        <span>#{{ session.id }}</span>
+      </a>
+    </section>
+  </section>
+</ng-container>

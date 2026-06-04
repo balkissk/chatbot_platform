@@ -1,0 +1,140 @@
+.page-header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.eyebrow {
+  color: #36ADA3;
+  font-size: 12px;
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+
+h2 {
+  font-size: 26px;
+  margin: 0;
+}
+
+.panel,
+.toolbar {
+  background: #fff;
+  border: 1px solid #d8e8eb;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  padding: 16px;
+}
+
+h3 {
+  font-size: 16px;
+  margin: 0 0 14px;
+}
+
+.create-form,
+.toolbar {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+}
+
+.toolbar {
+  grid-template-columns: minmax(220px, 2fr) minmax(130px, 1fr) minmax(130px, 1fr) auto auto;
+}
+
+label {
+  color: #45606f;
+  display: grid;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 6px;
+}
+
+input,
+select {
+  border: 1px solid #bfd5dc;
+  border-radius: 6px;
+  color: #1f2937;
+  font: inherit;
+  min-height: 38px;
+  padding: 8px 10px;
+}
+
+button {
+  background: #36ADA3;
+  border: 1px solid #36ADA3;
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  min-height: 38px;
+  padding: 8px 14px;
+}
+
+button.secondary {
+  background: #fff;
+  color: #36ADA3;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+table {
+  background: #fff;
+  border-collapse: collapse;
+  border: 1px solid #d8e8eb;
+  width: 100%;
+}
+
+th,
+td {
+  border-bottom: 1px solid #e5f0f2;
+  padding: 12px;
+  text-align: left;
+}
+
+th {
+  color: #45606f;
+  font-size: 13px;
+}
+
+.role,
+.status {
+  background: #eaf8f7;
+  border-radius: 999px;
+  color: #36ADA3;
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 8px;
+}
+
+.status.disabled {
+  background: #f4f5f7;
+  color: #697586;
+}
+
+.error {
+  color: #b00020;
+}
+
+.muted,
+.empty {
+  color: #697586;
+}
+
+@media (max-width: 900px) {
+  .create-form,
+  .toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  table {
+    display: block;
+    overflow-x: auto;
+  }
+}

@@ -1,0 +1,67 @@
+<div class="page-header">
+  <div>
+    <p class="eyebrow">Project</p>
+    <h2>{{ project()?.name || ('Project ' + projectId) }}</h2>
+  </div>
+
+  <div class="actions">
+    <button class="secondary" (click)="goBack()">Back</button>
+    <button [routerLink]="['/dashboard/projects', projectId, 'chatbots']">
+      Open chatbots
+    </button>
+  </div>
+</div>
+
+<p *ngIf="loading()" class="muted">Loading project...</p>
+<p *ngIf="error()" class="error">{{ error() }}</p>
+<p *ngIf="message()" class="success">{{ message() }}</p>
+
+<section *ngIf="project() as currentProject" class="overview">
+  <div class="panel details">
+    <div class="panel-header">
+      <h3>Project details</h3>
+      <button *ngIf="!editing" class="secondary" (click)="startEdit()">Edit</button>
+    </div>
+
+    <div *ngIf="!editing" class="details-view">
+      <p>{{ currentProject.description || 'No description' }}</p>
+      <small>Created {{ currentProject.created_at | date:'medium' }}</small>
+    </div>
+
+    <form *ngIf="editing" class="edit-form" (ngSubmit)="saveProject()">
+      <label>
+        Name
+        <input name="name" [(ngModel)]="editName">
+      </label>
+      <label>
+        Description
+        <input name="description" [(ngModel)]="editDescription">
+      </label>
+      <div class="actions left">
+        <button type="submit" [disabled]="saving() || !editName.trim()">
+          {{ saving() ? 'Saving...' : 'Save' }}
+        </button>
+        <button type="button" class="secondary" (click)="cancelEdit()">Cancel</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="stats-grid">
+    <article class="stat-card">
+      <span>Chatbots</span>
+      <strong>{{ currentProject.chatbot_count || 0 }}</strong>
+    </article>
+    <article class="stat-card">
+      <span>Versions</span>
+      <strong>{{ currentProject.version_count || 0 }}</strong>
+    </article>
+    <article class="stat-card">
+      <span>Published</span>
+      <strong>{{ currentProject.published_version_count || 0 }}</strong>
+    </article>
+    <article class="stat-card">
+      <span>Drafts</span>
+      <strong>{{ currentProject.draft_version_count || 0 }}</strong>
+    </article>
+  </div>
+</section>

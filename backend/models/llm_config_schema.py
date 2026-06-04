@@ -3,7 +3,7 @@ from pydantic import BaseModel
 
 class LLMConfigCreate(BaseModel):
     version_id: int
-    model: str = "gpt-4o-mini"
+    model: str = "llama3"
     temperature: float = 0.7
     system_prompt: str | None = None
 
@@ -16,4 +16,4 @@ class LLMConfigResponse(BaseModel):
     system_prompt: str | None
 
     class Config:
-        orm_mode = True
+        from_attributes = True

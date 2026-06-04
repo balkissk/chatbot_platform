@@ -1,0 +1,32 @@
+<main class="chat-page">
+  <section class="chat-shell">
+    <header>
+      <div>
+        <p>Public chatbot</p>
+        <h1>{{ chatbot()?.name || 'Conversation' }}</h1>
+      </div>
+    </header>
+
+    <div class="messages">
+      <p *ngIf="messages().length === 0" class="empty">Ask a question to start the conversation.</p>
+
+      <div *ngFor="let item of messages()" class="message" [class.user]="item.role === 'user'">
+        {{ item.text }}
+        <div class="quick-replies" *ngIf="item.options?.length">
+          <button type="button" *ngFor="let option of item.options" (click)="send(option)">
+            {{ option }}
+          </button>
+        </div>
+      </div>
+
+      <div *ngIf="loading() && messages()[messages().length - 1]?.role !== 'bot'" class="message">Thinking...</div>
+    </div>
+
+    <p *ngIf="error()" class="error">{{ error() }}</p>
+
+    <form (ngSubmit)="send()" class="composer">
+      <input [(ngModel)]="message" name="message" placeholder="Type your message">
+      <button type="submit" [disabled]="loading() || !message.trim()">Send</button>
+    </form>
+  </section>
+</main>

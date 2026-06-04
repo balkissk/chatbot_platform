@@ -1,0 +1,67 @@
+<div class="page-header">
+  <div>
+    <p class="eyebrow">Admin</p>
+    <h2>Conversation History</h2>
+  </div>
+  <div class="actions">
+    <input [(ngModel)]="chatbotFilter" placeholder="Chatbot ID">
+    <button (click)="loadSessions()" [disabled]="loading()">
+      {{ loading() ? 'Loading...' : 'Filter' }}
+    </button>
+  </div>
+</div>
+
+<p *ngIf="error()" class="error">{{ error() }}</p>
+<p *ngIf="loading()" class="muted">Loading conversations...</p>
+
+<section class="history-grid">
+  <section class="panel">
+    <h3>Sessions</h3>
+    <div *ngIf="!loading() && sessions().length === 0" class="empty">No sessions found.</div>
+
+    <button
+      type="button"
+      *ngFor="let session of sessions()"
+      class="session-row"
+      [class.selected]="selectedSession()?.id === session.id"
+      (click)="openSession(session.id)">
+      <div>
+        <strong>{{ session.chatbot_name }}</strong>
+        <p>{{ session.project_name || 'No project' }} - {{ session.channel }} - #{{ session.id }}</p>
+        <small>{{ session.last_message || 'No messages' }}</small>
+      </div>
+      <span>{{ session.message_count }}</span>
+    </button>
+  </section>
+
+  <section class="panel details">
+    <p *ngIf="detailsLoading()" class="muted">Loading conversation...</p>
+    <div *ngIf="!detailsLoading() && !selectedSession()" class="empty">Select a session to read messages.</div>
+
+    <ng-container *ngIf="selectedSession() as session">
+      <div class="details-header">
+        <div>
+          <p class="eyebrow">Session #{{ session.id }}</p>
+          <h3>{{ session.chatbot_name }}</h3>
+          <p>{{ session.channel }} - version {{ session.version_id }} - {{ session.message_count }} messages</p>
+        </div>
+        <button class="secondary" (click)="closeDetails()">Close</button>
+      </div>
+
+      <div class="messages">
+        <article *ngFor="let message of session.messages" class="message" [class.user]="message.role === 'user'">
+          <span>{{ message.role }}</span>
+          <p>{{ message.content }}</p>
+          <small>{{ message.created_at | date:'medium' }}</small>
+          <div *ngIf="message.options?.length" class="options">
+            <strong>Options:</strong> {{ message.options.join(', ') }}
+          </div>
+          <div *ngIf="message.sources?.length" class="sources">
+            <strong>Sources:</strong>
+            <p *ngFor="let source of message.sources">{{ source.filename }} - {{ source.text }}</p>
+          </div>
+        </article>
+      </div>
+    </ng-container>
+  </section>
+</section>

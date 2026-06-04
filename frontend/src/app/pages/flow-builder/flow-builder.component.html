@@ -1,0 +1,296 @@
+<div class="page-header">
+  <div>
+    <p class="eyebrow">{{ context()?.chatbot?.name || ('Chatbot ' + chatbotId) }}</p>
+    <h2>Flow Builder</h2>
+  </div>
+
+  <div class="actions">
+    <button class="secondary icon-action" type="button" (click)="toggleSidebar()" [attr.aria-label]="sidebarCollapsed() ? 'Show steps' : 'Hide steps'" [attr.title]="sidebarCollapsed() ? 'Show steps' : 'Hide steps'">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path *ngIf="!sidebarCollapsed()" d="M15 18l-6-6 6-6"></path>
+        <path *ngIf="sidebarCollapsed()" d="M9 18l6-6-6-6"></path>
+        <path d="M4 5h4"></path>
+        <path d="M4 12h4"></path>
+        <path d="M4 19h4"></path>
+      </svg>
+    </button>
+    <button class="secondary icon-action" type="button" (click)="loadBuilder()" [disabled]="loading()" aria-label="Refresh flow" title="Refresh flow">
+      <svg viewBox="0 0 24 24" aria-hidden="true" [class.spin]="loading()">
+        <path d="M21 12a9 9 0 0 1-15.5 6.2"></path>
+        <path d="M3 12A9 9 0 0 1 18.5 5.8"></path>
+        <path d="M18 2v4h4"></path>
+        <path d="M6 22v-4H2"></path>
+      </svg>
+    </button>
+    <button class="secondary icon-action" type="button" (click)="goBack()" aria-label="Back to chatbots" title="Back to chatbots">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M19 12H5"></path>
+        <path d="M12 19l-7-7 7-7"></path>
+      </svg>
+    </button>
+  </div>
+</div>
+
+<p *ngIf="error()" class="error">{{ error() }}</p>
+<p *ngIf="message()" class="success">{{ message() }}</p>
+<p *ngIf="loading()" class="muted">Loading flow...</p>
+
+<ng-container *ngIf="!loading()">
+<section class="builder-shell" [class.sidebar-collapsed]="sidebarCollapsed()">
+  <aside class="palette" *ngIf="!sidebarCollapsed()">
+    <div class="palette-header">
+      <p class="eyebrow">Add Step</p>
+      <button class="icon-button" type="button" (click)="toggleSidebar()" aria-label="Collapse sidebar" title="Collapse sidebar">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M15 18l-6-6 6-6"></path>
+        </svg>
+      </button>
+    </div>
+    <select [(ngModel)]="nodeType">
+      <option value="message">Message</option>
+      <option value="question">Question</option>
+      <option value="buttons">Buttons</option>
+      <option value="condition">Condition</option>
+      <option value="rag_answer">AI/RAG answer</option>
+      <option value="handoff">Handoff</option>
+      <option value="end">End</option>
+    </select>
+    <button (click)="addNode()">Add after selected</button>
+    <button
+      class="secondary"
+      [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId, 'knowledge']">
+      Knowledge
+    </button>
+    <button
+      class="secondary"
+      [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId, 'flow', 'test']">
+      Test Flow
+    </button>
+    <p class="small-note">Drag blocks from their header. Click a block to edit it.</p>
+  </aside>
+  <button
+    *ngIf="sidebarCollapsed()"
+    class="sidebar-open"
+    type="button"
+    (click)="toggleSidebar()"
+    aria-label="Open sidebar"
+    title="Open sidebar">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M9 18l6-6-6-6"></path>
+    </svg>
+    Steps
+  </button>
+
+  <main class="canvas">
+    <div class="canvas-stage" [style.width.px]="canvasWidth()" [style.height.px]="canvasHeight()">
+      <svg class="flow-lines" [attr.width]="canvasWidth()" [attr.height]="canvasHeight()">
+        <defs>
+          <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z"></path>
+          </marker>
+        </defs>
+        <g *ngFor="let transition of transitions()">
+          <path *ngIf="transitionPath(transition)" [attr.d]="transitionPath(transition)"></path>
+        </g>
+      </svg>
+
+    <article
+      *ngFor="let node of nodes()"
+      class="flow-block"
+      [ngStyle]="nodeStyle(node)"
+      [class.selected]="selectedNode()?.id === node.id"
+      [class.ai]="node.type === 'rag_answer'"
+      [class.choice]="node.type === 'buttons'"
+      [class.condition]="node.type === 'condition'"
+      [class.dragging]="dragging() === node.id"
+      (click)="selectNode(node)">
+      <div class="block-top" (pointerdown)="startDrag($event, node)">
+        <span>{{ node.type }}</span>
+        <button class="icon-danger icon-only" type="button" (click)="requestDeleteNode(node); $event.stopPropagation()" aria-label="Delete block" title="Delete block">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 6h18"></path>
+            <path d="M8 6V4h8v2"></path>
+            <path d="M19 6l-1 14H6L5 6"></path>
+            <path d="M10 11v5"></path>
+            <path d="M14 11v5"></path>
+          </svg>
+        </button>
+      </div>
+      <h3>{{ node.label }}</h3>
+      <p>{{ nodeText(node) || 'No text configured' }}</p>
+
+      <div class="button-list" *ngIf="node.type === 'buttons'">
+        <button type="button" *ngFor="let option of nodeButtons(node)">{{ option }}</button>
+      </div>
+
+      <div class="connectors" *ngIf="outgoing(node).length">
+        <div *ngFor="let transition of outgoing(node)" class="connector-row">
+          <span>{{ transition.label || 'next' }}</span>
+          <strong>{{ nodeLabel(transition.target_node_key) }}</strong>
+          <button class="icon-only text-danger" type="button" (click)="deleteTransition(transition); $event.stopPropagation()" aria-label="Delete connector" title="Delete connector">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 6h18"></path>
+              <path d="M8 6V4h8v2"></path>
+              <path d="M19 6l-1 14H6L5 6"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </article>
+    </div>
+  </main>
+</section>
+
+<section class="editor-overlay" *ngIf="editorOpen() && selectedNode() as node" (click)="closeEditor()">
+  <aside class="editor-modal" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <div>
+        <p class="eyebrow">Selected Step</p>
+        <h3>{{ node.label }}</h3>
+      </div>
+      <button class="icon-danger" type="button" (click)="closeEditor()">Close</button>
+    </div>
+
+    <label>
+      Label
+      <input [ngModel]="node.label" (ngModelChange)="updateNodeField('label', $event)">
+    </label>
+
+    <div class="type-pill">{{ node.type }}</div>
+
+    <label *ngIf="node.type !== 'rag_answer' && node.type !== 'condition'">
+      Text
+      <textarea rows="5" [ngModel]="nodeText(node)" (ngModelChange)="setNodeText($event)"></textarea>
+    </label>
+
+    <section class="condition-box" *ngIf="node.type === 'action'">
+      <p class="eyebrow">Action</p>
+      <label>
+        Action type
+        <select [ngModel]="nodeConfigValue(node, 'action_type') || 'set_variable'" (ngModelChange)="updateNodeConfig('action_type', $event)">
+          <option *ngFor="let action of actionTypes" [value]="action.value">
+            {{ action.label }}
+          </option>
+        </select>
+      </label>
+      <label *ngIf="nodeConfigValue(node, 'action_type') === 'set_variable' || !nodeConfigValue(node, 'action_type')">
+        Variable name
+        <input [ngModel]="nodeConfigValue(node, 'field')" (ngModelChange)="updateNodeConfig('field', $event)" placeholder="status">
+      </label>
+      <label *ngIf="nodeConfigValue(node, 'action_type') === 'set_variable' || !nodeConfigValue(node, 'action_type')">
+        Value
+        <input [ngModel]="nodeConfigValue(node, 'value')" (ngModelChange)="updateNodeConfig('value', $event)" placeholder="qualified">
+      </label>
+      <label *ngIf="nodeConfigValue(node, 'action_type') === 'handoff'">
+        Handoff reason
+        <input [ngModel]="nodeConfigValue(node, 'reason')" (ngModelChange)="updateNodeConfig('reason', $event)" placeholder="Needs human follow-up">
+      </label>
+    </section>
+
+    <label *ngIf="node.type === 'question' || node.type === 'buttons'">
+      Variable name
+      <input [ngModel]="nodeConfigValue(node, 'field')" (ngModelChange)="updateNodeConfig('field', $event)">
+    </label>
+
+    <label *ngIf="node.type === 'buttons'">
+      Buttons
+      <input [ngModel]="buttonText(node)" (ngModelChange)="setButtonText($event)" placeholder="Yes, No">
+    </label>
+
+    <section class="condition-box" *ngIf="node.type === 'condition'">
+      <p class="eyebrow">Condition</p>
+      <label>
+        Variable name
+        <input [ngModel]="nodeConfigValue(node, 'field')" (ngModelChange)="updateNodeConfig('field', $event)" placeholder="budget">
+      </label>
+      <label>
+        Operator
+        <select [ngModel]="nodeConfigValue(node, 'operator') || 'equals'" (ngModelChange)="updateNodeConfig('operator', $event)">
+          <option *ngFor="let operator of conditionOperators" [value]="operator.value">
+            {{ operator.label }}
+          </option>
+        </select>
+      </label>
+      <label *ngIf="nodeConfigValue(node, 'operator') !== 'exists' && nodeConfigValue(node, 'operator') !== 'not_exists'">
+        Value
+        <input [ngModel]="nodeConfigValue(node, 'value')" (ngModelChange)="updateNodeConfig('value', $event)" placeholder="1000">
+      </label>
+    </section>
+
+    <section class="routing-box" *ngIf="node.type !== 'buttons' && node.type !== 'condition' && !isTerminalNode(node)">
+      <p class="eyebrow">Then Go To</p>
+      <select [ngModel]="nextBlockKey(node)" (ngModelChange)="setNextBlock($event)">
+        <option value="">End here</option>
+        <option *ngFor="let target of nodes()" [value]="target.node_key" [disabled]="target.node_key === node.node_key">
+          {{ target.label }}
+        </option>
+      </select>
+    </section>
+
+    <section class="routing-box" *ngIf="node.type === 'buttons'">
+      <p class="eyebrow">Button Paths</p>
+      <div class="button-route" *ngFor="let button of nodeButtons(node)">
+        <strong>{{ button }}</strong>
+        <select [ngModel]="buttonTarget(button)" (ngModelChange)="setButtonTarget(button, $event)">
+          <option value="">Choose next step</option>
+          <option *ngFor="let target of nodes()" [value]="target.node_key" [disabled]="target.node_key === node.node_key">
+            {{ target.label }}
+          </option>
+        </select>
+      </div>
+    </section>
+
+    <section class="routing-box" *ngIf="node.type === 'condition'">
+      <p class="eyebrow">Condition Paths</p>
+      <div class="button-route">
+        <strong>True</strong>
+        <select [ngModel]="conditionTarget('true')" (ngModelChange)="setConditionTarget('true', $event)">
+          <option value="">Choose next step</option>
+          <option *ngFor="let target of nodes()" [value]="target.node_key" [disabled]="target.node_key === node.node_key">
+            {{ target.label }}
+          </option>
+        </select>
+      </div>
+      <div class="button-route">
+        <strong>False</strong>
+        <select [ngModel]="conditionTarget('false')" (ngModelChange)="setConditionTarget('false', $event)">
+          <option value="">Choose next step</option>
+          <option *ngFor="let target of nodes()" [value]="target.node_key" [disabled]="target.node_key === node.node_key">
+            {{ target.label }}
+          </option>
+        </select>
+      </div>
+    </section>
+
+    <label *ngIf="node.type === 'rag_answer'">
+      Fallback
+      <textarea rows="4" [ngModel]="nodeConfigValue(node, 'fallback')" (ngModelChange)="updateNodeConfig('fallback', $event)"></textarea>
+    </label>
+
+    <button (click)="saveNode()" [disabled]="saving()">
+      {{ saving() ? 'Saving...' : 'Save block' }}
+    </button>
+  </aside>
+</section>
+
+<section class="confirm-overlay" *ngIf="deleteConfirm() as pending" (click)="cancelDelete()">
+  <aside class="confirm-modal" (click)="$event.stopPropagation()">
+    <div class="confirm-icon">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M3 6h18"></path>
+        <path d="M8 6V4h8v2"></path>
+        <path d="M19 6l-1 14H6L5 6"></path>
+      </svg>
+    </div>
+    <div>
+      <p class="eyebrow">Confirmation</p>
+      <h3>{{ pending.title }}</h3>
+      <p>{{ pending.message }}</p>
+    </div>
+    <div class="confirm-actions">
+      <button class="secondary" type="button" (click)="cancelDelete()">Cancel</button>
+      <button class="danger" type="button" (click)="confirmDelete()">Delete</button>
+    </div>
+  </aside>
+</section>
+</ng-container>

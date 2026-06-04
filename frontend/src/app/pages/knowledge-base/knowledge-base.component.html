@@ -1,0 +1,213 @@
+<div class="page-header">
+  <div>
+    <p class="eyebrow">{{ chatbot()?.name || ('Chatbot ' + chatbotId) }}</p>
+    <h2>Knowledge Base</h2>
+  </div>
+  <div class="actions">
+    <button class="secondary" (click)="loadDocuments()" [disabled]="loading()">Refresh</button>
+    <button class="secondary" (click)="goBack()">Back</button>
+  </div>
+</div>
+
+<p *ngIf="error()" class="error">{{ error() }}</p>
+<p *ngIf="message()" class="success">{{ message() }}</p>
+<p *ngIf="loading()" class="muted">Loading knowledge base...</p>
+
+<section class="toolbar">
+  <label>
+    Version
+    <select [ngModel]="selectedVersionId()" (ngModelChange)="selectVersion($event)">
+      <option *ngFor="let version of versions()" [value]="version.id">
+        Version {{ version.version_number }} - {{ version.status }}{{ version.is_active ? ' - active' : '' }}
+      </option>
+    </select>
+  </label>
+
+  <label class="file-control">
+    <input
+      type="file"
+      accept=".txt,.md,.csv,.json"
+      (change)="onFileSelected($event)"
+      [disabled]="uploadLoading() || !selectedVersionId()">
+    <span>{{ uploadLoading() ? 'Uploading...' : 'Upload document' }}</span>
+  </label>
+</section>
+
+<p *ngIf="selectedFileName" class="muted">Selected: {{ selectedFileName }}</p>
+
+<section class="panel settings-panel">
+  <div class="panel-header">
+    <div>
+      <p class="eyebrow">RAG Settings</p>
+      <h3>Manager controls</h3>
+    </div>
+    <button (click)="saveRagSettings()" [disabled]="settingsLoading()">
+      {{ settingsLoading() ? 'Saving...' : 'Save settings' }}
+    </button>
+  </div>
+
+  <div class="settings-grid">
+    <label>
+      Retrieval mode
+      <select
+        [ngModel]="ragSettings().retrieval_mode"
+        (ngModelChange)="updateRagSetting('retrieval_mode', $event)">
+        <option value="auto">Auto: semantic then keyword fallback</option>
+        <option value="semantic">Semantic only</option>
+        <option value="keyword">Keyword only</option>
+      </select>
+    </label>
+
+    <label>
+      Max chunks
+      <input
+        type="number"
+        min="1"
+        max="8"
+        [ngModel]="ragSettings().max_chunks"
+        (ngModelChange)="updateRagSetting('max_chunks', $event)">
+    </label>
+
+    <label>
+      Minimum score
+      <input
+        type="number"
+        min="0"
+        max="1"
+        step="0.05"
+        [ngModel]="ragSettings().min_score"
+        (ngModelChange)="updateRagSetting('min_score', $event)">
+    </label>
+
+    <label>
+      Response length
+      <select
+        [ngModel]="ragSettings().response_length"
+        (ngModelChange)="updateRagSetting('response_length', $event)">
+        <option value="short">Short and fast</option>
+        <option value="normal">Normal</option>
+        <option value="detailed">Detailed</option>
+      </select>
+    </label>
+
+    <label class="checkbox-row">
+      <input
+        type="checkbox"
+        [ngModel]="ragSettings().show_sources"
+        (ngModelChange)="updateRagSetting('show_sources', $event)">
+      Show source references
+    </label>
+
+    <label class="checkbox-row">
+      <input
+        type="checkbox"
+        [ngModel]="ragSettings().strict_context"
+        (ngModelChange)="updateRagSetting('strict_context', $event)">
+      Answer only from documents
+    </label>
+  </div>
+</section>
+
+<section class="kb-grid">
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <p class="eyebrow">Documents</p>
+        <h3>{{ documents().length }} files</h3>
+      </div>
+    </div>
+
+    <div *ngIf="documents().length === 0" class="empty">No documents uploaded for this version.</div>
+
+    <article *ngFor="let document of documents()" class="document-row" [class.selected]="selectedDocument()?.id === document.id">
+      <button
+        *ngIf="editingDocumentId() !== document.id"
+        type="button"
+        class="document-main"
+        (click)="openDocument(document)">
+        <strong>{{ document.filename }}</strong>
+        <span>{{ document.chunks_count }} chunks - {{ document.size_bytes }} bytes - {{ document.status }}</span>
+        <small>Processed {{ document.processed_at | date:'medium' }}</small>
+      </button>
+
+      <div *ngIf="editingDocumentId() === document.id" class="document-edit">
+        <input [(ngModel)]="documentEdit.filename" placeholder="Filename">
+        <input [(ngModel)]="documentEdit.content_type" placeholder="Content type">
+      </div>
+
+      <button
+        *ngIf="editingDocumentId() !== document.id"
+        class="secondary"
+        (click)="startDocumentEdit(document)">
+        Rename
+      </button>
+      <button
+        *ngIf="editingDocumentId() === document.id"
+        (click)="saveDocument(document)"
+        [disabled]="savingDocumentId() === document.id || !documentEdit.filename.trim()">
+        {{ savingDocumentId() === document.id ? 'Saving...' : 'Save' }}
+      </button>
+      <button
+        *ngIf="editingDocumentId() === document.id"
+        class="secondary"
+        (click)="cancelDocumentEdit()">
+        Cancel
+      </button>
+      <button class="secondary" (click)="reprocessEmbeddings(document)" [disabled]="reprocessId() === document.id || editingDocumentId() === document.id">
+        {{ reprocessId() === document.id ? 'Embedding...' : 'Reprocess embeddings' }}
+      </button>
+      <button class="secondary" (click)="reprocessChunks(document)" [disabled]="reprocessChunksId() === document.id || editingDocumentId() === document.id">
+        {{ reprocessChunksId() === document.id ? 'Rebuilding...' : 'Reprocess chunks' }}
+      </button>
+      <button class="danger" (click)="deleteDocument(document)" [disabled]="editingDocumentId() === document.id">Delete</button>
+    </article>
+  </section>
+
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <p class="eyebrow">Chunks Preview</p>
+        <h3>{{ selectedDocument()?.filename || 'Select document' }}</h3>
+      </div>
+    </div>
+
+    <p *ngIf="chunksLoading()" class="muted">Loading chunks...</p>
+    <div *ngIf="!selectedDocument()" class="empty">Open a document to inspect its chunks.</div>
+
+    <article *ngFor="let chunk of chunks()" class="chunk-row">
+      <strong>{{ chunk.title || ('Chunk ' + (chunk.order + 1)) }}</strong>
+      <small *ngIf="chunk.section_type">Section: {{ chunk.section_type }}</small>
+      <small *ngIf="chunk.embedding_status">Embedding: {{ chunk.embedding_status }} {{ chunk.embedding_model ? '(' + chunk.embedding_model + ')' : '' }}</small>
+      <small *ngIf="chunk.embedding_error" class="error">Embedding error: {{ chunk.embedding_error }}</small>
+      <p>{{ chunk.text }}</p>
+    </article>
+  </section>
+</section>
+
+<section class="panel rag-test">
+  <div class="panel-header">
+    <div>
+      <p class="eyebrow">RAG Test</p>
+      <h3>Retrieved chunks</h3>
+    </div>
+  </div>
+
+  <div class="test-form">
+    <input [(ngModel)]="question" placeholder="Ask a question to test retrieval">
+    <button (click)="testRetrieval()" [disabled]="testLoading() || !question.trim() || !selectedVersionId()">
+      {{ testLoading() ? 'Testing...' : 'Test retrieval' }}
+    </button>
+  </div>
+
+  <div *ngIf="retrievalChunks().length === 0" class="empty">No retrieval test result yet.</div>
+  <p *ngIf="retrievalMode()" class="mode-pill">
+    Retrieval mode: {{ retrievalMode() }}
+  </p>
+
+  <article *ngFor="let chunk of retrievalChunks()" class="chunk-row result">
+    <strong>{{ chunk.title || chunk.filename }} - score {{ chunk.score | number:'1.2-2' }}</strong>
+    <small>{{ chunk.filename }}{{ chunk.section_type ? ' - ' + chunk.section_type : '' }}</small>
+    <small *ngIf="chunk.embedding_status">Embedding: {{ chunk.embedding_status }} {{ chunk.embedding_model ? '(' + chunk.embedding_model + ')' : '' }}</small>
+    <p>{{ chunk.text }}</p>
+  </article>
+</section>

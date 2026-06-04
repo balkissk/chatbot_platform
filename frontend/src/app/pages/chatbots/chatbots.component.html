@@ -1,26 +1,224 @@
-<div style="margin-bottom: 20px;">
+<div class="page-header">
+  <div>
+    <p class="eyebrow">{{ project()?.name || ('Project ' + projectId) }}</p>
+    <h2>Chatbots</h2>
+  </div>
 
-  <input [(ngModel)]="newChatbotName" placeholder="Chatbot name">
-
-  <button (click)="createChatbot()">Add Chatbot</button>
-
-  <button (click)="goBack()" style="margin-left: 10px;">
-    ← Back to Projects
-  </button>
-
+  <div class="actions">
+    <button class="secondary" (click)="loadChatbots()" [disabled]="loading()">
+      {{ loading() ? 'Refreshing...' : 'Refresh' }}
+    </button>
+    <button class="secondary" (click)="goBack()">Back</button>
+  </div>
 </div>
 
-<h2>Chatbots - Project {{ projectId }}</h2>
+<section class="create-panel">
+  <div>
+    <h3>Create chatbot</h3>
+    <p>Create a simple chatbot inside this project. Builder flow and knowledge base can be configured later.</p>
+  </div>
 
-<hr>
+  <div class="create-form">
+    <input [(ngModel)]="newChatbotName" placeholder="Chatbot name">
+    <input [(ngModel)]="description" placeholder="Description">
+    <select [(ngModel)]="language">
+      <option value="fr">French</option>
+      <option value="en">English</option>
+      <option value="ar">Arabic</option>
+    </select>
+    <button (click)="createChatbot()" [disabled]="creating() || !newChatbotName.trim()">
+      {{ creating() ? 'Creating...' : 'Create' }}
+    </button>
+  </div>
+</section>
 
-<div *ngFor="let bot of chatbots">
+<p *ngIf="error()" class="error">{{ error() }}</p>
+<p *ngIf="success()" class="success">{{ success() }}</p>
+<p *ngIf="loading()" class="muted">Loading chatbots...</p>
 
-  <strong>Chatbot {{ bot.id }}</strong>
+<section *ngIf="!loading() && chatbots().length === 0" class="empty-state">
+  <h3>No chatbots in this project</h3>
+  <p>Create a chatbot to generate its first draft version and builder flow.</p>
+</section>
 
-  <button
-    [routerLink]="['/projects', projectId, 'chatbots', bot.id, 'versions']">
-    Open Versions →
-  </button>
+<section *ngIf="!loading() && chatbots().length > 0" class="grid">
+  <article *ngFor="let bot of chatbots()" class="bot-card">
+    <div *ngIf="editingId() !== bot.id">
+      <strong>{{ bot.name || ('Chatbot ' + bot.id) }}</strong>
+      <p>{{ bot.description || 'No description' }}</p>
+      <div class="meta">
+        <span [class.inactive]="!bot.is_active">{{ bot.is_active ? 'active' : 'inactive' }}</span>
+        <span>builder</span>
+        <span>{{ bot.channel || 'web_widget' }}</span>
+        <span>{{ bot.language || 'fr' }}</span>
+      </div>
+    </div>
 
-</div>
+    <div *ngIf="editingId() === bot.id" class="edit-form">
+      <label>
+        Name
+        <input [(ngModel)]="editForm.name">
+      </label>
+      <label>
+        Description
+        <input [(ngModel)]="editForm.description">
+      </label>
+      <label>
+        Channel
+        <select [(ngModel)]="editForm.channel">
+          <option value="web_widget">Web</option>
+          <option value="whatsapp">WhatsApp</option>
+          <option value="messenger">Messenger</option>
+          <option value="api">API Agent</option>
+        </select>
+      </label>
+      <label>
+        Language
+        <select [(ngModel)]="editForm.language">
+          <option value="fr">French</option>
+          <option value="en">English</option>
+          <option value="ar">Arabic</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="card-actions" *ngIf="editingId() !== bot.id">
+      <button class="secondary" (click)="viewDetails(bot)">
+        Details
+      </button>
+      <button
+        class="secondary"
+        [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'versions']">
+        Versions
+      </button>
+      <button
+        class="secondary"
+        [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'flow']">
+        Flow
+      </button>
+      <button
+        class="secondary"
+        [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'knowledge']">
+        Knowledge
+      </button>
+      <button class="secondary" (click)="startEdit(bot)">
+        Edit
+      </button>
+      <button
+        class="secondary"
+        (click)="setActive(bot, !bot.is_active)"
+        [disabled]="statusId() === bot.id">
+        {{ statusId() === bot.id ? 'Updating...' : bot.is_active ? 'Deactivate' : 'Activate' }}
+      </button>
+      <button
+        class="danger"
+        (click)="deleteChatbot(bot)"
+        [disabled]="deletingId() === bot.id">
+        {{ deletingId() === bot.id ? 'Deleting...' : 'Delete' }}
+      </button>
+    </div>
+
+    <div class="card-actions" *ngIf="editingId() === bot.id">
+      <button
+        (click)="saveChatbot(bot)"
+        [disabled]="savingId() === bot.id || !editForm.name.trim()">
+        {{ savingId() === bot.id ? 'Saving...' : 'Save' }}
+      </button>
+      <button class="secondary" (click)="cancelEdit()">Cancel</button>
+    </div>
+  </article>
+</section>
+
+<section *ngIf="detailsLoading() || selectedDetails()" class="details-overlay">
+  <div class="details-modal">
+    <button class="close-button" (click)="closeDetails()">x</button>
+    <p *ngIf="detailsLoading()" class="muted">Loading details...</p>
+
+    <ng-container *ngIf="selectedDetails() as details">
+      <p class="eyebrow">{{ details.project?.name }}</p>
+      <h2>{{ details.name }}</h2>
+      <p>{{ details.description || 'No description' }}</p>
+
+      <div class="detail-grid">
+        <span>Status <strong>{{ details.is_active ? 'active' : 'inactive' }}</strong></span>
+        <span>Language <strong>{{ details.language }}</strong></span>
+        <span>Builder <strong>flow + AI/RAG blocks</strong></span>
+        <span>Channel <strong>{{ details.channel }}</strong></span>
+      </div>
+
+      <section class="deploy-panel">
+        <div class="deploy-header">
+          <div>
+            <p class="eyebrow">Deploy</p>
+            <h3>Public API and channels</h3>
+          </div>
+          <button
+            class="secondary"
+            (click)="regenerateApiKey(details)"
+            [disabled]="apiKeyId() === details.id">
+            {{ apiKeyId() === details.id ? 'Regenerating...' : 'Regenerate API key' }}
+          </button>
+        </div>
+
+        <label>
+          Public link
+          <div class="copy-row">
+            <input [ngModel]="publicLink(details)" readonly>
+            <button class="secondary" (click)="copyText(publicLink(details))">Copy</button>
+          </div>
+        </label>
+
+        <label>
+          Web widget embed
+          <div class="copy-row">
+            <textarea [ngModel]="widgetCode(details)" readonly rows="3"></textarea>
+            <button class="secondary" (click)="copyText(widgetCode(details))">Copy</button>
+          </div>
+        </label>
+
+        <label>
+          Public API endpoint
+          <div class="copy-row">
+            <input [ngModel]="apiEndpoint()" readonly>
+            <button class="secondary" (click)="copyText(apiEndpoint())">Copy</button>
+          </div>
+        </label>
+
+        <label>
+          API key
+          <div class="copy-row">
+            <input [ngModel]="details.public_api_key" readonly>
+            <button class="secondary" (click)="copyText(details.public_api_key)">Copy</button>
+          </div>
+        </label>
+
+        <label>
+          cURL example
+          <div class="copy-row">
+            <textarea [ngModel]="apiCurl(details)" readonly rows="5"></textarea>
+            <button class="secondary" (click)="copyText(apiCurl(details))">Copy</button>
+          </div>
+        </label>
+      </section>
+
+      <h3>Versions</h3>
+      <table *ngIf="details.versions?.length">
+        <thead>
+          <tr>
+            <th>Version</th>
+            <th>Status</th>
+            <th>Created</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let version of details.versions">
+            <td>{{ version.version_number }}</td>
+            <td>{{ version.status }}</td>
+            <td>{{ version.created_at | date:'mediumDate' }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p *ngIf="!details.versions?.length" class="muted">No versions yet.</p>
+    </ng-container>
+  </div>
+</section>
