@@ -19,7 +19,7 @@ from routes.admin_analytics_routes import router as admin_analytics_router
 
 openapi_tags = [
     {"name": "System", "description": "Health checks and API status."},
-    {"name": "Auth", "description": "Authentication, profile, email verification, and user administration."},
+    {"name": "Auth", "description": "Authentication, profile, password management, and user administration."},
     {"name": "Projects", "description": "Project creation, listing, update, and deletion."},
     {"name": "Chatbots", "description": "Chatbot configuration, public API keys, status, and project chatbot lists."},
     {"name": "Versions", "description": "Chatbot version lifecycle: create, duplicate, publish, archive, and delete."},
