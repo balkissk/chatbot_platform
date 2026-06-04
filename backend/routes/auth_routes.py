@@ -29,7 +29,7 @@ from services.auth import (
     verify_password,
 )
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
 def serialize_user(user: User) -> UserResponse:
