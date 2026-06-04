@@ -40,18 +40,23 @@ jobs:
           source antenv/bin/activate
           python -m py_compile main.py database/db.py alembic/env.py
 
+      - name: Prepare backend deployment package
+        run: |
+          mkdir backend-package
+          rsync -av \
+            --exclude 'antenv/' \
+            --exclude '.env' \
+            --exclude '.idea/' \
+            --exclude 'venv/' \
+            --exclude '__pycache__/' \
+            --exclude '*.pyc' \
+            backend/ backend-package/
+
       - name: Upload backend artifact
         uses: actions/upload-artifact@v4
         with:
           name: backend-app
-          path: |
-            backend
-            !backend/antenv/
-            !backend/.env
-            !backend/.idea/
-            !backend/venv/
-            !backend/**/__pycache__/
-            !backend/**/*.pyc
+          path: backend-package
 
   deploy:
     runs-on: ubuntu-latest
@@ -79,5 +84,5 @@ jobs:
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
           slot-name: Production
-          package: backend-app/backend
+          package: backend-app
           startup-command: alembic upgrade head && gunicorn -k uvicorn.workers.UvicornWorker -w 2 -b 0.0.0.0:${PORT:-8000} main:app
