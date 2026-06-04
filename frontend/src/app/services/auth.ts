@@ -63,18 +63,6 @@ export class AuthService {
     });
   }
 
-  verifyEmail(token: string) {
-    return this.http.get<{ message: string }>(`${this.baseUrl}/auth/verify-email`, {
-      params: { token }
-    });
-  }
-
-  resendVerification(email: string) {
-    return this.http.post<{ message: string }>(`${this.baseUrl}/auth/resend-verification`, {
-      email
-    });
-  }
-
   saveSession(response: AuthResponse) {
     if (typeof localStorage === 'undefined') return;
     localStorage.setItem(this.tokenKey, response.access_token);

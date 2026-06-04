@@ -6,9 +6,7 @@ from sqlalchemy.orm import Session
 
 from models.user import User
 from models.user_schema import (
-    EmailVerificationResponse,
     RegistrationResponse,
-    ResendVerificationRequest,
     TokenResponse,
     UserCreate,
     UserLogin,
@@ -19,13 +17,11 @@ from models.user_schema import (
 )
 from services.auth import (
     create_access_token,
-    create_email_verification_token,
     get_current_user,
     get_db,
     hash_password,
     normalize_role,
     require_roles,
-    send_verification_email,
     verify_password,
 )
 
@@ -61,17 +57,16 @@ def register(payload: UserCreate, db: Session = Depends(get_db)):
         email=payload.email,
         password_hash=hash_password(payload.password),
         role=role,
-        status="active"
+        status="active",
+        email_verified_at=datetime.utcnow()
     )
 
     db.add(user)
-    create_email_verification_token(user)
     db.commit()
     db.refresh(user)
-    send_verification_email(user, user.email_verification_token)
 
     return RegistrationResponse(
-        message="Account created. Please verify your email before signing in.",
+        message="Account created. You can now sign in.",
         user=serialize_user(user)
     )
 
@@ -86,56 +81,9 @@ def login(payload: UserLogin, db: Session = Depends(get_db)):
     if user.status != "active":
         raise HTTPException(status_code=403, detail="Account is not active")
 
-    if not user.email_verified_at:
-        raise HTTPException(status_code=403, detail="Please verify your email before signing in")
-
     return TokenResponse(
         access_token=create_access_token(user),
         user=serialize_user(user)
-    )
-
-
-@router.get("/verify-email", response_model=EmailVerificationResponse)
-def verify_email(token: str, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email_verification_token == token).first()
-    if not user:
-        raise HTTPException(status_code=400, detail="Invalid verification token")
-
-    if (
-        user.email_verification_expires_at
-        and user.email_verification_expires_at < datetime.utcnow()
-    ):
-        raise HTTPException(status_code=400, detail="Verification token expired")
-
-    user.email_verified_at = datetime.utcnow()
-    user.email_verification_token = None
-    user.email_verification_expires_at = None
-    db.commit()
-
-    return EmailVerificationResponse(message="Email verified. You can now sign in.")
-
-
-@router.post("/resend-verification", response_model=EmailVerificationResponse)
-def resend_verification(
-    payload: ResendVerificationRequest,
-    db: Session = Depends(get_db)
-):
-    user = db.query(User).filter(User.email == payload.email).first()
-    if not user:
-        return EmailVerificationResponse(
-            message="If the account exists, a verification email has been sent."
-        )
-
-    if user.email_verified_at:
-        return EmailVerificationResponse(message="Email is already verified.")
-
-    token = create_email_verification_token(user)
-    db.commit()
-    db.refresh(user)
-    send_verification_email(user, token)
-
-    return EmailVerificationResponse(
-        message="If the account exists, a verification email has been sent."
     )
 
 

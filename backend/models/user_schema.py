@@ -39,14 +39,6 @@ class RegistrationResponse(BaseModel):
     user: UserResponse
 
 
-class EmailVerificationResponse(BaseModel):
-    message: str
-
-
-class ResendVerificationRequest(BaseModel):
-    email: str
-
-
 class UserStatusUpdate(BaseModel):
     status: str
 

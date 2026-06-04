@@ -1,11 +1,7 @@
 import hashlib
 import hmac
 import os
-import secrets
-import smtplib
 import time
-from datetime import datetime, timedelta
-from email.message import EmailMessage
 from typing import Any
 
 import jwt
@@ -20,8 +16,6 @@ from models.user import User
 JWT_SECRET = os.getenv("JWT_SECRET", "0123456789abcdef0123456789abcdef")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 JWT_EXPIRES_SECONDS = 60 * 60 * 24
-EMAIL_VERIFICATION_EXPIRES_HOURS = 24
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:4200")
 ALLOWED_ROLES = {"admin", "manager", "end_user"}
 security = HTTPBearer()
 
@@ -71,45 +65,6 @@ def create_access_token(user: User) -> str:
     }
 
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-
-
-def create_email_verification_token(user: User) -> str:
-    token = secrets.token_urlsafe(32)
-    user.email_verification_token = token
-    user.email_verification_expires_at = (
-        datetime.utcnow() + timedelta(hours=EMAIL_VERIFICATION_EXPIRES_HOURS)
-    )
-    return token
-
-
-def send_verification_email(user: User, token: str) -> None:
-    verification_url = f"{FRONTEND_URL}/verify-email?token={token}"
-    smtp_host = os.getenv("SMTP_HOST")
-    smtp_port = int(os.getenv("SMTP_PORT", "587"))
-    smtp_username = os.getenv("SMTP_USERNAME")
-    smtp_password = os.getenv("SMTP_PASSWORD")
-    smtp_from = os.getenv("SMTP_FROM", smtp_username or "no-reply@chatbot-platform.local")
-
-    if not smtp_host:
-        print(f"Email verification link for {user.email}: {verification_url}")
-        return
-
-    message = EmailMessage()
-    message["Subject"] = "Verify your email"
-    message["From"] = smtp_from
-    message["To"] = user.email
-    message.set_content(
-        "Hello,\n\n"
-        "Please verify your email address by opening this link:\n"
-        f"{verification_url}\n\n"
-        "This link expires in 24 hours."
-    )
-
-    with smtplib.SMTP(smtp_host, smtp_port) as smtp:
-        smtp.starttls()
-        if smtp_username and smtp_password:
-            smtp.login(smtp_username, smtp_password)
-        smtp.send_message(message)
 
 
 def decode_token(token: str) -> dict[str, Any]:
