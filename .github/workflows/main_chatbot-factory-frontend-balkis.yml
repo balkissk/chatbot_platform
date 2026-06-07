@@ -9,6 +9,12 @@ on:
       - main
   workflow_dispatch:
 
+env:
+  NODE_VERSION: '22.x'
+  FRONTEND_PATH: frontend
+  ANGULAR_DIST_PATH: dist/frontend
+  AZURE_WEBAPP_NAME: chatbot-factory-frontend-balkis
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -16,24 +22,37 @@ jobs:
       contents: read #This is required for actions/checkout
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Set up Node.js version
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '22.x'
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ${{ env.FRONTEND_PATH }}/package-lock.json
 
-      - name: npm install, build, and test
+      - name: Install frontend dependencies
+        working-directory: ${{ env.FRONTEND_PATH }}
+        run: npm ci
+
+      - name: Build Angular frontend
+        working-directory: ${{ env.FRONTEND_PATH }}
+        run: npm run build --if-present
+
+      - name: Verify Angular SSR build output
+        working-directory: ${{ env.FRONTEND_PATH }}
         run: |
-          npm install
-          npm run build --if-present
-          npm run test --if-present
+          test -f package.json
+          test -d ${{ env.ANGULAR_DIST_PATH }}/browser
+          test -f ${{ env.ANGULAR_DIST_PATH }}/server/server.mjs
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
-          name: node-app
-          path: .
+          name: frontend-app
+          path: ${{ env.FRONTEND_PATH }}
+          include-hidden-files: false
 
   deploy:
     runs-on: ubuntu-latest
@@ -46,7 +65,8 @@ jobs:
       - name: Download artifact from build job
         uses: actions/download-artifact@v4
         with:
-          name: node-app
+          name: frontend-app
+          path: frontend-app
       
       - name: Login to Azure
         uses: azure/login@v2
@@ -59,7 +79,8 @@ jobs:
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
         with:
-          app-name: 'chatbot-factory-frontend-balkis'
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
           slot-name: 'Production'
-          package: .
+          package: frontend-app
+          startup-command: npm run start:azure
           
