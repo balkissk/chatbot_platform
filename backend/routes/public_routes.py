@@ -11,7 +11,7 @@ from models.conversation import ConversationMessage, ConversationSession
 from models.llm_config import LLMConfig
 from models.version import VersionChatbot
 from services.flow_runtime import execute_flow
-from routes.chat_routes import add_message, build_rag_response, prepare_rag_generation, session_history, stream_event, stream_ollama_answer
+from routes.chat_routes import add_message, build_rag_response, prepare_rag_generation, session_history, stream_ai_answer, stream_event
 
 router = APIRouter(prefix="/public")
 PUBLIC_API_BASE_URL = os.getenv("PUBLIC_API_BASE_URL") or os.getenv("API_BASE_URL") or ""
@@ -290,7 +290,7 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
             return
 
         try:
-            for token in stream_ollama_answer(generation):
+            for token in stream_ai_answer(generation):
                 yield stream_event("token", {"text": token})
         except HTTPException as exc:
             yield stream_event("error", {"detail": exc.detail})

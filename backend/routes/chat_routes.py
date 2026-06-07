@@ -1,7 +1,5 @@
 import json
-import os
 
-import requests
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -12,13 +10,13 @@ from models.chatbot import Chatbot
 from models.conversation import ConversationMessage, ConversationSession
 from models.llm_config import LLMConfig
 from models.version import VersionChatbot
+from services.ai_provider import AIProviderError, configured_chat_model, generate_chat_completion, stream_chat_completion
 from services.auth import get_current_user
 from services.flow_runtime import execute_flow
 from services.rag import retrieve_relevant_chunks_with_mode
 from services.rag_settings import normalize_rag_settings
 
 router = APIRouter()
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
 
 
 def get_db():
@@ -243,8 +241,8 @@ User question:
             "temperature": config.temperature,
             "num_predict": response_profile["num_predict"]
         },
-        "model": config.model or "llama3",
-        "model_used": config.model,
+        "model": configured_chat_model(config.model),
+        "model_used": configured_chat_model(config.model),
         "retrieval_mode": retrieval["mode"],
         "version_used": version.id,
         "variables": vars_value,
@@ -273,30 +271,17 @@ def build_rag_response(
     )
 
     try:
-        response = requests.post(
-            f"{OLLAMA_BASE_URL}/api/generate",
-            json={
-                "model": generation["model"],
-                "prompt": generation["prompt"],
-                "stream": False,
-                "options": generation["options"],
-                "keep_alive": "10m"
-            },
-            timeout=120
+        answer = generate_chat_completion(
+            prompt=generation["prompt"],
+            model=generation["model"],
+            temperature=generation["options"]["temperature"],
+            max_tokens=generation["options"]["num_predict"]
         )
-        response.raise_for_status()
-    except requests.RequestException as exc:
+    except AIProviderError as exc:
         raise HTTPException(
             status_code=502,
             detail=f"LLM service error: {exc}"
         )
-
-    result = response.json()
-
-    if "error" in result:
-        raise HTTPException(status_code=400, detail=result["error"])
-
-    answer = result.get("response", "")
 
     return {
         "response": answer,
@@ -316,35 +301,18 @@ def stream_event(event_type: str, payload: dict) -> str:
     return json.dumps({"type": event_type, **payload}, ensure_ascii=False) + "\n"
 
 
-def stream_ollama_answer(generation: dict):
+def stream_ai_answer(generation: dict):
     answer_parts = []
     try:
-        with requests.post(
-            f"{OLLAMA_BASE_URL}/api/generate",
-            json={
-                "model": generation["model"],
-                "prompt": generation["prompt"],
-                "stream": True,
-                "options": generation["options"],
-                "keep_alive": "10m"
-            },
-            timeout=120,
-            stream=True
-        ) as response:
-            response.raise_for_status()
-            for line in response.iter_lines(decode_unicode=True):
-                if not line:
-                    continue
-                data = json.loads(line)
-                if "error" in data:
-                    raise requests.RequestException(data["error"])
-                token = data.get("response", "")
-                if token:
-                    answer_parts.append(token)
-                    yield token
-                if data.get("done"):
-                    break
-    except (requests.RequestException, json.JSONDecodeError) as exc:
+        for token in stream_chat_completion(
+            prompt=generation["prompt"],
+            model=generation["model"],
+            temperature=generation["options"]["temperature"],
+            max_tokens=generation["options"]["num_predict"]
+        ):
+            answer_parts.append(token)
+            yield token
+    except AIProviderError as exc:
         raise HTTPException(status_code=502, detail=f"LLM service error: {exc}")
 
     generation["answer"] = "".join(answer_parts)
@@ -525,7 +493,7 @@ def chat_stream(
             return
 
         try:
-            for token in stream_ollama_answer(generation):
+            for token in stream_ai_answer(generation):
                 yield stream_event("token", {"text": token})
         except HTTPException as exc:
             yield stream_event("error", {"detail": exc.detail})
