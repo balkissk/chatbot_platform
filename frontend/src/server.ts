@@ -10,6 +10,8 @@ import { join } from 'node:path';
 const browserDistFolder = join(import.meta.dirname, '../browser');
 
 const app = express();
+app.set('trust proxy', true);
+
 const angularApp = new AngularNodeAppEngine();
 
 function jsString(value: string) {
@@ -46,8 +48,19 @@ app.get('/config.js', (_req, res) => {
 app.use(
   express.static(browserDistFolder, {
     maxAge: '1y',
+    immutable: true,
     index: false,
     redirect: false,
+    setHeaders: (res, path) => {
+      if (path.endsWith('index.csr.html') || path.endsWith('config.js')) {
+        res.setHeader('Cache-Control', 'no-store');
+        return;
+      }
+
+      if (/\.(?:js|css|woff2|webp|png|jpg|jpeg|svg|ico)$/i.test(path)) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      }
+    },
   }),
 );
 
@@ -68,13 +81,15 @@ app.use((req, res, next) => {
  * The server listens on the port defined by the `PORT` environment variable, or defaults to 4000.
  */
 if (isMainModule(import.meta.url) || process.env['pm_id']) {
-  const port = process.env['PORT'] || 4000;
-  app.listen(port, (error) => {
+  const port = Number(process.env['PORT'] || 4000);
+  const host = process.env['HOST'] || '0.0.0.0';
+
+  app.listen(port, host, (error) => {
     if (error) {
       throw error;
     }
 
-    console.log(`Node Express server listening on http://localhost:${port}`);
+    console.log(`Node Express server listening on http://${host}:${port}`);
   });
 }
 

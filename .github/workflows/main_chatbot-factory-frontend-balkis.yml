@@ -82,5 +82,5 @@ jobs:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
           slot-name: 'Production'
           package: frontend-app
-          startup-command: npm run start:azure
+          startup-command: node dist/frontend/server/server.mjs
           
