@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnDestroy, signal } from '@angular/core';
+import { Component, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterModule } from '@angular/router';
+import { RouterModule } from '@angular/router';
 import { AuthService } from '../../services/auth';
 
 @Component({
@@ -11,7 +11,7 @@ import { AuthService } from '../../services/auth';
   templateUrl: './register.component.html',
   styleUrls: ['../login/login.component.css']
 })
-export class RegisterComponent implements OnDestroy {
+export class RegisterComponent {
   name = '';
   email = '';
   password = '';
@@ -20,21 +20,11 @@ export class RegisterComponent implements OnDestroy {
   message = signal('');
   loading = signal(false);
   registrationComplete = signal(false);
-  private redirectTimer?: ReturnType<typeof setTimeout>;
 
-  constructor(
-    private auth: AuthService,
-    private router: Router
-  ) {}
-
-  ngOnDestroy() {
-    if (this.redirectTimer) {
-      clearTimeout(this.redirectTimer);
-    }
-  }
+  constructor(private auth: AuthService) {}
 
   register() {
-    if (this.loading() || this.registrationComplete()) {
+    if (this.loading()) {
       return;
     }
 
@@ -45,13 +35,10 @@ export class RegisterComponent implements OnDestroy {
 
     this.auth.register(this.name, this.email, this.password, this.role).subscribe({
       next: () => {
-        this.message.set('Account created successfully. Redirecting to login...');
+        this.message.set('Account created successfully.');
         this.password = '';
         this.registrationComplete.set(true);
         this.loading.set(false);
-        this.redirectTimer = setTimeout(() => {
-          this.router.navigate(['/login']);
-        }, 2000);
       },
       error: err => {
         this.error.set(err.error?.detail || 'Registration failed');

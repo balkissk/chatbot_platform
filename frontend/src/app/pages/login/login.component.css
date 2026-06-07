@@ -110,7 +110,7 @@ a {
   border-radius: 8px;
   display: grid;
   gap: 12px;
-  padding: 14px;
+  padding: 14px 16px;
 }
 
 .login-link-button {
@@ -123,6 +123,7 @@ a {
   font-weight: 800;
   justify-content: center;
   justify-self: start;
+  min-height: 40px;
   padding: 10px 14px;
   text-decoration: none;
   transition: box-shadow .2s ease, transform .2s ease;

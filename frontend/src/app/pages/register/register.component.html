@@ -37,7 +37,7 @@
         <a *ngIf="registrationComplete()" class="login-link-button" routerLink="/login">Go to login</a>
       </div>
 
-      <button type="submit" [disabled]="loading() || registrationComplete() || !name || !email || !password">
+      <button type="submit" [disabled]="loading() || !name || !email || !password">
         {{ loading() ? 'Creating account...' : 'Create account' }}
       </button>
 
