@@ -17,6 +17,13 @@ from routes.public_routes import router as public_router
 from routes.admin_analytics_routes import router as admin_analytics_router
 
 
+DEFAULT_ALLOWED_ORIGINS = [
+    "http://localhost:4200",
+    "http://127.0.0.1:4200",
+    "https://chatbot-factory-frontend-balkis-a4dchke0bucchbgk.francecentral-01.azurewebsites.net",
+]
+
+
 openapi_tags = [
     {"name": "System", "description": "Health checks and API status."},
     {"name": "Auth", "description": "Authentication, profile, password management, and user administration."},
@@ -33,8 +40,14 @@ openapi_tags = [
 
 
 def allowed_origins() -> list[str]:
-    value = os.getenv("ALLOWED_ORIGINS") or os.getenv("FRONTEND_URL") or "http://localhost:4200"
-    return [origin.strip().rstrip("/") for origin in value.split(",") if origin.strip()]
+    configured_origins = []
+
+    for env_name in ("ALLOWED_ORIGINS", "FRONTEND_URL"):
+        value = os.getenv(env_name, "")
+        configured_origins.extend(origin.strip().rstrip("/") for origin in value.split(",") if origin.strip())
+
+    origins = configured_origins or DEFAULT_ALLOWED_ORIGINS
+    return list(dict.fromkeys(origins))
 
 
 app = FastAPI(
