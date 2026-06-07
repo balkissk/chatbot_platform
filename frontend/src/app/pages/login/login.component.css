@@ -104,6 +104,35 @@ a {
   margin: 0;
 }
 
+.success-block {
+  background: #edfafa;
+  border: 1px solid rgba(54, 173, 163, .28);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.login-link-button {
+  align-items: center;
+  background: linear-gradient(135deg, #4AC2AD, #2F80ED);
+  border-radius: 8px;
+  color: #fff;
+  display: inline-flex;
+  font-size: 14px;
+  font-weight: 800;
+  justify-content: center;
+  justify-self: start;
+  padding: 10px 14px;
+  text-decoration: none;
+  transition: box-shadow .2s ease, transform .2s ease;
+}
+
+.login-link-button:hover {
+  box-shadow: 0 12px 26px rgba(74, 194, 173, .28);
+  transform: translateY(-1px);
+}
+
 @media (max-width: 760px) {
   .auth-panel {
     grid-template-columns: 1fr;

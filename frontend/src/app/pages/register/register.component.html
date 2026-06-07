@@ -32,10 +32,13 @@
       </label>
 
       <p *ngIf="error()" class="error">{{ error() }}</p>
-      <p *ngIf="message()" class="success">{{ message() }}</p>
+      <div *ngIf="message()" class="success-block">
+        <p class="success">{{ message() }}</p>
+        <a *ngIf="registrationComplete()" class="login-link-button" routerLink="/login">Go to login</a>
+      </div>
 
-      <button type="submit" [disabled]="loading() || !name || !email || !password">
-        {{ loading() ? 'Creating...' : 'Create account' }}
+      <button type="submit" [disabled]="loading() || registrationComplete() || !name || !email || !password">
+        {{ loading() ? 'Creating account...' : 'Create account' }}
       </button>
 
       <a routerLink="/login">Already have an account</a>
