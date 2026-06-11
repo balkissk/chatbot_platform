@@ -1,87 +1,153 @@
-<div class="page-header">
-  <div>
-    <p class="eyebrow">Builder</p>
-    <h2>Projects</h2>
-  </div>
+<div class="projects-page">
+  <div class="page-header">
+    <div>
+      <p class="eyebrow">Workspace Dashboard</p>
+      <h2>Projects</h2>
+      <p class="muted">
+        {{ totalProjects() }} total projects • {{ totalChatbots() }} total chatbots • {{ totalConversations() }} total conversations
+      </p>
+    </div>
 
-  <button class="secondary" (click)="loadProjects()" [disabled]="loading()">
-    {{ loading() ? 'Refreshing...' : 'Refresh' }}
-  </button>
-</div>
-
-<section class="toolbar">
-  <label>
-    Search projects
-    <input
-      [(ngModel)]="search"
-      (ngModelChange)="updateSearch($event)"
-      placeholder="Name or description"
-    >
-  </label>
-  <button class="secondary" (click)="resetSearch()">Reset</button>
-</section>
-
-<section class="create-panel">
-  <div>
-    <h3>Create project</h3>
-    <p>Use projects to group chatbots by client, campaign, or internal use case.</p>
-  </div>
-
-  <div class="create-form">
-    <input [(ngModel)]="newProjectName" placeholder="Project name">
-    <input [(ngModel)]="newProjectDescription" placeholder="Description">
-    <button (click)="createProject()" [disabled]="creating() || !newProjectName.trim()">
-      {{ creating() ? 'Creating...' : 'Create' }}
+    <button class="secondary" (click)="loadProjects(true)" [disabled]="loading()">
+      {{ loading() ? 'Refreshing...' : 'Refresh' }}
     </button>
   </div>
-</section>
 
-<p *ngIf="error()" class="error">{{ error() }}</p>
-<p *ngIf="loading()" class="muted">Loading projects...</p>
-
-<section *ngIf="!loading() && projects().length === 0" class="empty-state">
-  <h3>No projects yet</h3>
-  <p>Create your first project, then add chatbots and RAG knowledge.</p>
-</section>
-
-<section *ngIf="!loading() && projects().length > 0" class="grid">
-  <article *ngFor="let p of projects()" class="project-card">
-    <div *ngIf="editingId !== p.id">
-      <strong>{{ p.name }}</strong>
-      <p>{{ p.description || 'No description' }}</p>
-      <div class="stats">
-        <span>{{ p.chatbot_count || 0 }} chatbots</span>
-        <span>{{ p.version_count || 0 }} versions</span>
-        <span>{{ p.published_version_count || 0 }} published</span>
+  <section class="kpi-grid">
+    <article class="kpi-card featured">
+      <span class="kpi-icon">A</span>
+      <div>
+        <small>Active Projects</small>
+        <strong>{{ activeProjects() }}</strong>
+        <em *ngIf="trend('active_project_trend','project_trend') as value" [class.down]="value < 0">{{ value > 0 ? '+' : '' }}{{ value }}%</em>
       </div>
-      <small>Created {{ p.created_at | date:'mediumDate' }}</small>
+    </article>
+    <article class="kpi-card">
+      <span class="kpi-icon">D</span>
+      <div>
+        <small>Draft Projects</small>
+        <strong>{{ draftProjects() }}</strong>
+        <em *ngIf="trend('draft_project_trend') as value" [class.down]="value < 0">{{ value > 0 ? '+' : '' }}{{ value }}%</em>
+      </div>
+    </article>
+    <article class="kpi-card">
+      <span class="kpi-icon">✓</span>
+      <div>
+        <small>Published Chatbots</small>
+        <strong>{{ publishedChatbots() }}</strong>
+        <em *ngIf="trend('published_chatbot_trend','published_version_trend') as value" [class.down]="value < 0">{{ value > 0 ? '+' : '' }}{{ value }}%</em>
+      </div>
+    </article>
+    <article class="kpi-card">
+      <span class="kpi-icon">C</span>
+      <div>
+        <small>Monthly Conversations</small>
+        <strong>{{ totalConversations() }}</strong>
+        <em *ngIf="trend('monthly_conversation_trend','conversation_trend') as value" [class.down]="value < 0">{{ value > 0 ? '+' : '' }}{{ value }}%</em>
+      </div>
+    </article>
+  </section>
+
+  <section class="create-panel">
+    <div class="create-copy">
+      <span class="create-icon">+</span>
+      <div>
+        <h3>Create project</h3>
+        <p>Group chatbots by client, department, campaign, or internal workflow.</p>
+      </div>
     </div>
 
-    <div *ngIf="editingId === p.id" class="edit-form">
-      <input [(ngModel)]="editName" placeholder="Project name">
-      <input [(ngModel)]="editDescription" placeholder="Description">
+    <div class="create-form">
+      <input [(ngModel)]="newProjectName" placeholder="Project name">
+      <input [(ngModel)]="newProjectDescription" placeholder="Short description">
+      <button class="create-button" (click)="createProject()" [disabled]="creating() || !newProjectName.trim()">
+        {{ creating() ? 'Creating...' : 'Create Project' }}
+      </button>
     </div>
+  </section>
 
-    <div class="card-actions" *ngIf="editingId !== p.id">
-      <button [routerLink]="['/dashboard/projects', p.id]">
-        Open
-      </button>
-      <button class="secondary" (click)="startEdit(p)">Edit</button>
-      <button
-        class="danger"
-        (click)="deleteProject(p)"
-        [disabled]="deletingId() === p.id">
-        {{ deletingId() === p.id ? 'Deleting...' : 'Delete' }}
-      </button>
+  <section class="toolbar">
+    <div class="search-box">
+      <span>⌕</span>
+      <input
+        [(ngModel)]="search"
+        (ngModelChange)="updateSearch($event)"
+        placeholder="Search projects by name or description"
+      >
+      <button *ngIf="search" class="clear-button" type="button" (click)="resetSearch()">Clear</button>
     </div>
+    <strong>{{ resultLabel() }}</strong>
+  </section>
 
-    <div class="card-actions" *ngIf="editingId === p.id">
-      <button
-        (click)="saveProject(p)"
-        [disabled]="savingId() === p.id || !editName.trim()">
-        {{ savingId() === p.id ? 'Saving...' : 'Save' }}
-      </button>
-      <button class="secondary" (click)="cancelEdit()">Cancel</button>
-    </div>
-  </article>
-</section>
+  <p *ngIf="error()" class="error">{{ error() }}</p>
+
+  <section *ngIf="loading() && projects().length === 0" class="grid">
+    <article class="project-card skeleton-card" *ngFor="let item of [1,2,3,4,5,6]"></article>
+  </section>
+
+  <section *ngIf="!loading() && projects().length === 0" class="empty-state">
+    <div class="empty-icon">P</div>
+    <h3>Create your first project</h3>
+    <p>Start with a workspace, then add chatbots, flows, knowledge, and analytics.</p>
+    <button class="create-button" type="button" (click)="scrollToCreate()">Create Project</button>
+  </section>
+
+  <section *ngIf="projects().length > 0" class="grid" [class.refreshing]="loading()">
+    <article *ngFor="let p of projects()" class="project-card">
+      <ng-container *ngIf="editingId !== p.id; else editProject">
+        <div class="card-top">
+          <div>
+            <span class="status-badge" [class.published]="projectStatus(p) === 'Published'" [class.draft]="projectStatus(p) === 'Draft'">
+              {{ projectStatus(p) }}
+            </span>
+            <h3>{{ p.name }}</h3>
+          </div>
+          <small>{{ p.created_at | date:'mediumDate' }}</small>
+        </div>
+
+        <p>{{ p.description || 'No description' }}</p>
+
+        <div class="stats">
+          <span><strong>{{ p.chatbot_count || 0 }}</strong> Chatbots</span>
+          <span><strong>{{ p.version_count || 0 }}</strong> Versions</span>
+          <span><strong>{{ p.published_version_count || 0 }}</strong> Published</span>
+        </div>
+
+        <div class="card-actions">
+          <button [routerLink]="['/dashboard/projects', p.id]">Open</button>
+          <button class="secondary" [routerLink]="['/dashboard/projects', p.id]">Analytics</button>
+          <button class="secondary" (click)="startEdit(p)">Settings</button>
+          <button
+            class="danger"
+            (click)="deleteProject(p)"
+            [disabled]="deletingId() === p.id">
+            {{ deletingId() === p.id ? 'Deleting...' : 'Delete' }}
+          </button>
+        </div>
+      </ng-container>
+
+      <ng-template #editProject>
+        <div class="edit-form">
+          <input [(ngModel)]="editName" placeholder="Project name">
+          <input [(ngModel)]="editDescription" placeholder="Description">
+        </div>
+        <div class="card-actions">
+          <button
+            (click)="saveProject(p)"
+            [disabled]="savingId() === p.id || !editName.trim()">
+            {{ savingId() === p.id ? 'Saving...' : 'Save' }}
+          </button>
+          <button class="secondary" (click)="cancelEdit()">Cancel</button>
+        </div>
+      </ng-template>
+    </article>
+  </section>
+
+  <button
+    *ngIf="projects().length > 0 && hasMore()"
+    class="secondary load-more"
+    (click)="loadMore()"
+    [disabled]="loadingMore()">
+    {{ loadingMore() ? 'Loading more...' : 'Load more projects' }}
+  </button>
+</div>

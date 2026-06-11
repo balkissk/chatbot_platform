@@ -5,8 +5,8 @@
   </div>
 
   <div class="actions">
-    <button class="secondary" (click)="loadChatbots()" [disabled]="loading()">
-      {{ loading() ? 'Refreshing...' : 'Refresh' }}
+    <button class="secondary" (click)="loadChatbots(true, true)" [disabled]="refreshing()">
+      {{ refreshing() ? 'Refreshing...' : 'Refresh' }}
     </button>
     <button class="secondary" (click)="goBack()">Back</button>
   </div>
@@ -34,14 +34,23 @@
 
 <p *ngIf="error()" class="error">{{ error() }}</p>
 <p *ngIf="success()" class="success">{{ success() }}</p>
-<p *ngIf="loading()" class="muted">Loading chatbots...</p>
 
 <section *ngIf="!loading() && chatbots().length === 0" class="empty-state">
   <h3>No chatbots in this project</h3>
   <p>Create a chatbot to generate its first draft version and builder flow.</p>
 </section>
 
-<section *ngIf="!loading() && chatbots().length > 0" class="grid">
+<section *ngIf="loading() && chatbots().length === 0" class="grid skeleton-grid" aria-label="Loading chatbots">
+  <article class="bot-card skeleton-card" *ngFor="let item of [1, 2, 3, 4]">
+    <span></span>
+    <span></span>
+    <span></span>
+  </article>
+</section>
+
+<p *ngIf="refreshing() && chatbots().length > 0" class="muted inline-status">Refreshing chatbots...</p>
+
+<section *ngIf="chatbots().length > 0" class="grid" [class.refreshing]="refreshing()">
   <article *ngFor="let bot of chatbots()" class="bot-card">
     <div *ngIf="editingId() !== bot.id">
       <strong>{{ bot.name || ('Chatbot ' + bot.id) }}</strong>
@@ -51,6 +60,8 @@
         <span>builder</span>
         <span>{{ bot.channel || 'web_widget' }}</span>
         <span>{{ bot.language || 'fr' }}</span>
+        <span>{{ bot.version_count || 0 }} versions</span>
+        <span>{{ bot.published_version_count || 0 }} published</span>
       </div>
     </div>
 
@@ -90,6 +101,16 @@
         class="secondary"
         [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'versions']">
         Versions
+      </button>
+      <button
+        class="secondary"
+        [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'analytics']">
+        Analytics
+      </button>
+      <button
+        class="secondary"
+        [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'conversations']">
+        Conversations
       </button>
       <button
         class="secondary"

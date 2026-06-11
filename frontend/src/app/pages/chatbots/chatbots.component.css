@@ -94,7 +94,14 @@ button.danger {
 .grid {
   display: grid;
   gap: 14px;
-  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  max-width: 100%;
+  min-width: 0;
+}
+
+.grid.refreshing {
+  opacity: .78;
+  transition: opacity .18s ease;
 }
 
 .bot-card,
@@ -108,6 +115,7 @@ button.danger {
 .bot-card {
   display: grid;
   gap: 22px;
+  min-width: 0;
 }
 
 .bot-card strong {
@@ -137,6 +145,45 @@ button.danger {
   padding: 4px 8px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.inline-status {
+  margin: 0 0 12px;
+}
+
+.skeleton-card {
+  min-height: 170px;
+  overflow: hidden;
+  position: relative;
+}
+
+.skeleton-card span {
+  background: linear-gradient(90deg, #edf5f6 0%, #f8fbfc 50%, #edf5f6 100%);
+  background-size: 200% 100%;
+  border-radius: 999px;
+  display: block;
+  height: 14px;
+  width: 72%;
+  animation: shimmer 1.25s linear infinite;
+}
+
+.skeleton-card span:first-child {
+  height: 20px;
+  width: 44%;
+}
+
+.skeleton-card span:last-child {
+  width: 88%;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+
+  to {
+    background-position: -200% 0;
+  }
 }
 
 .meta span:first-child {

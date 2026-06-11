@@ -51,6 +51,18 @@ export const routes: Routes = [
             .then(m => m.VersionsComponent)
       },
       {
+        path: 'projects/:projectId/chatbots/:chatbotId/analytics',
+        loadComponent: () =>
+          import('./pages/chatbot-analytics/chatbot-analytics.component')
+            .then(m => m.ChatbotAnalyticsComponent)
+      },
+      {
+        path: 'projects/:projectId/chatbots/:chatbotId/conversations',
+        loadComponent: () =>
+          import('./pages/chatbot-conversations/chatbot-conversations.component')
+            .then(m => m.ChatbotConversationsComponent)
+      },
+      {
         path: 'projects/:projectId/chatbots/:chatbotId/flow',
         loadComponent: () =>
           import('./pages/flow-builder/flow-builder.component')

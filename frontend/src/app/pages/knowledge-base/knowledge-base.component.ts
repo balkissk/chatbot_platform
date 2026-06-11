@@ -164,11 +164,16 @@ export class KnowledgeBaseComponent implements OnInit {
     this.uploadLoading.set(true);
     const reader = new FileReader();
 
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+
     reader.onload = () => {
+      const result = String(reader.result || '');
+      const content = isPdf && result.includes(',') ? result.split(',', 2)[1] : result;
       this.api.uploadDocument(versionId, {
         filename: file.name,
         content_type: file.type || 'text/plain',
-        content: String(reader.result || '')
+        content,
+        content_encoding: isPdf ? 'base64' : undefined
       }).subscribe({
         next: () => {
           input.value = '';
@@ -189,7 +194,11 @@ export class KnowledgeBaseComponent implements OnInit {
       this.uploadLoading.set(false);
     };
 
-    reader.readAsText(file);
+    if (isPdf) {
+      reader.readAsDataURL(file);
+    } else {
+      reader.readAsText(file);
+    }
   }
 
   openDocument(document: any) {
@@ -332,6 +341,48 @@ export class KnowledgeBaseComponent implements OnInit {
         this.testLoading.set(false);
       }
     });
+  }
+
+  lifecycleStatus(document: any) {
+    if (document.error_message || String(document.status || '').includes('failed')) return 'failed';
+    if ((document.chunks_count || 0) > 0 && document.status === 'processed') return 'ready';
+    if ((document.chunks_count || 0) > 0) return 'chunked';
+    if (document.status === 'processing') return 'processing';
+    return document.status || 'uploaded';
+  }
+
+  embeddingSummary(document: any) {
+    const selected = this.selectedDocument();
+    const chunks = selected?.id === document.id ? this.chunks() : [];
+    if (!chunks.length) return document.chunks_count ? 'Open document to inspect embeddings' : 'No chunks yet';
+    const ready = chunks.filter(chunk => chunk.embedding_status === 'ready').length;
+    const failed = chunks.filter(chunk => chunk.embedding_status === 'failed').length;
+    if (failed) return `${failed} failed, ${ready} ready`;
+    return `${ready}/${chunks.length} embeddings ready`;
+  }
+
+  embeddingModel(document: any) {
+    const selected = this.selectedDocument();
+    const chunks = selected?.id === document.id ? this.chunks() : [];
+    return chunks.find(chunk => chunk.embedding_model)?.embedding_model || 'Open document to view model';
+  }
+
+  totalChunks() {
+    return this.documents().reduce((total, document) => total + Number(document.chunks_count || 0), 0);
+  }
+
+  totalEmbeddings() {
+    const selected = this.selectedDocument();
+    if (!selected) return 0;
+    return this.chunks().filter(chunk => chunk.embedding_status === 'ready').length;
+  }
+
+  processingStatus() {
+    const documents = this.documents();
+    if (!documents.length) return 'No documents';
+    if (documents.some(document => this.lifecycleStatus(document) === 'failed')) return 'Needs attention';
+    if (documents.some(document => this.lifecycleStatus(document) === 'processing')) return 'Processing';
+    return 'Ready';
   }
 
   goBack() {

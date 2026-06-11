@@ -26,7 +26,7 @@
   <label class="file-control">
     <input
       type="file"
-      accept=".txt,.md,.csv,.json"
+      accept=".txt,.md,.csv,.json,.pdf,application/pdf"
       (change)="onFileSelected($event)"
       [disabled]="uploadLoading() || !selectedVersionId()">
     <span>{{ uploadLoading() ? 'Uploading...' : 'Upload document' }}</span>
@@ -34,6 +34,25 @@
 </section>
 
 <p *ngIf="selectedFileName" class="muted">Selected: {{ selectedFileName }}</p>
+
+<section class="knowledge-stats">
+  <article>
+    <span>Total Documents</span>
+    <strong>{{ documents().length }}</strong>
+  </article>
+  <article>
+    <span>Total Chunks</span>
+    <strong>{{ totalChunks() }}</strong>
+  </article>
+  <article>
+    <span>Total Embeddings</span>
+    <strong>{{ totalEmbeddings() }}</strong>
+  </article>
+  <article>
+    <span>Processing Status</span>
+    <strong>{{ processingStatus() }}</strong>
+  </article>
+</section>
 
 <section class="panel settings-panel">
   <div class="panel-header">
@@ -125,8 +144,16 @@
         type="button"
         class="document-main"
         (click)="openDocument(document)">
-        <strong>{{ document.filename }}</strong>
-        <span>{{ document.chunks_count }} chunks - {{ document.size_bytes }} bytes - {{ document.status }}</span>
+        <div class="document-title">
+          <strong>{{ document.filename }}</strong>
+          <span class="status-pill" [class.failed]="lifecycleStatus(document) === 'failed'">
+            {{ lifecycleStatus(document) }}
+          </span>
+        </div>
+        <span>{{ document.size_bytes }} bytes{{ document.pages_count ? ' - ' + document.pages_count + ' pages' : '' }} - {{ document.chunks_count }} chunks</span>
+        <small>Embedding: {{ embeddingSummary(document) }}</small>
+        <small>Model: {{ embeddingModel(document) }}</small>
+        <small *ngIf="document.error_message" class="error">Failure reason: {{ document.error_message }}</small>
         <small>Processed {{ document.processed_at | date:'medium' }}</small>
       </button>
 
@@ -199,13 +226,16 @@
     </button>
   </div>
 
-  <div *ngIf="retrievalChunks().length === 0" class="empty">No retrieval test result yet.</div>
+  <div *ngIf="retrievalChunks().length === 0 && !testLoading()" class="empty">
+    {{ documents().length === 0 ? 'No documents are available for retrieval yet.' : 'No retrieved chunks yet. Run a test question to inspect retrieval.' }}
+  </div>
   <p *ngIf="retrievalMode()" class="mode-pill">
     Retrieval mode: {{ retrievalMode() }}
   </p>
 
   <article *ngFor="let chunk of retrievalChunks()" class="chunk-row result">
-    <strong>{{ chunk.title || chunk.filename }} - score {{ chunk.score | number:'1.2-2' }}</strong>
+    <strong>{{ chunk.title || chunk.filename }}</strong>
+    <span class="score-pill">Score {{ chunk.score | number:'1.2-2' }}</span>
     <small>{{ chunk.filename }}{{ chunk.section_type ? ' - ' + chunk.section_type : '' }}</small>
     <small *ngIf="chunk.embedding_status">Embedding: {{ chunk.embedding_status }} {{ chunk.embedding_model ? '(' + chunk.embedding_model + ')' : '' }}</small>
     <p>{{ chunk.text }}</p>

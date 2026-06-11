@@ -156,6 +156,53 @@ def response_profile_for(length: str) -> dict:
     return profiles.get(length, profiles["short"])
 
 
+def _bool_setting(value, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _response_length(value: str | None, default: str) -> str:
+    mapping = {
+        "short": "short",
+        "medium": "normal",
+        "normal": "normal",
+        "long": "detailed",
+        "detailed": "detailed"
+    }
+    return mapping.get((value or "").strip().lower(), default)
+
+
+def merge_node_rag_settings(rag_settings: dict, node_config: dict | None) -> dict:
+    settings = {**rag_settings}
+    if not node_config:
+        return settings
+
+    if "use_knowledge_base" in node_config:
+        settings["use_knowledge_base"] = _bool_setting(node_config.get("use_knowledge_base"), True)
+    else:
+        settings["use_knowledge_base"] = True
+
+    if "answer_only_from_documents" in node_config:
+        settings["strict_context"] = _bool_setting(node_config.get("answer_only_from_documents"), settings["strict_context"])
+    if "strict_context" in node_config:
+        settings["strict_context"] = _bool_setting(node_config.get("strict_context"), settings["strict_context"])
+    if "show_sources" in node_config:
+        settings["show_sources"] = _bool_setting(node_config.get("show_sources"), settings["show_sources"])
+    if "response_length" in node_config:
+        settings["response_length"] = _response_length(node_config.get("response_length"), settings["response_length"])
+
+    settings["fallback"] = str(node_config.get("fallback") or "").strip()
+    settings["instructions"] = str(
+        node_config.get("prompt")
+        or node_config.get("instructions")
+        or ""
+    ).strip()
+    return settings
+
+
 def prepare_rag_generation(
     db: Session,
     version: VersionChatbot,
@@ -163,18 +210,25 @@ def prepare_rag_generation(
     message: str,
     variables: dict | None = None,
     history: list[ConversationMessage] | None = None,
-    mode_used: str = "flow_rag"
+    mode_used: str = "flow_rag",
+    node_config: dict | None = None
 ) -> dict:
     chatbot = db.query(Chatbot).filter(Chatbot.id == version.chatbot_id).first()
-    rag_settings = normalize_rag_settings(chatbot.rag_settings if chatbot else None)
-    retrieval = retrieve_relevant_chunks_with_mode(
-        db=db,
-        version_id=version.id,
-        query=message,
-        limit=rag_settings["max_chunks"],
-        retrieval_mode=rag_settings["retrieval_mode"],
-        min_score=rag_settings["min_score"]
+    rag_settings = merge_node_rag_settings(
+        normalize_rag_settings(chatbot.rag_settings if chatbot else None),
+        node_config
     )
+    if rag_settings.get("use_knowledge_base", True):
+        retrieval = retrieve_relevant_chunks_with_mode(
+            db=db,
+            version_id=version.id,
+            query=message,
+            limit=rag_settings["max_chunks"],
+            retrieval_mode=rag_settings["retrieval_mode"],
+            min_score=rag_settings["min_score"]
+        )
+    else:
+        retrieval = {"mode": "ai_only", "chunks": []}
     retrieved_chunks = retrieval["chunks"]
 
     context_blocks = []
@@ -198,6 +252,7 @@ def prepare_rag_generation(
 {system_prompt}
 
 Use the knowledge context to answer the user directly.
+{rag_settings.get("instructions") or ""}
 {response_profile["instruction"]}
 Use the conversation history and variables only as background context.
 Do not describe what you would do. Do not mention "the user expressed", "previous answer", "feedback", or "knowledge base" unless the user asks about that.
@@ -247,7 +302,8 @@ User question:
         "version_used": version.id,
         "variables": vars_value,
         "sources": sources,
-        "mode_used": mode_used
+        "mode_used": mode_used,
+        "fallback_response": rag_settings.get("fallback") if not retrieved_chunks and rag_settings.get("strict_context") else ""
     }
 
 
@@ -258,7 +314,8 @@ def build_rag_response(
     message: str,
     variables: dict | None = None,
     history: list[ConversationMessage] | None = None,
-    mode_used: str = "flow_rag"
+    mode_used: str = "flow_rag",
+    node_config: dict | None = None
 ) -> dict:
     generation = prepare_rag_generation(
         db=db,
@@ -267,26 +324,29 @@ def build_rag_response(
         message=message,
         variables=variables,
         history=history,
-        mode_used=mode_used
+        mode_used=mode_used,
+        node_config=node_config
     )
 
-    try:
-        answer = generate_chat_completion(
-            prompt=generation["prompt"],
-            model=generation["model"],
-            temperature=generation["options"]["temperature"],
-            max_tokens=generation["options"]["num_predict"]
-        )
-    except AIProviderError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=f"LLM service error: {exc}"
-        )
+    answer = generation.get("fallback_response") or ""
+    if not answer:
+        try:
+            answer = generate_chat_completion(
+                prompt=generation["prompt"],
+                model=generation["model"],
+                temperature=generation["options"]["temperature"],
+                max_tokens=generation["options"]["num_predict"]
+            )
+        except AIProviderError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"LLM service error: {exc}"
+            )
 
     return {
         "response": answer,
         "messages": [{"text": answer, "options": []}],
-        "mode_used": generation["mode_used"],
+        "mode_used": "fallback" if generation.get("fallback_response") else generation["mode_used"],
         "retrieval_mode": generation["retrieval_mode"],
         "model_used": generation["model_used"],
         "version_used": generation["version_used"],
@@ -358,7 +418,7 @@ def chat(
         add_message(db, session.id, "user", data.message.strip())
         db.commit()
 
-    def rag_answer(message: str, fallback_variables: dict | None = None):
+    def rag_answer(message: str, fallback_variables: dict | None = None, node_config: dict | None = None):
         return build_rag_response(
             db,
             version,
@@ -366,7 +426,8 @@ def chat(
             message,
             fallback_variables or variables,
             history=session_history(db, session.id),
-            mode_used="flow_rag"
+            mode_used="flow_rag",
+            node_config=node_config
         )
 
     result = execute_flow(
@@ -427,7 +488,7 @@ def chat_stream(
 
     generation_holder: dict = {}
 
-    def rag_answer(message: str, fallback_variables: dict | None = None):
+    def rag_answer(message: str, fallback_variables: dict | None = None, node_config: dict | None = None):
         generation_holder["generation"] = prepare_rag_generation(
             db=db,
             version=version,
@@ -435,12 +496,13 @@ def chat_stream(
             message=message,
             variables=fallback_variables or variables,
             history=session_history(db, session.id),
-            mode_used="flow_rag"
+            mode_used="flow_rag",
+            node_config=node_config
         )
         return {
-            "response": "",
-            "messages": [{"text": "", "options": []}],
-            "mode_used": "flow_rag",
+            "response": generation_holder["generation"].get("fallback_response") or "",
+            "messages": [{"text": generation_holder["generation"].get("fallback_response") or "", "options": []}],
+            "mode_used": "fallback" if generation_holder["generation"].get("fallback_response") else "flow_rag",
             "retrieval_mode": generation_holder["generation"]["retrieval_mode"],
             "model_used": generation_holder["generation"]["model_used"],
             "version_used": version.id,
@@ -486,6 +548,29 @@ def chat_stream(
             db.commit()
             yield stream_event("final", {
                 **result,
+                "session_id": session.id,
+                "current_node_key": session.current_node_key,
+                "variables": session.variables or {}
+            })
+            return
+
+        if generation.get("fallback_response"):
+            final_result = {
+                **result,
+                "response": generation["fallback_response"],
+                "messages": [{"text": generation["fallback_response"], "options": []}],
+                "mode_used": "fallback",
+                "retrieval_mode": generation["retrieval_mode"],
+                "model_used": generation["model_used"],
+                "version_used": generation["version_used"],
+                "sources": []
+            }
+            session.current_node_key = final_result.get("current_node_key")
+            session.variables = final_result.get("variables") or {}
+            add_message(db, session.id, "bot", generation["fallback_response"], sources=[])
+            db.commit()
+            yield stream_event("final", {
+                **final_result,
                 "session_id": session.id,
                 "current_node_key": session.current_node_key,
                 "variables": session.variables or {}

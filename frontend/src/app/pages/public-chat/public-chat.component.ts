@@ -15,7 +15,7 @@ export class PublicChatComponent implements OnInit {
   chatbotId: number;
   chatbot = signal<any | null>(null);
   message = '';
-  messages = signal<{ role: 'user' | 'bot'; text: string; options?: string[] }[]>([]);
+  messages = signal<{ role: 'user' | 'bot'; text: string; options?: string[]; feedback?: string }[]>([]);
   sources = signal<any[]>([]);
   loading = signal(false);
   error = signal('');
@@ -37,7 +37,7 @@ export class PublicChatComponent implements OnInit {
 
   async send(option?: string) {
     const text = option || this.message.trim();
-    if (!text) return;
+    if (!text || this.loading()) return;
 
     this.messages.update(messages => [...messages, { role: 'user', text }]);
     this.message = '';
@@ -122,5 +122,23 @@ export class PublicChatComponent implements OnInit {
       text: response.response || '',
       options: response.options || []
     }];
+  }
+
+  submitFeedback(index: number, rating: 'helpful' | 'not_helpful') {
+    const sessionId = this.sessionId();
+    if (!sessionId || this.messages()[index]?.feedback) return;
+
+    this.api.submitPublicFeedback({
+      chatbot_id: this.chatbotId,
+      session_id: sessionId,
+      rating
+    }).subscribe({
+      next: () => {
+        this.messages.update(messages => messages.map((item, itemIndex) => (
+          itemIndex === index ? { ...item, feedback: rating } : item
+        )));
+      },
+      error: err => this.error.set(err.error?.detail || 'Could not save feedback')
+    });
   }
 }

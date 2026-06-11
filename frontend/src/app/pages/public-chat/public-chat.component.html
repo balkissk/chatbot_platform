@@ -10,23 +10,38 @@
     <div class="messages">
       <p *ngIf="messages().length === 0" class="empty">Ask a question to start the conversation.</p>
 
-      <div *ngFor="let item of messages()" class="message" [class.user]="item.role === 'user'">
+      <div *ngFor="let item of messages(); let i = index" class="message" [class.user]="item.role === 'user'">
         {{ item.text }}
         <div class="quick-replies" *ngIf="item.options?.length">
           <button type="button" *ngFor="let option of item.options" (click)="send(option)">
             {{ option }}
           </button>
         </div>
+        <div class="feedback-row" *ngIf="item.role === 'bot' && item.text">
+          <button type="button" (click)="submitFeedback(i, 'helpful')" [disabled]="!!item.feedback">
+            Helpful
+          </button>
+          <button type="button" (click)="submitFeedback(i, 'not_helpful')" [disabled]="!!item.feedback">
+            Not Helpful
+          </button>
+          <small *ngIf="item.feedback">Feedback saved</small>
+        </div>
       </div>
 
-      <div *ngIf="loading() && messages()[messages().length - 1]?.role !== 'bot'" class="message">Thinking...</div>
+      <div *ngIf="loading() && messages()[messages().length - 1]?.role !== 'bot'" class="message typing">
+        <span class="typing-dots"><i></i><i></i><i></i></span>
+        <span>Assistant is typing...</span>
+      </div>
     </div>
 
     <p *ngIf="error()" class="error">{{ error() }}</p>
 
     <form (ngSubmit)="send()" class="composer">
-      <input [(ngModel)]="message" name="message" placeholder="Type your message">
-      <button type="submit" [disabled]="loading() || !message.trim()">Send</button>
+      <input [(ngModel)]="message" name="message" placeholder="Type your message" [disabled]="loading()">
+      <button type="submit" [disabled]="loading() || !message.trim()">
+        <span *ngIf="!loading()">Send</span>
+        <span *ngIf="loading()" class="spinner"></span>
+      </button>
     </form>
   </section>
 </main>

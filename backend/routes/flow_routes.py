@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database.db import SessionLocal
@@ -7,10 +8,15 @@ from models.chatbot import Chatbot
 from models.flow_schema import BuilderContextResponse, FlowNodeCreate, FlowNodeResponse, FlowNodeUpdate, FlowResponse, FlowTransitionCreate, FlowTransitionResponse, FlowTransitionUpdate
 from models.version import VersionChatbot
 from services.auth import require_roles
-from services.templates import create_starter_flow
+from services.flow_validation import validate_flow_version
+from services.templates import create_starter_flow, replace_flow_with_template, template_options
 import uuid
 
 router = APIRouter()
+
+
+class FlowTemplateApply(BaseModel):
+    template_key: str
 
 
 def get_db():
@@ -36,6 +42,43 @@ def get_flow(
         flow = create_starter_flow(db, version_id, "blank")
 
     return flow
+
+
+@router.get("/versions/{version_id}/flow/validate")
+def validate_flow(
+    version_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_roles("admin", "manager"))
+):
+    version = db.query(VersionChatbot).filter(VersionChatbot.id == version_id).first()
+    if not version:
+        raise HTTPException(status_code=404, detail="Version not found")
+
+    return validate_flow_version(db, version_id)
+
+
+@router.get("/flow-templates")
+def list_flow_templates(
+    current_user=Depends(require_roles("admin", "manager"))
+):
+    return template_options()
+
+
+@router.post("/flows/{flow_id}/template", response_model=FlowResponse)
+def apply_flow_template(
+    flow_id: int,
+    payload: FlowTemplateApply,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_roles("admin", "manager"))
+):
+    flow = db.query(Flow).filter(Flow.id == flow_id).first()
+    if not flow:
+        raise HTTPException(status_code=404, detail="Flow not found")
+
+    try:
+        return replace_flow_with_template(db, flow, payload.template_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.get("/chatbots/{chatbot_id}/builder", response_model=BuilderContextResponse)

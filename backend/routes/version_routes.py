@@ -17,6 +17,7 @@ from models.user import User
 from models.version import VersionChatbot
 from models.version_schema import VersionCreate
 from services.auth import require_roles
+from services.flow_validation import validate_flow_version
 from services.templates import create_starter_flow
 
 router = APIRouter()
@@ -214,6 +215,15 @@ def publish_version(
 ):
     version = get_accessible_version(db, version_id, current_user)
     chatbot = get_accessible_chatbot(db, version.chatbot_id, current_user)
+    validation = validate_flow_version(db, version_id)
+    if not validation["valid"]:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "Fix the flow validation errors before publishing.",
+                "errors": validation["errors"]
+            }
+        )
 
     all_versions = db.query(VersionChatbot).filter(
         VersionChatbot.chatbot_id == version.chatbot_id

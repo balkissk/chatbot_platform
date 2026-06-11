@@ -90,10 +90,11 @@ export class ProjectOverviewComponent implements OnInit {
     }).subscribe({
       next: project => {
         this.project.set(project);
+        this.editName = project.name;
+        this.editDescription = project.description || '';
         this.editing = false;
         this.message.set('Project updated');
         this.saving.set(false);
-        this.loadProject();
       },
       error: err => {
         this.error.set(err.error?.detail || 'Could not update project');

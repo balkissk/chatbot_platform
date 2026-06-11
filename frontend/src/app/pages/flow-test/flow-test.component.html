@@ -10,7 +10,14 @@
   </div>
 </div>
 
-<p *ngIf="error()" class="error">{{ error() }}</p>
+<section *ngIf="errorInfo() as issue" class="error-card">
+  <strong>{{ issue.title }}</strong>
+  <p>{{ issue.message }}</p>
+  <details>
+    <summary>Technical details</summary>
+    <pre>{{ issue.detail }}</pre>
+  </details>
+</section>
 
 <section class="test-shell">
   <section class="chat-panel">
@@ -26,12 +33,21 @@
       <p class="empty" *ngIf="messages().length === 0 && !loading()">No messages yet.</p>
 
       <article *ngFor="let item of messages()" class="bubble" [class.user]="item.role === 'user'">
+        <span class="mode-badge" *ngIf="item.role === 'bot'">{{ responseLabel(item) }}</span>
         <p>{{ item.text }}</p>
         <div class="quick-replies" *ngIf="item.options?.length">
           <button type="button" *ngFor="let option of item.options" (click)="send(option)" [disabled]="loading()">
             {{ option }}
           </button>
         </div>
+        <details class="sources" *ngIf="item.sources?.length">
+          <summary>Sources</summary>
+          <article *ngFor="let source of item.sources" class="source-row">
+            <strong>{{ source.filename }}</strong>
+            <small>Score: {{ source.score | number:'1.2-2' }}</small>
+            <p>{{ source.text }}</p>
+          </article>
+        </details>
       </article>
 
       <article class="bubble" *ngIf="loading()">Thinking...</article>

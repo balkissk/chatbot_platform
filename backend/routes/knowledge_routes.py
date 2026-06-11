@@ -13,6 +13,7 @@ from models.project import Project
 from models.user import User
 from models.version import VersionChatbot
 from services.auth import require_roles
+from services.document_ingestion import DocumentExtractionError, extract_document_text
 from services.rag import chunk_document, embed_chunk, get_or_create_knowledge_base, retrieve_relevant_chunks_with_mode
 from services.rag_settings import normalize_rag_settings
 
@@ -78,7 +79,10 @@ def document_response(db: Session, document: Document) -> DocumentResponse:
         error_message=document.error_message,
         processed_at=document.processed_at,
         created_at=document.created_at,
-        chunks_count=chunks_count
+        chunks_count=chunks_count,
+        pages_count=(document.raw_text or "").count("\n\nPage ") + 1
+        if (document.content_type or "").split(";")[0].strip().lower() == "application/pdf" and document.raw_text
+        else None
     )
 
 
@@ -91,7 +95,16 @@ def ingest_document(
 ):
     ensure_version_access(db, version_id, current_user)
 
-    content = payload.content or ""
+    try:
+        content, size_bytes = extract_document_text(
+            filename=payload.filename,
+            content_type=payload.content_type,
+            content=payload.content or "",
+            content_encoding=payload.content_encoding
+        )
+    except DocumentExtractionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     chunks = chunk_document(content)
     if not chunks:
         raise HTTPException(status_code=400, detail="Document has no readable text")
@@ -105,7 +118,7 @@ def ingest_document(
         content_type=payload.content_type,
         storage_url=f"local://version-{version_id}/{payload.filename}",
         raw_text=content,
-        size_bytes=len(content.encode("utf-8")),
+        size_bytes=size_bytes,
         status="processed",
         error_message=None,
         processed_at=now,

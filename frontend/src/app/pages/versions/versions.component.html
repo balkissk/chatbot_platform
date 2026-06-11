@@ -62,6 +62,61 @@
 </section>
 
 <section *ngIf="selectedVersionId()" class="manager-grid">
+  <section class="panel ai-panel">
+    <div class="panel-header">
+      <div>
+        <p class="eyebrow">AI Instructions</p>
+        <h3>Assistant behavior</h3>
+      </div>
+      <button (click)="saveLlmConfig()" [disabled]="configSaving() || configLoading()">
+        {{ configSaving() ? 'Saving...' : 'Save instructions' }}
+      </button>
+    </div>
+
+    <p *ngIf="configLoading()" class="muted">Loading AI instructions...</p>
+    <p *ngIf="configMessage()" class="success">{{ configMessage() }}</p>
+
+    <div class="settings-grid">
+      <label class="wide">
+        System Instructions
+        <textarea
+          [(ngModel)]="aiInstructions.system_instructions"
+          rows="6"
+          placeholder="You are the official assistant of UNVV. Always answer professionally in French."></textarea>
+      </label>
+      <label>
+        Tone
+        <select [(ngModel)]="aiInstructions.tone">
+          <option>Professional</option>
+          <option>Friendly</option>
+          <option>Formal</option>
+          <option>Supportive</option>
+        </select>
+      </label>
+      <label>
+        Language
+        <select [(ngModel)]="aiInstructions.language">
+          <option>French</option>
+          <option>English</option>
+          <option>Arabic</option>
+        </select>
+      </label>
+      <label>
+        Response Style
+        <select [(ngModel)]="aiInstructions.response_style">
+          <option>Concise</option>
+          <option>Detailed</option>
+          <option>Step-by-step</option>
+          <option>Customer support</option>
+        </select>
+      </label>
+      <label>
+        Temperature
+        <input type="number" min="0" max="1" step="0.1" [(ngModel)]="aiInstructions.temperature">
+      </label>
+    </div>
+  </section>
+
   <section class="panel">
     <div class="panel-header">
       <div>

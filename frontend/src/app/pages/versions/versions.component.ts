@@ -28,11 +28,22 @@ export class VersionsComponent implements OnInit {
   chatSessionId = signal<number | undefined>(undefined);
   chatLoading = signal(false);
   chatError = signal('');
+  configLoading = signal(false);
+  configSaving = signal(false);
+  configMessage = signal('');
   loading = signal(false);
   creating = signal(false);
   actionId = signal<number | undefined>(undefined);
   error = signal('');
   private isBrowser: boolean;
+  aiInstructions = {
+    model: 'llama3',
+    temperature: 0.7,
+    system_instructions: '',
+    tone: 'Professional',
+    language: 'French',
+    response_style: 'Concise'
+  };
 
   constructor(
     private route: ActivatedRoute,
@@ -68,6 +79,7 @@ export class VersionsComponent implements OnInit {
 
         if (selectedVersionId) {
           this.loadDocuments(selectedVersionId);
+          this.loadLlmConfig(selectedVersionId);
         } else {
           this.documents.set([]);
         }
@@ -97,13 +109,30 @@ export class VersionsComponent implements OnInit {
 
   publish(versionId: number) {
     this.actionId.set(versionId);
-    this.api.publishVersion(versionId).subscribe({
-      next: () => {
-        this.actionId.set(undefined);
-        this.loadVersions();
+    this.error.set('');
+
+    this.api.validateFlow(versionId).subscribe({
+      next: validation => {
+        const errors = validation?.errors || [];
+        if (errors.length) {
+          this.error.set(`Fix these flow issues before publishing: ${errors.join(' ')}`);
+          this.actionId.set(undefined);
+          return;
+        }
+
+        this.api.publishVersion(versionId).subscribe({
+          next: () => {
+            this.actionId.set(undefined);
+            this.loadVersions();
+          },
+          error: err => {
+            this.error.set(this.publishError(err));
+            this.actionId.set(undefined);
+          }
+        });
       },
       error: err => {
-        this.error.set(err.error?.detail || 'Could not publish version');
+        this.error.set(this.publishError(err));
         this.actionId.set(undefined);
       }
     });
@@ -162,6 +191,79 @@ export class VersionsComponent implements OnInit {
     this.chatOptions.set([]);
     this.chatSessionId.set(undefined);
     this.loadDocuments(versionId);
+    this.loadLlmConfig(versionId);
+  }
+
+  loadLlmConfig(versionId: number) {
+    this.configLoading.set(true);
+    this.configMessage.set('');
+    this.api.getLlmConfig(versionId).subscribe({
+      next: config => {
+        this.aiInstructions = this.parseSystemPrompt(config);
+        this.configLoading.set(false);
+      },
+      error: () => {
+        this.aiInstructions = {
+          model: 'llama3',
+          temperature: 0.7,
+          system_instructions: '',
+          tone: 'Professional',
+          language: 'French',
+          response_style: 'Concise'
+        };
+        this.configLoading.set(false);
+      }
+    });
+  }
+
+  saveLlmConfig() {
+    const versionId = this.selectedVersionId();
+    if (!versionId) return;
+
+    this.configSaving.set(true);
+    this.configMessage.set('');
+    this.api.saveLlmConfig({
+      version_id: versionId,
+      model: this.aiInstructions.model || 'llama3',
+      temperature: Number(this.aiInstructions.temperature) || 0.7,
+      system_prompt: this.buildSystemPrompt()
+    }).subscribe({
+      next: () => {
+        this.configSaving.set(false);
+        this.configMessage.set('AI instructions saved');
+      },
+      error: err => {
+        this.configSaving.set(false);
+        this.configMessage.set(err.error?.detail || 'Could not save AI instructions');
+      }
+    });
+  }
+
+  private parseSystemPrompt(config: any) {
+    const prompt = config.system_prompt || '';
+    return {
+      model: config.model || 'llama3',
+      temperature: config.temperature ?? 0.7,
+      system_instructions: prompt,
+      tone: this.extractPromptValue(prompt, 'Tone') || 'Professional',
+      language: this.extractPromptValue(prompt, 'Language') || 'French',
+      response_style: this.extractPromptValue(prompt, 'Response style') || 'Concise'
+    };
+  }
+
+  private extractPromptValue(prompt: string, label: string) {
+    const line = prompt.split('\n').find(item => item.toLowerCase().startsWith(`${label.toLowerCase()}:`));
+    return line ? line.split(':').slice(1).join(':').trim() : '';
+  }
+
+  private buildSystemPrompt() {
+    const base = this.aiInstructions.system_instructions.trim() || 'You are a helpful assistant.';
+    return [
+      base,
+      `Tone: ${this.aiInstructions.tone}`,
+      `Language: ${this.aiInstructions.language}`,
+      `Response style: ${this.aiInstructions.response_style}`
+    ].join('\n');
   }
 
   loadDocuments(versionId: number) {
@@ -279,6 +381,16 @@ export class VersionsComponent implements OnInit {
       text: response.response || '',
       options: response.options || []
     }];
+  }
+
+  private publishError(err: any) {
+    const detail = err?.error?.detail;
+    if (Array.isArray(detail?.errors)) {
+      return `Fix these flow issues before publishing: ${detail.errors.join(' ')}`;
+    }
+    if (typeof detail?.message === 'string') return detail.message;
+    if (typeof detail === 'string') return detail;
+    return 'Could not publish version';
   }
 
   goBack() {

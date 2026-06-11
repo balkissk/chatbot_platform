@@ -1,0 +1,112 @@
+<div class="page-header hero-header">
+  <div>
+    <p class="eyebrow">{{ analytics()?.chatbot?.name || ('Chatbot ' + chatbotId) }}</p>
+    <h2>Analytics</h2>
+    <p>Track adoption, knowledge health, topics, and customer engagement.</p>
+  </div>
+  <div class="actions">
+    <button class="secondary" (click)="load()" [disabled]="loading()">{{ loading() ? 'Refreshing...' : 'Refresh' }}</button>
+    <button class="secondary" (click)="goBack()">Back</button>
+  </div>
+</div>
+
+<p *ngIf="error()" class="error">{{ error() }}</p>
+
+<section *ngIf="loading()" class="kpi-grid">
+  <div class="skeleton-card" *ngFor="let item of [1,2,3,4,5,6]"></div>
+</section>
+
+<ng-container *ngIf="analytics() as data">
+  <section class="kpi-grid">
+    <article class="kpi-card accent-teal">
+      <span>Total Conversations</span>
+      <strong>{{ data.kpis.total_conversations }}</strong>
+      <small>All recorded sessions</small>
+    </article>
+    <article class="kpi-card accent-blue">
+      <span>Total Messages</span>
+      <strong>{{ data.kpis.total_messages }}</strong>
+      <small>User and bot messages</small>
+    </article>
+    <article class="kpi-card accent-violet">
+      <span>Total Documents</span>
+      <strong>{{ data.kpis.total_documents }}</strong>
+      <small>{{ data.kpis.total_chunks }} chunks indexed</small>
+    </article>
+    <article class="kpi-card accent-amber">
+      <span>Avg Response Time</span>
+      <strong>{{ data.kpis.average_response_time_ms || 0 }}ms</strong>
+      <small>Ready for telemetry</small>
+    </article>
+    <article class="kpi-card accent-green">
+      <span>Positive Feedback</span>
+      <strong>{{ data.kpis.positive_feedback_percent }}%</strong>
+      <small>Helpful responses</small>
+    </article>
+    <article class="kpi-card accent-red">
+      <span>Negative Feedback</span>
+      <strong>{{ data.kpis.negative_feedback_percent }}%</strong>
+      <small>Needs improvement</small>
+    </article>
+  </section>
+
+  <section class="dashboard-grid">
+    <article class="panel chart-card">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">Trend</p>
+          <h3>Conversations over time</h3>
+        </div>
+      </div>
+      <div class="bar-chart">
+        <div *ngFor="let point of data.conversations_over_time" class="bar-column">
+          <span class="bar" [style.height]="barHeight(point.count, data.conversations_over_time)"></span>
+          <small>{{ point.date | date:'MMM d' }}</small>
+        </div>
+      </div>
+    </article>
+
+    <article class="panel chart-card">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">Volume</p>
+          <h3>Messages over time</h3>
+        </div>
+      </div>
+      <div class="bar-chart blue">
+        <div *ngFor="let point of data.messages_over_time" class="bar-column">
+          <span class="bar" [style.height]="barHeight(point.count, data.messages_over_time)"></span>
+          <small>{{ point.date | date:'MMM d' }}</small>
+        </div>
+      </div>
+    </article>
+
+    <article class="panel list-card">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">Intent Signals</p>
+          <h3>Top Topics</h3>
+        </div>
+      </div>
+      <div *ngIf="!data.top_topics.length" class="empty">No topic data yet.</div>
+      <div *ngFor="let topic of data.top_topics" class="rank-row">
+        <span>{{ topic.topic }}</span>
+        <strong>{{ topic.count }}</strong>
+      </div>
+    </article>
+
+    <article class="panel list-card">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">Flow UX</p>
+          <h3>Most Used Buttons</h3>
+        </div>
+      </div>
+      <div *ngIf="!data.most_used_buttons.length" class="empty">No button usage yet.</div>
+      <div *ngFor="let button of data.most_used_buttons" class="rank-row">
+        <span>{{ button.label }}</span>
+        <strong>{{ button.count }}</strong>
+      </div>
+    </article>
+  </section>
+</ng-container>

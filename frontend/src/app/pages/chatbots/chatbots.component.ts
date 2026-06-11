@@ -20,6 +20,7 @@ export class ChatbotsComponent implements OnInit {
   description = '';
   language = 'fr';
   loading = signal(false);
+  refreshing = signal(false);
   creating = signal(false);
   savingId = signal<number | undefined>(undefined);
   deletingId = signal<number | undefined>(undefined);
@@ -55,13 +56,19 @@ export class ChatbotsComponent implements OnInit {
     this.projectId = Number(this.route.snapshot.paramMap.get('projectId'));
     if (!this.isBrowser) return;
     this.loadProject();
-    this.loadChatbots();
+    const cachedChatbots = this.api.getCachedChatbotsByProject(this.projectId);
+    if (cachedChatbots) {
+      this.chatbots.set(cachedChatbots);
+      this.loadChatbots(true, true);
+    } else {
+      this.loadChatbots();
+    }
   }
 
-  loadProject() {
+  loadProject(force = false) {
     if (!this.isBrowser) return;
 
-    this.api.getProject(this.projectId).subscribe({
+    this.api.getProject(this.projectId, force).subscribe({
       next: project => {
         this.project.set(project);
       },
@@ -71,21 +78,30 @@ export class ChatbotsComponent implements OnInit {
     });
   }
 
-  loadChatbots() {
+  loadChatbots(force = false, background = false) {
     if (!this.isBrowser) return;
 
-    this.loading.set(true);
+    const hasVisibleData = this.chatbots().length > 0;
+    if (background || hasVisibleData) {
+      this.refreshing.set(true);
+    } else {
+      this.loading.set(true);
+    }
     this.error.set('');
-    this.success.set('');
+    if (!background) {
+      this.success.set('');
+    }
 
-    this.api.getChatbotsByProject(this.projectId).subscribe({
+    this.api.getChatbotsByProject(this.projectId, force).subscribe({
       next: chatbots => {
         this.chatbots.set(chatbots);
         this.loading.set(false);
+        this.refreshing.set(false);
       },
       error: err => {
         this.error.set(err.error?.detail || 'Could not load chatbots');
         this.loading.set(false);
+        this.refreshing.set(false);
       }
     });
   }
@@ -114,7 +130,7 @@ export class ChatbotsComponent implements OnInit {
         this.description = '';
         this.creating.set(false);
         this.success.set('Chatbot created with an initial draft version');
-        this.loadChatbots();
+        this.loadChatbots(true, true);
       },
       error: err => {
         this.error.set(err.error?.detail || 'Could not create chatbot');
@@ -130,7 +146,7 @@ export class ChatbotsComponent implements OnInit {
     this.api.deleteChatbot(bot.id).subscribe({
       next: () => {
         this.deletingId.set(undefined);
-        this.loadChatbots();
+        this.loadChatbots(true, true);
       },
       error: err => {
         this.error.set(err.error?.detail || 'Could not delete chatbot');
@@ -202,7 +218,7 @@ export class ChatbotsComponent implements OnInit {
         this.savingId.set(undefined);
         this.editingId.set(undefined);
         this.success.set('Chatbot updated');
-        this.loadChatbots();
+        this.loadChatbots(true, true);
       },
       error: err => {
         this.error.set(err.error?.detail || 'Could not update chatbot');
@@ -220,7 +236,7 @@ export class ChatbotsComponent implements OnInit {
       next: () => {
         this.statusId.set(undefined);
         this.success.set(isActive ? 'Chatbot activated' : 'Chatbot deactivated');
-        this.loadChatbots();
+        this.loadChatbots(true, true);
       },
       error: err => {
         this.error.set(err.error?.detail || 'Could not update chatbot status');
@@ -265,7 +281,7 @@ export class ChatbotsComponent implements OnInit {
         this.apiKeyId.set(undefined);
         this.success.set('API key regenerated');
         this.selectedDetails.update(details => details ? { ...details, public_api_key: response.public_api_key } : details);
-        this.loadChatbots();
+        this.loadChatbots(true, true);
       },
       error: err => {
         this.error.set(err.error?.detail || 'Could not regenerate API key');

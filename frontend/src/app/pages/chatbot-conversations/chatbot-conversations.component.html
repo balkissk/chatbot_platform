@@ -1,0 +1,218 @@
+<div class="page-header hero-header">
+  <div>
+    <p class="eyebrow">Chatbot {{ chatbotId }}</p>
+    <h2>Conversation History</h2>
+    <p>Review customer sessions, inspect RAG evidence, identify gaps, and export transcripts.</p>
+  </div>
+  <div class="actions">
+    <button class="secondary" (click)="loadSessions()" [disabled]="loading()">
+      {{ loading() ? 'Refreshing...' : 'Refresh' }}
+    </button>
+    <button class="secondary" (click)="exportConversationsCsv()" [disabled]="sessions().length === 0">
+      Export CSV
+    </button>
+    <button class="secondary" (click)="goBack()">Back</button>
+  </div>
+</div>
+
+<section class="filters-panel">
+  <label class="wide">
+    Search
+    <input [(ngModel)]="search" placeholder="Search message text or session ID">
+  </label>
+  <label>
+    From
+    <input [(ngModel)]="dateFrom" type="date">
+  </label>
+  <label>
+    To
+    <input [(ngModel)]="dateTo" type="date">
+  </label>
+  <label>
+    Channel
+    <select [(ngModel)]="channel">
+      <option value="">All channels</option>
+      <option value="public">Public chat</option>
+      <option value="dashboard">Dashboard test</option>
+      <option value="widget">Widget</option>
+    </select>
+  </label>
+  <label>
+    Feedback
+    <select [(ngModel)]="feedback">
+      <option value="">All feedback</option>
+      <option value="positive">Helpful</option>
+      <option value="negative">Not helpful</option>
+      <option value="no_feedback">No feedback</option>
+    </select>
+  </label>
+  <label>
+    Response Type
+    <select [(ngModel)]="responseType">
+      <option value="">All types</option>
+      <option value="ai_rag">AI/RAG</option>
+      <option value="fallback">Fallback</option>
+      <option value="flow">Flow</option>
+    </select>
+  </label>
+  <div class="filter-actions">
+    <button (click)="loadSessions()" [disabled]="loading()">Apply</button>
+    <button class="secondary" (click)="clearFilters()">Clear</button>
+  </div>
+</section>
+
+<p *ngIf="error()" class="error">{{ error() }}</p>
+
+<section class="conversation-layout">
+  <article class="panel session-list">
+    <div class="panel-header">
+      <div>
+        <p class="eyebrow">Inbox</p>
+        <h3>{{ sessions().length }} conversations</h3>
+      </div>
+      <span class="soft-badge">Manager view</span>
+    </div>
+
+    <ng-container *ngIf="loading()">
+      <div class="session-skeleton" *ngFor="let item of [1,2,3,4,5]"></div>
+    </ng-container>
+
+    <div *ngIf="!loading() && sessions().length === 0" class="empty-state">
+      <strong>{{ search || dateFrom || dateTo || channel || feedback || responseType ? 'No results found' : 'No conversations yet' }}</strong>
+      <p>{{ search || dateFrom || dateTo || channel || feedback || responseType ? 'Adjust filters to broaden the search.' : 'Conversations will appear here when users start chatting.' }}</p>
+    </div>
+
+    <button
+      type="button"
+      *ngFor="let session of sessions()"
+      class="session-row"
+      [class.selected]="selectedSession()?.id === session.id"
+      (click)="openSession(session)">
+      <div class="session-main">
+        <div class="session-title">
+          <strong>Session #{{ session.id }}</strong>
+          <span class="badge channel">{{ channelLabel(session.channel) }}</span>
+        </div>
+        <p>{{ session.last_message || 'No messages yet' }}</p>
+        <div class="session-chips">
+          <span>{{ session.message_count }} messages</span>
+          <span>{{ responseLabel(session.response_type) }}</span>
+          <span [class.negative]="session.feedback_status === 'negative'" [class.positive]="session.feedback_status === 'positive'">
+            {{ feedbackLabel(session.feedback_status) }}
+          </span>
+        </div>
+      </div>
+      <div class="session-meta">
+        <small>Created {{ session.created_at | date:'MMM d, y' }}</small>
+        <small>Last {{ session.updated_at | date:'short' }}</small>
+      </div>
+    </button>
+
+    <button
+      *ngIf="!loading() && hasMore()"
+      type="button"
+      class="load-more"
+      (click)="loadMore()"
+      [disabled]="loadingMore()">
+      {{ loadingMore() ? 'Loading more...' : 'Load more conversations' }}
+    </button>
+  </article>
+
+  <article class="panel detail-panel">
+    <div *ngIf="!selectedSession() && !detailsLoading()" class="empty-state detail-empty">
+      <strong>Select a conversation</strong>
+      <p>Open a session to review messages, timestamps, sources, response modes, and feedback.</p>
+    </div>
+
+    <div *ngIf="detailsLoading()" class="detail-loading">
+      <div class="session-skeleton"></div>
+      <div class="session-skeleton narrow"></div>
+      <div class="session-skeleton"></div>
+    </div>
+
+    <ng-container *ngIf="selectedSession() as session">
+      <div class="panel-header sticky">
+        <div>
+          <p class="eyebrow">{{ channelLabel(session.channel) }}</p>
+          <h3>Session #{{ session.id }}</h3>
+          <div class="detail-badges">
+            <span class="badge">{{ session.message_count }} messages</span>
+            <span class="badge response">{{ responseLabel(session.response_type) }}</span>
+            <span class="badge" [class.negative]="session.feedback_status === 'negative'" [class.positive]="session.feedback_status === 'positive'">
+              {{ feedbackLabel(session.feedback_status) }}
+            </span>
+          </div>
+          <small>Created {{ session.created_at | date:'medium' }} - Last activity {{ session.updated_at | date:'medium' }}</small>
+        </div>
+        <div class="detail-actions">
+          <button class="secondary" (click)="exportSelected('txt')">Export TXT</button>
+          <button class="secondary" (click)="exportSelected('json')">Export JSON</button>
+          <button class="secondary" (click)="closeDetails()">Close</button>
+        </div>
+      </div>
+
+      <div class="transcript">
+        <div
+          *ngFor="let message of session.messages"
+          class="message-row"
+          [class.bot]="message.role === 'bot'"
+          [class.user]="message.role === 'user'">
+          <div class="message-bubble">
+            <div class="message-topline">
+              <span>{{ message.role === 'bot' ? 'Assistant' : 'User' }}</span>
+              <small>{{ message.created_at | date:'medium' }}</small>
+            </div>
+            <p>{{ message.content }}</p>
+
+            <div class="message-meta" *ngIf="message.role === 'bot'">
+              <span class="badge response">{{ responseLabel(message.response_mode) }}</span>
+              <span class="badge">{{ channelLabel(session.channel) }}</span>
+            </div>
+
+            <div class="sources-panel" *ngIf="message.sources?.length">
+              <strong>Sources used</strong>
+              <article *ngFor="let source of message.sources">
+                <div>
+                  <span>{{ source.filename || ('Document ' + source.document_id) }}</span>
+                  <small>Score {{ source.score | number:'1.2-2' }}</small>
+                </div>
+                <p>{{ source.text }}</p>
+              </article>
+            </div>
+          </div>
+        </div>
+      </div>
+    </ng-container>
+  </article>
+</section>
+
+<section class="panel unanswered-panel">
+  <div class="panel-header">
+    <div>
+      <p class="eyebrow">Knowledge Gaps</p>
+      <h3>Unanswered Questions</h3>
+    </div>
+    <button class="secondary" (click)="loadUnansweredQuestions()" [disabled]="unansweredLoading()">
+      {{ unansweredLoading() ? 'Loading...' : 'Refresh gaps' }}
+    </button>
+  </div>
+
+  <div *ngIf="unansweredLoading()" class="gap-grid">
+    <div class="session-skeleton" *ngFor="let item of [1,2,3]"></div>
+  </div>
+
+  <div *ngIf="!unansweredLoading() && unansweredQuestions().length === 0" class="empty-state compact">
+    <strong>No unanswered questions detected</strong>
+    <p>Fallback or low-confidence answers will be grouped here when they appear.</p>
+  </div>
+
+  <div *ngIf="!unansweredLoading() && unansweredQuestions().length > 0" class="gap-grid">
+    <button type="button" class="gap-card" *ngFor="let item of unansweredQuestions()" (click)="openSessionById(item.session_id)">
+      <strong>{{ item.question }}</strong>
+      <div>
+        <span class="badge negative">{{ item.count }} times</span>
+        <small>Last asked {{ item.last_asked_at | date:'medium' }}</small>
+      </div>
+    </button>
+  </div>
+</section>

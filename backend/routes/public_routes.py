@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import Response, StreamingResponse
@@ -25,6 +26,12 @@ class PublicChatRequest(BaseModel):
     chatbot_id: int
     message: str
     session_id: int | None = None
+
+
+class PublicFeedbackRequest(BaseModel):
+    chatbot_id: int
+    session_id: int
+    rating: str
 
 
 def get_db():
@@ -154,13 +161,13 @@ def public_chat(data: PublicChatRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Chatbot configuration is missing")
 
     session = get_or_create_public_session(db, data, version)
-    variables = session.variables or {}
+    variables = {**(session.variables or {})}
 
     if data.message.strip():
         add_message(db, session.id, "user", data.message.strip())
         db.commit()
 
-    def rag_answer(message: str, fallback_variables: dict | None = None):
+    def rag_answer(message: str, fallback_variables: dict | None = None, node_config: dict | None = None):
         return build_rag_response(
             db=db,
             version=version,
@@ -168,7 +175,8 @@ def public_chat(data: PublicChatRequest, db: Session = Depends(get_db)):
             message=message,
             variables=fallback_variables or variables,
             history=session_history(db, session.id),
-            mode_used="public_flow_rag"
+            mode_used="public_flow_rag",
+            node_config=node_config
         )
 
     result = execute_flow(
@@ -207,6 +215,29 @@ def public_chat(data: PublicChatRequest, db: Session = Depends(get_db)):
     })
 
 
+@router.post("/chat/feedback")
+def public_chat_feedback(data: PublicFeedbackRequest, db: Session = Depends(get_db)):
+    get_public_chatbot(db, data.chatbot_id)
+    session = db.query(ConversationSession).filter(
+        ConversationSession.id == data.session_id,
+        ConversationSession.chatbot_id == data.chatbot_id,
+        ConversationSession.user_id.is_(None)
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Conversation session not found")
+
+    rating = data.rating.strip().lower()
+    if rating not in {"helpful", "not_helpful"}:
+        raise HTTPException(status_code=400, detail="Invalid feedback rating")
+
+    variables = session.variables or {}
+    variables["__feedback"] = rating
+    variables["__feedback_at"] = datetime.utcnow().isoformat()
+    session.variables = variables
+    db.commit()
+    return {"status": "saved", "rating": rating}
+
+
 @router.post("/chat/stream")
 def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
     chatbot = get_public_chatbot(db, data.chatbot_id)
@@ -224,7 +255,7 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
 
     generation_holder: dict = {}
 
-    def rag_answer(message: str, fallback_variables: dict | None = None):
+    def rag_answer(message: str, fallback_variables: dict | None = None, node_config: dict | None = None):
         generation_holder["generation"] = prepare_rag_generation(
             db=db,
             version=version,
@@ -232,12 +263,13 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
             message=message,
             variables=fallback_variables or variables,
             history=session_history(db, session.id),
-            mode_used="public_flow_rag"
+            mode_used="public_flow_rag",
+            node_config=node_config
         )
         return {
-            "response": "",
-            "messages": [{"text": "", "options": []}],
-            "mode_used": "public_flow_rag",
+            "response": generation_holder["generation"].get("fallback_response") or "",
+            "messages": [{"text": generation_holder["generation"].get("fallback_response") or "", "options": []}],
+            "mode_used": "fallback" if generation_holder["generation"].get("fallback_response") else "public_flow_rag",
             "retrieval_mode": generation_holder["generation"]["retrieval_mode"],
             "model_used": generation_holder["generation"]["model_used"],
             "version_used": version.id,
@@ -283,6 +315,29 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
             db.commit()
             yield stream_event("final", hide_public_sources({
                 **result,
+                "session_id": session.id,
+                "current_node_key": session.current_node_key,
+                "variables": session.variables or {}
+            }))
+            return
+
+        if generation.get("fallback_response"):
+            final_result = {
+                **result,
+                "response": generation["fallback_response"],
+                "messages": [{"text": generation["fallback_response"], "options": []}],
+                "mode_used": "fallback",
+                "retrieval_mode": generation["retrieval_mode"],
+                "model_used": generation["model_used"],
+                "version_used": generation["version_used"],
+                "sources": []
+            }
+            session.current_node_key = final_result.get("current_node_key")
+            session.variables = final_result.get("variables") or {}
+            add_message(db, session.id, "bot", generation["fallback_response"], sources=[])
+            db.commit()
+            yield stream_event("final", hide_public_sources({
+                **final_result,
                 "session_id": session.id,
                 "current_node_key": session.current_node_key,
                 "variables": session.variables or {}

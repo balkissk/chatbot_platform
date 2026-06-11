@@ -10,7 +10,7 @@ This project is prepared as two deployable services:
 - Azure App Service or Azure Container Apps for `frontend`
 - Azure App Service or Azure Container Apps for `backend`
 - Azure Database for PostgreSQL
-- Optional external LLM/Ollama service reachable by the backend
+- Azure OpenAI resource with chat and embedding deployments
 
 ## Backend Settings
 
@@ -24,15 +24,21 @@ FRONTEND_URL=https://your-frontend-domain
 ALLOWED_ORIGINS=https://your-frontend-domain
 API_BASE_URL=https://your-backend-domain
 PUBLIC_API_BASE_URL=https://your-backend-domain
-OLLAMA_BASE_URL=https://your-llm-service-domain
-EMBEDDING_PROVIDER=ollama
-EMBEDDING_MODEL=nomic-embed-text
+AI_PROVIDER=azure_openai
+EMBEDDING_PROVIDER=azure_openai
+AZURE_OPENAI_ENDPOINT=https://your-resource-name.openai.azure.com
+AZURE_OPENAI_API_KEY=replace-with-azure-openai-key
+AZURE_OPENAI_DEPLOYMENT=gpt-4o-mini
+AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-3-small
+AZURE_OPENAI_API_VERSION=2024-02-15-preview
 SMTP_HOST=
 SMTP_PORT=587
 SMTP_USERNAME=
 SMTP_PASSWORD=
 SMTP_FROM=
 ```
+
+`AZURE_OPENAI_ENDPOINT` must be the Azure OpenAI resource endpoint only. Do not append `/openai`, `/deployments`, or a model path. The backend passes this value to the Azure OpenAI SDK as `azure_endpoint`.
 
 Backend container startup runs:
 
@@ -77,5 +83,5 @@ docker run -p 8080:8080 -e PUBLIC_API_BASE_URL=http://localhost:8000 chatbot-fac
 ## Important Notes
 
 - Do not deploy the local `backend/venv`, `node_modules`, `.idea`, or `__pycache__` folders.
-- Keep `JWT_SECRET`, SMTP password, and database password in Azure application settings, not in source code.
-- `OLLAMA_BASE_URL` cannot point to `localhost` in Azure unless Ollama is deployed in the same container/network and reachable from the backend.
+- Keep `JWT_SECRET`, SMTP password, database password, and `AZURE_OPENAI_API_KEY` in Azure application settings, not in source code.
+- Do not commit `.env` files or copy production secrets into `.env.example`.
