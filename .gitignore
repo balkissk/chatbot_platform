@@ -19,3 +19,26 @@ frontend/dist/
 backend/venv/
 .angular/cache/
 frontend/.angular/cache/
+
+# Logs and local runtime output
+*.log
+*.out.log
+*.err.log
+backend/*.log
+frontend/*.log
+
+# OS and editor-generated files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local artifacts and data dumps
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.sql
+uploads/
+backend/uploads/
+tmp/
+temp/

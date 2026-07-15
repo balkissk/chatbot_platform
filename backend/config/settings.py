@@ -46,13 +46,18 @@ def load_environment() -> str:
 
 def _database_url_from_parts(environment: str) -> str:
     user = os.getenv("POSTGRES_USER") or os.getenv("DB_USER") or "postgres"
-    password = os.getenv("POSTGRES_PASSWORD") or os.getenv("DB_PASSWORD") or "1234"
+    password = os.getenv("POSTGRES_PASSWORD") or os.getenv("DB_PASSWORD")
     host = os.getenv("POSTGRES_HOST") or os.getenv("DB_HOST") or "localhost"
     port = os.getenv("POSTGRES_PORT") or os.getenv("DB_PORT") or "5432"
     database = os.getenv("POSTGRES_DB") or os.getenv("DB_NAME") or "chatbot_db"
     sslmode = os.getenv("POSTGRES_SSLMODE") or os.getenv("DB_SSLMODE")
 
-    auth = f"{quote_plus(user)}:{quote_plus(password)}"
+    if environment == "production" and not password:
+        raise RuntimeError("POSTGRES_PASSWORD or DATABASE_URL is required in production.")
+
+    auth = quote_plus(user)
+    if password:
+        auth += f":{quote_plus(password)}"
     url = f"postgresql://{auth}@{host}:{port}/{database}"
     if sslmode or environment == "production":
         url += f"?sslmode={sslmode or 'require'}"

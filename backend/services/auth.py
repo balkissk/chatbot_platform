@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import os
+import secrets
 import time
 from typing import Any
 
@@ -14,8 +15,12 @@ from database.db import SessionLocal
 from models.user import User
 
 
-load_environment()
-JWT_SECRET = os.getenv("JWT_SECRET", "0123456789abcdef0123456789abcdef")
+ENVIRONMENT = load_environment()
+JWT_SECRET = os.getenv("JWT_SECRET")
+if not JWT_SECRET:
+    if ENVIRONMENT == "production":
+        raise RuntimeError("JWT_SECRET is required in production.")
+    JWT_SECRET = secrets.token_urlsafe(32)
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 JWT_EXPIRES_SECONDS = 60 * 60 * 24
 ALLOWED_ROLES = {"admin", "manager", "end_user"}

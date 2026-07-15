@@ -109,7 +109,7 @@ PORT=8080
 
 The Angular SSR server serves `/config.js` dynamically from these values, so the frontend does not need local API URLs baked into the bundle.
 
-`FRONTEND_BASE_URL` and `BACKEND_BASE_URL` are used by deployment features to generate public chat links, widget scripts, REST API URLs, and WhatsApp/Messenger webhook URLs. In local development use `FRONTEND_BASE_URL=http://localhost:4200` and `BACKEND_BASE_URL=http://127.0.0.1:8000`.
+`FRONTEND_BASE_URL` and `BACKEND_BASE_URL` are used by deployment features to generate public chat links, widget scripts, and REST API URLs. In local development use `FRONTEND_BASE_URL=http://localhost:4200` and `BACKEND_BASE_URL=http://127.0.0.1:8000`.
 
 ## Docker Build Examples
 

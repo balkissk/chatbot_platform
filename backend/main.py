@@ -1,10 +1,5 @@
 import os
 
-from config.settings import get_settings
-
-settings = get_settings()
-print("BACKEND_BASE_URL =", settings.backend_base_url)
-
 from fastapi import FastAPI
 from routes.chatbot_routes import router as chatbot_router
 from database.db import Base, engine
@@ -29,7 +24,6 @@ from routes.platform_settings_routes import router as platform_settings_router
 DEFAULT_ALLOWED_ORIGINS = [
     "http://localhost:4200",
     "http://127.0.0.1:4200",
-    "https://chatbot-factory-frontend-balkis-a4dchke0bucchbgk.francecentral-01.azurewebsites.net",
 ]
 
 
