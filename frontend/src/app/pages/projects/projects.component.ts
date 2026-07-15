@@ -1,18 +1,50 @@
 import { CommonModule, isPlatformBrowser } from '@angular/common';
-import { Component, Inject, OnInit, PLATFORM_ID, computed, signal } from '@angular/core';
+import { Component, Inject, OnDestroy, OnInit, PLATFORM_ID, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
+import {
+  LucideArrowRight,
+  LucideBot,
+  LucideCalendar,
+  LucideEllipsis,
+  LucideGitBranch,
+  LucideLayoutDashboard,
+  LucidePlus,
+  LucideSearch,
+  LucideSettings,
+  LucideTrash2
+} from '@lucide/angular';
 import { ApiService } from '../../services/api';
 
 @Component({
   selector: 'app-projects',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule],
+  imports: [
+    CommonModule,
+    FormsModule,
+    RouterModule,
+    LucideArrowRight,
+    LucideBot,
+    LucideCalendar,
+    LucideEllipsis,
+    LucideGitBranch,
+    LucideLayoutDashboard,
+    LucidePlus,
+    LucideSearch,
+    LucideSettings,
+    LucideTrash2
+  ],
   templateUrl: './projects.component.html',
   styleUrls: ['./projects.component.css']
 })
-export class ProjectsComponent implements OnInit {
+export class ProjectsComponent implements OnInit, OnDestroy {
   projects = signal<any[]>([]);
+  summary = signal({
+    projects: 0,
+    assistants: 0,
+    published_assistants: 0,
+    draft_only: 0
+  });
   loading = signal(false);
   creating = signal(false);
   savingId = signal<number | undefined>(undefined);
@@ -20,6 +52,8 @@ export class ProjectsComponent implements OnInit {
   hasMore = signal(false);
   loadingMore = signal(false);
   error = signal('');
+  createModalOpen = signal(false);
+  menuProjectId = signal<number | undefined>(undefined);
 
   search = '';
   newProjectName = '';
@@ -28,12 +62,10 @@ export class ProjectsComponent implements OnInit {
   editName = '';
   editDescription = '';
 
-  totalProjects = computed(() => this.projects().length);
-  totalChatbots = computed(() => this.projects().reduce((sum, project) => sum + this.count(project, 'chatbot_count'), 0));
-  publishedChatbots = computed(() => this.projects().reduce((sum, project) => sum + this.count(project, 'published_version_count'), 0));
-  totalConversations = computed(() => this.projects().reduce((sum, project) => sum + this.count(project, 'conversation_count'), 0));
-  draftProjects = computed(() => this.projects().filter(project => this.count(project, 'published_version_count') === 0).length);
-  activeProjects = computed(() => this.projects().filter(project => this.count(project, 'chatbot_count') > 0).length);
+  totalProjects = computed(() => this.summary().projects);
+  totalAssistants = computed(() => this.summary().assistants);
+  publishedAssistants = computed(() => this.summary().published_assistants);
+  draftOnlyAssistants = computed(() => this.summary().draft_only);
 
   private isBrowser: boolean;
   private searchTimer?: ReturnType<typeof setTimeout>;
@@ -50,6 +82,10 @@ export class ProjectsComponent implements OnInit {
   ngOnInit() {
     if (!this.isBrowser) return;
     this.loadProjects();
+  }
+
+  ngOnDestroy() {
+    if (this.searchTimer) clearTimeout(this.searchTimer);
   }
 
   loadProjects(force = false, append = false) {
@@ -77,6 +113,29 @@ export class ProjectsComponent implements OnInit {
         this.loadingMore.set(false);
       }
     });
+
+    if (!append) {
+      this.loadSummary();
+    }
+  }
+
+  loadSummary() {
+    this.api.getProjectsSummary().subscribe({
+      next: summary => this.summary.set({
+        projects: Number(summary?.projects || 0),
+        assistants: Number(summary?.assistants || 0),
+        published_assistants: Number(summary?.published_assistants || 0),
+        draft_only: Number(summary?.draft_only || 0)
+      }),
+      error: () => {
+        this.summary.set({
+          projects: this.projects().length,
+          assistants: this.projects().reduce((sum, project) => sum + this.count(project, 'assistant_count', 'chatbot_count'), 0),
+          published_assistants: this.projects().reduce((sum, project) => sum + this.count(project, 'published_assistant_count'), 0),
+          draft_only: this.projects().reduce((sum, project) => sum + this.count(project, 'draft_only_assistant_count'), 0)
+        });
+      }
+    });
   }
 
   loadMore() {
@@ -98,6 +157,7 @@ export class ProjectsComponent implements OnInit {
       next: () => {
         this.newProjectName = '';
         this.newProjectDescription = '';
+        this.createModalOpen.set(false);
         this.creating.set(false);
         this.loadProjects();
       },
@@ -110,6 +170,7 @@ export class ProjectsComponent implements OnInit {
 
   startEdit(project: any) {
     this.editingId = project.id;
+    this.menuProjectId.set(undefined);
     this.editName = project.name;
     this.editDescription = project.description || '';
   }
@@ -175,10 +236,30 @@ export class ProjectsComponent implements OnInit {
     this.loadProjects();
   }
 
+  openCreateModal() {
+    this.createModalOpen.set(true);
+    this.error.set('');
+  }
+
+  closeCreateModal() {
+    if (this.creating()) return;
+    this.createModalOpen.set(false);
+    this.newProjectName = '';
+    this.newProjectDescription = '';
+  }
+
+  toggleProjectMenu(projectId: number) {
+    this.menuProjectId.set(this.menuProjectId() === projectId ? undefined : projectId);
+  }
+
   projectStatus(project: any) {
-    if (this.count(project, 'published_version_count') > 0) return 'Published';
-    if (this.count(project, 'chatbot_count') > 0) return 'Draft';
-    return 'Empty';
+    if (this.count(project, 'published_assistant_count') > 0) return 'Has published assistants';
+    if (this.count(project, 'assistant_count', 'chatbot_count') > 0) return 'Draft only';
+    return 'Empty workspace';
+  }
+
+  lastActivity(project: any) {
+    return project?.last_activity_at || null;
   }
 
   resultLabel() {
@@ -196,12 +277,13 @@ export class ProjectsComponent implements OnInit {
     return undefined;
   }
 
-  scrollToCreate() {
-    if (!this.isBrowser) return;
-    document.querySelector('.create-panel')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  private count(project: any, ...keys: string[]) {
+    for (const key of keys) {
+      if (project?.[key] !== undefined && project?.[key] !== null) {
+        return Number(project[key] || 0);
+      }
+    }
+    return 0;
   }
 
-  private count(project: any, key: string) {
-    return Number(project?.[key] || 0);
-  }
 }

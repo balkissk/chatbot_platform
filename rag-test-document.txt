@@ -1,0 +1,19 @@
+INSOMEA ChatBot Factory Platform
+
+The INSOMEA ChatBot Factory Platform is a SaaS web application that helps teams create, configure, test, and deploy custom conversational chatbots.
+
+The platform organizes work into projects. Each project can contain multiple chatbots. Each chatbot can have multiple versions so the team can safely draft, test, publish, and archive changes.
+
+A chatbot version can include LLM settings such as the model name, temperature, and system prompt. The system prompt controls the chatbot behavior and tone.
+
+The platform also supports a knowledge base for RAG. A knowledge base contains documents uploaded by the team. Documents are split into smaller chunks. During a conversation, the system searches the most relevant chunks and sends them as context to the language model.
+
+RAG means Retrieval Augmented Generation. It helps the chatbot answer using company documents instead of relying only on the general knowledge of the language model.
+
+The planned deployment options include a web widget, REST API, WhatsApp, Messenger, Slack, and Microsoft Teams.
+
+The visual flow builder is planned to support message nodes, condition nodes, action nodes, and transitions. This lets non-technical users design chatbot conversations with a drag-and-drop interface.
+
+Azure can be used later for production RAG. Azure Blob Storage can store uploaded documents. Azure AI Search can store and search document chunks. Azure OpenAI can generate embeddings and final answers.
+
+For local development, the backend uses FastAPI, PostgreSQL, SQLAlchemy, and Ollama. The frontend uses Angular.

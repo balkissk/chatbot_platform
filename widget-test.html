@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Widget Test Page</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      min-height: 100vh;
+      background: #f4f7fb;
+      color: #17202a;
+    }
+
+    main {
+      margin: 0 auto;
+      max-width: 860px;
+      padding: 56px 24px;
+    }
+
+    h1 {
+      font-size: 34px;
+      margin: 0 0 12px;
+    }
+
+    p {
+      color: #5f6f80;
+      line-height: 1.6;
+      max-width: 640px;
+    }
+
+    code {
+      background: #e8eef5;
+      border-radius: 5px;
+      padding: 2px 6px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>External Website Test</h1>
+    <p>This page simulates another web app. Open it with <code>?chatbotId=YOUR_ID</code>, then use the chat bubble in the bottom-right corner.</p>
+    <p>Example: <code>widget-test.html?chatbotId=12</code></p>
+  </main>
+
+  <script src="http://127.0.0.1:8000/public/widget.js" data-title="Support"></script>
+</body>
+</html>

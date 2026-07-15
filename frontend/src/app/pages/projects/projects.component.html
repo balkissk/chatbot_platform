@@ -1,82 +1,43 @@
 <div class="projects-page">
-  <div class="page-header">
-    <div>
-      <p class="eyebrow">Workspace Dashboard</p>
-      <h2>Projects</h2>
-      <p class="muted">
-        {{ totalProjects() }} total projects • {{ totalChatbots() }} total chatbots • {{ totalConversations() }} total conversations
-      </p>
-    </div>
+  <section class="projects-hero">
+    <div class="hero-glow hero-glow-one"></div>
+    <div class="hero-glow hero-glow-two"></div>
 
-    <button class="secondary" (click)="loadProjects(true)" [disabled]="loading()">
-      {{ loading() ? 'Refreshing...' : 'Refresh' }}
-    </button>
-  </div>
+    <div class="page-header">
+      <div>
+        <p class="eyebrow">Manager workspace</p>
+        <h2>Projects</h2>
+        <p class="muted">Manage your chatbot workspaces, open dashboards, and organize assistants from one place.</p>
+        <div class="summary-chips">
+          <span>{{ totalProjects() }} Project{{ totalProjects() === 1 ? '' : 's' }}</span>
+          <span>{{ totalAssistants() }} Assistant{{ totalAssistants() === 1 ? '' : 's' }}</span>
+          <span>{{ publishedAssistants() }} Published Assistant{{ publishedAssistants() === 1 ? '' : 's' }}</span>
+          <span>{{ draftOnlyAssistants() }} Draft Only</span>
+        </div>
+      </div>
 
-  <section class="kpi-grid">
-    <article class="kpi-card featured">
-      <span class="kpi-icon">A</span>
-      <div>
-        <small>Active Projects</small>
-        <strong>{{ activeProjects() }}</strong>
-        <em *ngIf="trend('active_project_trend','project_trend') as value" [class.down]="value < 0">{{ value > 0 ? '+' : '' }}{{ value }}%</em>
-      </div>
-    </article>
-    <article class="kpi-card">
-      <span class="kpi-icon">D</span>
-      <div>
-        <small>Draft Projects</small>
-        <strong>{{ draftProjects() }}</strong>
-        <em *ngIf="trend('draft_project_trend') as value" [class.down]="value < 0">{{ value > 0 ? '+' : '' }}{{ value }}%</em>
-      </div>
-    </article>
-    <article class="kpi-card">
-      <span class="kpi-icon">✓</span>
-      <div>
-        <small>Published Chatbots</small>
-        <strong>{{ publishedChatbots() }}</strong>
-        <em *ngIf="trend('published_chatbot_trend','published_version_trend') as value" [class.down]="value < 0">{{ value > 0 ? '+' : '' }}{{ value }}%</em>
-      </div>
-    </article>
-    <article class="kpi-card">
-      <span class="kpi-icon">C</span>
-      <div>
-        <small>Monthly Conversations</small>
-        <strong>{{ totalConversations() }}</strong>
-        <em *ngIf="trend('monthly_conversation_trend','conversation_trend') as value" [class.down]="value < 0">{{ value > 0 ? '+' : '' }}{{ value }}%</em>
-      </div>
-    </article>
-  </section>
-
-  <section class="create-panel">
-    <div class="create-copy">
-      <span class="create-icon">+</span>
-      <div>
-        <h3>Create project</h3>
-        <p>Group chatbots by client, department, campaign, or internal workflow.</p>
+      <div class="header-actions">
+        <button class="primary create-button icon-button-label" type="button" (click)="openCreateModal()">
+          <svg lucidePlus size="18"></svg>
+          <span>New Project</span>
+        </button>
       </div>
     </div>
 
-    <div class="create-form">
-      <input [(ngModel)]="newProjectName" placeholder="Project name">
-      <input [(ngModel)]="newProjectDescription" placeholder="Short description">
-      <button class="create-button" (click)="createProject()" [disabled]="creating() || !newProjectName.trim()">
-        {{ creating() ? 'Creating...' : 'Create Project' }}
-      </button>
+    <div class="hero-toolbar">
+      <div class="search-box">
+        <input
+          [(ngModel)]="search"
+          (ngModelChange)="updateSearch($event)"
+          placeholder="Search projects..."
+        >
+        <button *ngIf="search" class="clear-button" type="button" (click)="resetSearch()">Clear</button>
+        <button class="search-button" type="button" (click)="loadProjects(true)" aria-label="Search projects">
+          <svg lucideSearch size="18"></svg>
+        </button>
+      </div>
+      <strong>{{ projects().length }} shown</strong>
     </div>
-  </section>
-
-  <section class="toolbar">
-    <div class="search-box">
-      <span>⌕</span>
-      <input
-        [(ngModel)]="search"
-        (ngModelChange)="updateSearch($event)"
-        placeholder="Search projects by name or description"
-      >
-      <button *ngIf="search" class="clear-button" type="button" (click)="resetSearch()">Clear</button>
-    </div>
-    <strong>{{ resultLabel() }}</strong>
   </section>
 
   <p *ngIf="error()" class="error">{{ error() }}</p>
@@ -85,54 +46,83 @@
     <article class="project-card skeleton-card" *ngFor="let item of [1,2,3,4,5,6]"></article>
   </section>
 
-  <section *ngIf="!loading() && projects().length === 0" class="empty-state">
-    <div class="empty-icon">P</div>
-    <h3>Create your first project</h3>
-    <p>Start with a workspace, then add chatbots, flows, knowledge, and analytics.</p>
-    <button class="create-button" type="button" (click)="scrollToCreate()">Create Project</button>
+  <section *ngIf="!loading() && projects().length === 0" class="compact-empty">
+    <h3>No projects found</h3>
+    <p>{{ search.trim() ? 'Try a different search term.' : 'Use the + New Project button to create your first project.' }}</p>
   </section>
 
   <section *ngIf="projects().length > 0" class="grid" [class.refreshing]="loading()">
     <article *ngFor="let p of projects()" class="project-card">
       <ng-container *ngIf="editingId !== p.id; else editProject">
         <div class="card-top">
-          <div>
-            <span class="status-badge" [class.published]="projectStatus(p) === 'Published'" [class.draft]="projectStatus(p) === 'Draft'">
-              {{ projectStatus(p) }}
-            </span>
-            <h3>{{ p.name }}</h3>
+          <div class="project-identity">
+            <div class="project-avatar">{{ (p.name || 'P').slice(0, 1).toUpperCase() }}</div>
           </div>
-          <small>{{ p.created_at | date:'mediumDate' }}</small>
+
+          <div class="menu-wrap">
+            <button class="menu-button" type="button" (click)="toggleProjectMenu(p.id)" aria-label="Project actions">
+              <svg lucideEllipsis size="20"></svg>
+            </button>
+            <div class="dropdown" *ngIf="menuProjectId() === p.id">
+              <button type="button" (click)="startEdit(p)">
+                <svg lucideSettings size="18"></svg>
+                <span>Edit Project</span>
+              </button>
+              <button
+                type="button"
+                class="danger-link"
+                (click)="deleteProject(p)"
+                [disabled]="deletingId() === p.id">
+                <svg lucideTrash2 size="18"></svg>
+                <span>{{ deletingId() === p.id ? 'Deleting...' : 'Delete' }}</span>
+              </button>
+            </div>
+          </div>
         </div>
 
-        <p>{{ p.description || 'No description' }}</p>
-
-        <div class="stats">
-          <span><strong>{{ p.chatbot_count || 0 }}</strong> Chatbots</span>
-          <span><strong>{{ p.version_count || 0 }}</strong> Versions</span>
-          <span><strong>{{ p.published_version_count || 0 }}</strong> Published</span>
+        <div class="project-body">
+          <h3>{{ p.name }}</h3>
+          <p>{{ p.description || 'No description' }}</p>
         </div>
 
-        <div class="card-actions">
-          <button [routerLink]="['/dashboard/projects', p.id]">Open</button>
-          <button class="secondary" [routerLink]="['/dashboard/projects', p.id]">Analytics</button>
-          <button class="secondary" (click)="startEdit(p)">Settings</button>
-          <button
-            class="danger"
-            (click)="deleteProject(p)"
-            [disabled]="deletingId() === p.id">
-            {{ deletingId() === p.id ? 'Deleting...' : 'Delete' }}
+        <div class="project-meta">
+          <div class="meta-row">
+            <span class="meta-icon"><svg lucideBot size="16"></svg></span>
+            <span>{{ (p.assistant_count ?? p.chatbot_count ?? 0) > 0 ? ((p.assistant_count ?? p.chatbot_count ?? 0) + ' assistant' + ((p.assistant_count ?? p.chatbot_count ?? 0) === 1 ? '' : 's')) : 'No assistants yet' }}</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-icon"><svg lucideGitBranch size="16"></svg></span>
+            <span>{{ (p.published_assistant_count || 0) }} published, {{ (p.draft_only_assistant_count || 0) }} draft only</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-icon"><svg lucideCalendar size="16"></svg></span>
+            <span>Last activity {{ lastActivity(p) ? (lastActivity(p) | date:'mediumDate') : 'Never' }}</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-icon"><svg lucideCalendar size="16"></svg></span>
+            <span>Created {{ p.created_at | date:'mediumDate' }}</span>
+          </div>
+        </div>
+
+        <div class="card-footer">
+          <small>{{ projectStatus(p) }}</small>
+          <button class="primary icon-button-label" [routerLink]="['/dashboard/projects', p.id]">
+            <svg lucideLayoutDashboard size="18"></svg>
+            <span>Open Workspace</span>
+            <svg lucideArrowRight size="18"></svg>
           </button>
         </div>
       </ng-container>
 
       <ng-template #editProject>
         <div class="edit-form">
+          <h3>Project settings</h3>
           <input [(ngModel)]="editName" placeholder="Project name">
           <input [(ngModel)]="editDescription" placeholder="Description">
         </div>
         <div class="card-actions">
           <button
+            class="primary"
             (click)="saveProject(p)"
             [disabled]="savingId() === p.id || !editName.trim()">
             {{ savingId() === p.id ? 'Saving...' : 'Save' }}
@@ -150,4 +140,31 @@
     [disabled]="loadingMore()">
     {{ loadingMore() ? 'Loading more...' : 'Load more projects' }}
   </button>
+
+  <section class="modal-backdrop" *ngIf="createModalOpen()">
+    <form class="create-modal" (ngSubmit)="createProject()">
+      <div>
+        <p class="eyebrow">New workspace</p>
+        <h3>Create project</h3>
+        <p>Give this project a clear name and short description.</p>
+      </div>
+
+      <label>
+        Project Name
+        <input name="projectName" [(ngModel)]="newProjectName" placeholder="Example: Admissions Assistant" autofocus>
+      </label>
+
+      <label>
+        Description
+        <textarea name="projectDescription" [(ngModel)]="newProjectDescription" placeholder="What is this project for?" rows="4"></textarea>
+      </label>
+
+      <div class="modal-actions">
+        <button type="button" class="secondary" (click)="closeCreateModal()">Cancel</button>
+        <button type="submit" class="primary" [disabled]="creating() || !newProjectName.trim()">
+          {{ creating() ? 'Creating...' : 'Create Project' }}
+        </button>
+      </div>
+    </form>
+  </section>
 </div>

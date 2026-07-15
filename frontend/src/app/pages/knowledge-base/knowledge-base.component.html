@@ -151,10 +151,11 @@
           </span>
         </div>
         <span>{{ document.size_bytes }} bytes{{ document.pages_count ? ' - ' + document.pages_count + ' pages' : '' }} - {{ document.chunks_count }} chunks</span>
+        <small *ngIf="lifecycleStatus(document) === 'processing'">Processing in background</small>
         <small>Embedding: {{ embeddingSummary(document) }}</small>
         <small>Model: {{ embeddingModel(document) }}</small>
         <small *ngIf="document.error_message" class="error">Failure reason: {{ document.error_message }}</small>
-        <small>Processed {{ document.processed_at | date:'medium' }}</small>
+        <small *ngIf="document.processed_at">Processed {{ document.processed_at | date:'medium' }}</small>
       </button>
 
       <div *ngIf="editingDocumentId() === document.id" class="document-edit">

@@ -1,0 +1,222 @@
+<section class="admin-chatbots-page">
+  <header class="page-hero">
+    <div>
+      <p class="eyebrow">ADMIN MANAGEMENT</p>
+      <h1>Chatbots</h1>
+      <p>Monitor AI assistants, publication status, usage, and runtime activity across the platform.</p>
+    </div>
+    <button type="button" class="secondary-button" (click)="load()" [disabled]="loading()">
+      {{ loading() ? 'Refreshing...' : 'Refresh' }}
+    </button>
+  </header>
+
+  <section class="kpi-grid" aria-label="Chatbot metrics">
+    <article class="kpi-card total">
+      <span>CB</span>
+      <div>
+        <p>Total Chatbots</p>
+        <strong>{{ stats().total }}</strong>
+        <small>All assistants on the platform</small>
+      </div>
+    </article>
+    <article class="kpi-card published">
+      <span>PV</span>
+      <div>
+        <p>Published</p>
+        <strong>{{ stats().published }}</strong>
+        <small>Active chatbots with a published version</small>
+      </div>
+    </article>
+    <article class="kpi-card draft">
+      <span>DR</span>
+      <div>
+        <p>Draft Only</p>
+        <strong>{{ stats().draft_only }}</strong>
+        <small>Active chatbots without publication</small>
+      </div>
+    </article>
+    <article class="kpi-card disabled">
+      <span>DS</span>
+      <div>
+        <p>Disabled</p>
+        <strong>{{ stats().disabled }}</strong>
+        <small>Chatbots with disabled runtime access</small>
+      </div>
+    </article>
+  </section>
+
+  <section class="filter-card">
+    <label>
+      Search
+      <input [(ngModel)]="search" placeholder="Search by chatbot name">
+    </label>
+    <label>
+      Owner ID
+      <input [(ngModel)]="ownerId" type="number" min="1" placeholder="Any owner">
+    </label>
+    <label>
+      Project ID
+      <input [(ngModel)]="projectId" type="number" min="1" placeholder="Any project">
+    </label>
+    <label>
+      Publication
+      <select [(ngModel)]="publicationStatus">
+        <option value="">All</option>
+        <option value="published">Published</option>
+        <option value="draft_only">Draft only</option>
+        <option value="disabled">Disabled</option>
+      </select>
+    </label>
+    <label>
+      Deployment
+      <select [(ngModel)]="deploymentStatus">
+        <option value="">All</option>
+        <option value="deployed">Deployed</option>
+        <option value="not_deployed">Not deployed</option>
+      </select>
+    </label>
+    <label>
+      Sort
+      <select [(ngModel)]="sortBy">
+        <option value="created_at">Created</option>
+        <option value="name">Name</option>
+        <option value="owner">Owner</option>
+        <option value="project">Project</option>
+        <option value="conversations">Conversations</option>
+        <option value="last_activity">Last activity</option>
+        <option value="last_runtime">Last runtime</option>
+      </select>
+    </label>
+    <label>
+      Order
+      <select [(ngModel)]="sortOrder">
+        <option value="desc">Desc</option>
+        <option value="asc">Asc</option>
+      </select>
+    </label>
+    <div class="filter-actions">
+      <button type="button" class="primary-button" (click)="load(true)" [disabled]="loading()">Apply</button>
+      <button type="button" class="ghost-button" (click)="resetFilters()" [disabled]="loading()">Reset</button>
+    </div>
+  </section>
+
+  <p *ngIf="error()" class="error-banner">{{ error() }}</p>
+
+  <section class="table-card">
+    <div class="table-header">
+      <div>
+        <p class="eyebrow">Platform Supervision</p>
+        <h2>AI assistants</h2>
+      </div>
+      <span>{{ pageLabel() }}</span>
+    </div>
+
+    <p *ngIf="loading()" class="muted loading-state">Loading chatbots...</p>
+
+    <div *ngIf="!loading() && items().length === 0" class="empty-state">
+      <strong>{{ search || ownerId || projectId || publicationStatus || deploymentStatus ? 'No chatbots match these filters.' : 'No chatbots found yet.' }}</strong>
+      <p>When managers create assistants, they will appear here for platform supervision.</p>
+    </div>
+
+    <div class="table-scroll" *ngIf="items().length > 0">
+      <table>
+        <thead>
+          <tr>
+            <th>Chatbot</th>
+            <th>Owner</th>
+            <th>Project</th>
+            <th>Published Version</th>
+            <th>Conversations</th>
+            <th>Last Activity</th>
+            <th>Publication Status</th>
+            <th>Deployment Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let bot of items()">
+            <td>
+              <strong>{{ bot.chatbot_name || ('Chatbot ' + bot.chatbot_id) }}</strong>
+              <small>#{{ bot.chatbot_id }}</small>
+            </td>
+            <td>
+              <strong>{{ bot.owner_name || 'Unknown owner' }}</strong>
+              <small>{{ bot.owner_email || 'No email' }}</small>
+            </td>
+            <td>
+              <strong>{{ bot.project_name || 'No project' }}</strong>
+              <small *ngIf="bot.project_id">#{{ bot.project_id }}</small>
+            </td>
+            <td>{{ bot.published_version_label || '-' }}</td>
+            <td>{{ bot.conversations_count }}</td>
+            <td>{{ relativeDate(bot.last_activity_at) }}</td>
+            <td>
+              <span class="status-badge" [class]="bot.publication_status">
+                {{ publicationLabel(bot.publication_status) }}
+              </span>
+            </td>
+            <td>
+              <span class="deploy-badge" [class.deployed]="bot.deployment_status === 'deployed'">
+                {{ deploymentLabel(bot.deployment_status) }}
+              </span>
+            </td>
+            <td>
+              <div class="row-actions">
+                <button type="button" (click)="openDetails(bot)">Details</button>
+                <button type="button" (click)="viewConversations(bot)">Conversations</button>
+                <button type="button" (click)="viewRuntimeLogs(bot)">Runtime Logs</button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pagination" *ngIf="totalPages() > 1">
+      <button type="button" class="ghost-button" (click)="previousPage()" [disabled]="page <= 1 || loading()">Previous</button>
+      <span>Page {{ page }} of {{ totalPages() }}</span>
+      <button type="button" class="ghost-button" (click)="nextPage()" [disabled]="page >= totalPages() || loading()">Next</button>
+    </div>
+  </section>
+</section>
+
+<section class="modal-backdrop" *ngIf="detailsLoading() || selected()">
+  <article class="details-modal">
+    <button type="button" class="close-button" aria-label="Close details" (click)="closeDetails()">x</button>
+    <p *ngIf="detailsLoading()" class="muted">Loading chatbot details...</p>
+
+    <ng-container *ngIf="selected() as bot">
+      <p class="eyebrow">Chatbot Details</p>
+      <h2>{{ bot.chatbot_name || ('Chatbot ' + bot.chatbot_id) }}</h2>
+      <p>{{ bot.description || 'No description available.' }}</p>
+
+      <div class="detail-grid">
+        <span>Owner <strong>{{ bot.owner_name || 'Unknown owner' }}</strong></span>
+        <span>Project <strong>{{ bot.project_name || 'No project' }}</strong></span>
+        <span>Created <strong>{{ bot.created_at ? (bot.created_at | date:'medium') : 'Not available' }}</strong></span>
+        <span>Versions <strong>{{ bot.versions_count }}</strong></span>
+        <span>Latest Version <strong>{{ bot.latest_version_label || 'Not available' }}</strong></span>
+        <span>Published Version <strong>{{ bot.published_version_label || 'Not available' }}</strong></span>
+        <span>Conversations <strong>{{ bot.conversations_count }}</strong></span>
+        <span>Runtime Requests <strong>{{ bot.runtime_request_count }}</strong></span>
+        <span>Last Activity <strong>{{ relativeDate(bot.last_activity_at) }}</strong></span>
+        <span>Last Runtime <strong>{{ relativeDate(bot.last_runtime_at) }}</strong></span>
+        <span>Publication <strong>{{ publicationLabel(bot.publication_status) }}</strong></span>
+        <span>Deployment <strong>{{ deploymentLabel(bot.deployment_status) }}</strong></span>
+        <span>Language <strong>{{ bot.language || 'Not available' }}</strong></span>
+        <span>Build Method <strong>{{ bot.build_method || 'Not available' }}</strong></span>
+      </div>
+
+      <div class="channels">
+        <strong>Enabled channels</strong>
+        <p *ngIf="!bot.enabled_channels?.length">No deployed channels recorded.</p>
+        <span *ngFor="let channel of bot.enabled_channels">{{ channelLabel(channel) }}</span>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="secondary-button" (click)="viewConversations(bot)">View Conversations</button>
+        <button type="button" class="secondary-button" (click)="viewRuntimeLogs(bot)">View Runtime Logs</button>
+      </div>
+    </ng-container>
+  </article>
+</section>

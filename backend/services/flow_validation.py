@@ -24,6 +24,16 @@ def _has_next(outgoing: dict[str, list[FlowTransition]], node: FlowNode) -> bool
     return bool(outgoing.get(node.node_key))
 
 
+ADVANCED_PLACEHOLDER_TYPES = {
+    "ai_router",
+    "ai_classifier",
+    "knowledge_search",
+    "confidence_check",
+    "lead_score",
+    "meeting_scheduler",
+}
+
+
 def validate_flow_version(db: Session, version_id: int) -> dict:
     flow = db.query(Flow).filter(Flow.version_id == version_id).first()
     if not flow:
@@ -78,7 +88,7 @@ def validate_flow_version(db: Session, version_id: int) -> dict:
         if node.node_key != "start" and not incoming.get(node.node_key) and not outgoing.get(node.node_key):
             errors.append(f"'{_node_name(node)}' is isolated. Connect it to the conversation flow.")
 
-        if node.type not in {"end", "handoff"} and node.type not in {"buttons", "condition", "rag_answer"} and not _has_next(outgoing, node):
+        if node.type not in {"end", "handoff"} and node.type not in {"buttons", "condition", "rag_answer", *ADVANCED_PLACEHOLDER_TYPES} and not _has_next(outgoing, node):
             errors.append(f"Choose a next step for '{_node_name(node)}'.")
 
         if node.type == "buttons":
@@ -101,7 +111,7 @@ def validate_flow_version(db: Session, version_id: int) -> dict:
             if "false" not in labels:
                 errors.append(f"Choose the False path for condition '{_node_name(node)}'.")
 
-        if node.type == "rag_answer":
+        if node.type in {"rag_answer", "knowledge_search"}:
             if not str(config.get("fallback") or "").strip():
                 errors.append(f"Add a fallback message to AI/RAG block '{_node_name(node)}'.")
 
@@ -134,6 +144,9 @@ def validate_flow_version(db: Session, version_id: int) -> dict:
                 errors.append(f"Choose GET or POST for API block '{_node_name(node)}'.")
             if not str(config.get("url") or "").strip():
                 errors.append(f"Add a URL to API block '{_node_name(node)}'.")
+
+        if node.type == "meeting_scheduler" and not str(config.get("field") or "").strip():
+            errors.append(f"Add the meeting time variable for '{_node_name(node)}'.")
 
         if node.type == "handoff":
             email_field = str(config.get("email_field") or "").strip()

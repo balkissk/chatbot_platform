@@ -82,48 +82,50 @@ button.secondary {
 }
 
 .messages {
-  background: #f4fbfb;
+  background:
+    radial-gradient(circle at top left, rgba(118, 205, 205, .12), transparent 34%),
+    #f8fbfc;
   border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  border-radius: 18px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   height: min(620px, calc(100vh - 280px));
   margin: 14px 0;
   min-height: 420px;
   overflow: auto;
-  padding: 14px;
+  padding: 18px;
 }
 
 .bubble {
   align-self: flex-start;
   background: #fff;
-  border: 1px solid #dbe3ee;
-  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 18px 18px 18px 6px;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, .06);
   max-width: 74%;
-  padding: 10px 12px;
+  padding: 12px 14px;
 }
 
-.mode-badge {
-  background: #eaf8f7;
-  border: 1px solid #a9ded9;
-  border-radius: 999px;
-  color: #207c75;
+.sender-label {
+  color: #64748b;
   display: inline-flex;
-  font-size: 11px;
-  font-weight: 800;
-  margin-bottom: 7px;
-  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 6px;
 }
 
 .bubble.user {
   align-self: flex-end;
-  background: #0f5f82;
-  border-color: #0f5f82;
+  background: linear-gradient(135deg, #76CDCD, #8DE3E3);
+  border-color: rgba(255, 255, 255, .45);
+  border-radius: 18px 18px 6px 18px;
+  box-shadow: 0 12px 28px rgba(118, 205, 205, .24);
 }
 
-.bubble.user p {
-  color: #fff;
+.bubble.user p,
+.bubble.user .sender-label {
+  color: #0f3d3e;
 }
 
 .quick-replies {
@@ -143,10 +145,16 @@ button.secondary {
 
 .composer input {
   border: 1px solid #bfd5dc;
-  border-radius: 6px;
+  border-radius: 999px;
   flex: 1;
   font: inherit;
-  padding: 12px;
+  padding: 13px 16px;
+}
+
+.composer input:focus {
+  border-color: #76CDCD;
+  box-shadow: 0 0 0 4px rgba(118, 205, 205, .16);
+  outline: none;
 }
 
 .notes {

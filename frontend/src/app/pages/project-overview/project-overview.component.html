@@ -1,67 +1,204 @@
-<div class="page-header">
-  <div>
-    <p class="eyebrow">Project</p>
-    <h2>{{ project()?.name || ('Project ' + projectId) }}</h2>
-  </div>
-
-  <div class="actions">
-    <button class="secondary" (click)="goBack()">Back</button>
-    <button [routerLink]="['/dashboard/projects', projectId, 'chatbots']">
-      Open chatbots
-    </button>
-  </div>
-</div>
-
-<p *ngIf="loading()" class="muted">Loading project...</p>
-<p *ngIf="error()" class="error">{{ error() }}</p>
-<p *ngIf="message()" class="success">{{ message() }}</p>
-
-<section *ngIf="project() as currentProject" class="overview">
-  <div class="panel details">
-    <div class="panel-header">
-      <h3>Project details</h3>
-      <button *ngIf="!editing" class="secondary" (click)="startEdit()">Edit</button>
-    </div>
-
-    <div *ngIf="!editing" class="details-view">
-      <p>{{ currentProject.description || 'No description' }}</p>
-      <small>Created {{ currentProject.created_at | date:'medium' }}</small>
-    </div>
-
-    <form *ngIf="editing" class="edit-form" (ngSubmit)="saveProject()">
-      <label>
-        Name
-        <input name="name" [(ngModel)]="editName">
-      </label>
-      <label>
-        Description
-        <input name="description" [(ngModel)]="editDescription">
-      </label>
-      <div class="actions left">
-        <button type="submit" [disabled]="saving() || !editName.trim()">
-          {{ saving() ? 'Saving...' : 'Save' }}
-        </button>
-        <button type="button" class="secondary" (click)="cancelEdit()">Cancel</button>
+<div class="project-page">
+  <header class="workspace-header">
+    <div>
+      <p class="eyebrow">AI Operations</p>
+      <div class="title-row">
+        <h2>{{ project()?.name || ('Project ' + projectId) }}</h2>
+        <span class="status-badge" [class.published]="workspaceStatus() === 'Published'" [class.active]="workspaceStatus() === 'Active draft'">
+          {{ workspaceStatus() }}
+        </span>
       </div>
-    </form>
-  </div>
+      <p class="muted">{{ project()?.description || 'Monitor assistant quality, runtime health and deployment readiness.' }}</p>
+      <small *ngIf="lastUpdated()">Last updated {{ lastUpdated() | date:'medium' }}</small>
+    </div>
 
-  <div class="stats-grid">
-    <article class="stat-card">
-      <span>Chatbots</span>
-      <strong>{{ currentProject.chatbot_count || 0 }}</strong>
-    </article>
-    <article class="stat-card">
-      <span>Versions</span>
-      <strong>{{ currentProject.version_count || 0 }}</strong>
-    </article>
-    <article class="stat-card">
-      <span>Published</span>
-      <strong>{{ currentProject.published_version_count || 0 }}</strong>
-    </article>
-    <article class="stat-card">
-      <span>Drafts</span>
-      <strong>{{ currentProject.draft_version_count || 0 }}</strong>
-    </article>
-  </div>
-</section>
+    <div class="actions">
+      <button class="primary" type="button" (click)="goToChatbots()">Manage Chatbots</button>
+    </div>
+  </header>
+
+  <p *ngIf="loading() || chatbotsLoading()" class="muted">Loading workspace...</p>
+  <p *ngIf="error()" class="error">{{ error() }}</p>
+  <p *ngIf="message()" class="success">{{ message() }}</p>
+
+  <ng-container *ngIf="firstChatbot(); else noChatbotDashboard">
+    <section class="kpi-grid" aria-label="Assistant operations metrics">
+      <article class="kpi-card" *ngFor="let kpi of operationsWidgets(); let index = index" [class.featured]="index === 0" [ngClass]="kpi.tone">
+        <div class="kpi-topline">
+          <span>{{ kpi.label }}</span>
+          <i></i>
+        </div>
+        <strong>{{ formatKpiValue(kpi.value, kpi.suffix, kpi.prefix) }}</strong>
+        <small>{{ kpi.helper }}</small>
+      </article>
+    </section>
+
+    <p *ngIf="operationsLoading()" class="muted">Loading operational dashboard...</p>
+
+    <section class="ops-grid" *ngIf="!operationsLoading()">
+      <article class="panel validation-panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Validation Center</p>
+            <h3>Deployment readiness</h3>
+          </div>
+          <button class="secondary compact" type="button" (click)="goToFirstChatbot('flow')">Open Builder</button>
+        </div>
+
+        <div class="validation-list" *ngIf="validationItems().length; else noOpsData">
+          <div class="validation-row" *ngFor="let item of validationItems()" [class.ready]="item.status === 'ready'">
+            <span></span>
+            <div>
+              <strong>{{ item.label }}</strong>
+              <p>{{ item.message }}</p>
+            </div>
+            <em>{{ statusLabel(item.status) }}</em>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel recommendations-panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">AI Recommendations</p>
+            <h3>Next best actions</h3>
+          </div>
+        </div>
+
+        <div class="recommendation-list" *ngIf="recommendations().length; else noRecommendations">
+          <article class="recommendation" *ngFor="let item of recommendations()" [class.high]="item.priority === 'high'">
+            <span>{{ item.priority }}</span>
+            <div>
+              <strong>{{ item.title }}</strong>
+              <p>{{ item.message }}</p>
+            </div>
+          </article>
+        </div>
+        <ng-template #noRecommendations>
+          <p class="muted">No recommendations yet. Run conversations to collect operational signals.</p>
+        </ng-template>
+      </article>
+
+      <article class="panel gaps-panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Knowledge Gaps</p>
+            <h3>Missing topics</h3>
+          </div>
+          <button class="secondary compact" type="button" (click)="goToFirstChatbot('knowledge')">Knowledge Base</button>
+        </div>
+
+        <div class="gap-list" *ngIf="knowledgeGaps().length; else noGaps">
+          <article class="gap-row" *ngFor="let gap of knowledgeGaps()">
+            <div>
+              <strong>{{ gap.question }}</strong>
+              <p>Asked {{ gap.count }} time{{ gap.count === 1 ? '' : 's' }}</p>
+            </div>
+            <small>{{ gap.last_asked_at | date:'medium' }}</small>
+          </article>
+        </div>
+        <ng-template #noGaps>
+          <p class="muted">No recurring unanswered questions detected yet.</p>
+        </ng-template>
+      </article>
+
+      <article class="panel version-panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Current Version</p>
+            <h3>Release state</h3>
+          </div>
+          <button class="secondary compact" type="button" (click)="goToFirstChatbot('versions')">Versions</button>
+        </div>
+
+        <div class="version-card" *ngIf="versionInfo()?.active_version; else noVersion">
+          <div>
+            <span>Active version</span>
+            <strong>v{{ versionInfo()?.active_version?.version_number }}</strong>
+            <p>{{ versionInfo()?.active_version?.status }}</p>
+          </div>
+          <div>
+            <span>Last published</span>
+            <strong>{{ versionInfo()?.last_published_version ? ('v' + versionInfo()?.last_published_version?.version_number) : 'None' }}</strong>
+            <p>{{ versionInfo()?.last_published_version?.published_at ? (versionInfo()?.last_published_version?.published_at | date:'medium') : 'Not published' }}</p>
+          </div>
+          <div>
+            <span>Rollback</span>
+            <strong>{{ versionInfo()?.rollback_available ? 'Available' : 'Unavailable' }}</strong>
+            <p>{{ versionInfo()?.rollback_available ? 'Multiple published versions exist.' : 'Publish another version to enable rollback.' }}</p>
+          </div>
+        </div>
+        <ng-template #noVersion>
+          <p class="muted">No version data is available yet.</p>
+        </ng-template>
+      </article>
+    </section>
+
+    <section class="ops-grid lower" *ngIf="!operationsLoading()">
+      <article class="panel events-panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Runtime Events</p>
+            <h3>Recent warnings and errors</h3>
+          </div>
+        </div>
+
+        <div class="event-list" *ngIf="runtimeEvents().length; else noEvents">
+          <article class="event-row" *ngFor="let event of runtimeEvents()" [class.error-event]="event.type === 'error'">
+            <span>{{ event.type }}</span>
+            <div>
+              <strong>{{ event.title }}</strong>
+              <p>{{ event.message }}</p>
+            </div>
+            <small>{{ event.created_at | date:'short' }}</small>
+          </article>
+        </div>
+        <ng-template #noEvents>
+          <p class="muted">No runtime events detected from stored conversations and document processing.</p>
+        </ng-template>
+      </article>
+
+      <article class="panel replay-panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Conversation Replay</p>
+            <h3>Inspect answer quality</h3>
+          </div>
+          <button class="secondary compact" type="button" (click)="goToFirstChatbot('analytics')">Open Analytics</button>
+        </div>
+
+        <div class="replay-list" *ngIf="replayRows().length; else noReplay">
+          <article class="replay-row" *ngFor="let replay of replayRows()">
+            <div class="replay-copy">
+              <span>User</span>
+              <p>{{ replay.user_message || 'No user message recorded' }}</p>
+              <span>Assistant</span>
+              <p>{{ replay.ai_response || 'No AI response recorded' }}</p>
+            </div>
+            <div class="replay-meta">
+              <strong>{{ replay.latency_ms === null || replay.latency_ms === undefined ? 'No latency' : replay.latency_ms + ' ms' }}</strong>
+              <small>{{ replay.retrieved_chunks?.length || 0 }} retrieved chunks</small>
+              <small>Session #{{ replay.session_id }}</small>
+            </div>
+          </article>
+        </div>
+        <ng-template #noReplay>
+          <p class="muted">No conversation replay data yet.</p>
+        </ng-template>
+      </article>
+    </section>
+  </ng-container>
+
+  <ng-template #noChatbotDashboard>
+    <section class="panel empty-dashboard">
+      <p class="eyebrow">No assistant yet</p>
+      <h3>Create an assistant to start monitoring operations.</h3>
+      <p class="muted">The operations dashboard will appear after this workspace has a chatbot and real conversation data.</p>
+      <button class="primary" [routerLink]="['/dashboard/projects', projectId, 'chatbots']">Create Chatbot</button>
+    </section>
+  </ng-template>
+
+  <ng-template #noOpsData>
+    <p class="muted">No operational data is available yet.</p>
+  </ng-template>
+</div>

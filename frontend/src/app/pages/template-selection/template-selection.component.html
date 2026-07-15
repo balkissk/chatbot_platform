@@ -1,0 +1,78 @@
+<section class="setup-page">
+  <button class="change-setup" type="button" (click)="openSetupWizard()">
+    <span aria-hidden="true">←</span>
+    Change Assistant Setup
+  </button>
+
+  <header class="setup-header">
+    <div>
+      <p class="eyebrow">Template marketplace</p>
+      <h2>Choose a starter template</h2>
+      <p class="muted">
+        Select a starter template for your assistant. You can change templates before applying one.
+      </p>
+    </div>
+  </header>
+
+  <article class="setup-card" *ngIf="loading()">
+    <span></span>
+    <div>
+      <h3>Loading recommended templates</h3>
+      <p class="muted">Reading assistant configuration and preparing template options.</p>
+    </div>
+  </article>
+
+  <div class="error-card" *ngIf="error()">
+    {{ error() }}
+  </div>
+
+  <ng-container *ngIf="!loading()">
+    <section class="recommendation-panel">
+      <div>
+        <p class="eyebrow">Recommended for</p>
+        <h3>{{ assistantTypeLabel() }}</h3>
+        <p class="muted">{{ chatbot()?.name || 'Assistant' }}</p>
+      </div>
+    </section>
+
+    <section class="template-grid" aria-label="Recommended templates">
+      <button
+        type="button"
+        class="template-card"
+        *ngFor="let template of templates()"
+        [class.selected]="selectedTemplate() === template.key"
+        (click)="selectTemplate(template.key)"
+      >
+        <span class="template-icon">{{ template.name.charAt(0) }}</span>
+        <span class="template-content">
+          <strong>{{ template.name }}</strong>
+          <small>{{ template.description }}</small>
+          <em>{{ selectedTemplate() === template.key ? 'Selected' : 'Select Template' }}</em>
+        </span>
+        <span class="selected-dot" *ngIf="selectedTemplate() === template.key"></span>
+      </button>
+    </section>
+
+    <footer class="apply-bar">
+      <div>
+        <strong>{{ selectedTemplateName() || 'No template selected' }}</strong>
+        <p class="muted">Choose a template, compare options, then apply it when you are ready.</p>
+      </div>
+      <button class="primary" type="button" [disabled]="!selectedTemplate() || applying()" (click)="applyTemplate()">
+        {{ applying() ? 'Applying...' : 'Apply Template' }}
+      </button>
+    </footer>
+  </ng-container>
+</section>
+
+<app-assistant-creation-wizard
+  *ngIf="setupWizardOpen()"
+  [submitting]="savingSetup()"
+  [initialState]="setupDraft()"
+  title="Change assistant setup"
+  description="Update the assistant purpose, creation method, name, description, and language before applying a template."
+  finishLabel="Save Setup"
+  submittingLabel="Saving..."
+  (closeWizard)="closeSetupWizard()"
+  (finishWizard)="saveAssistantSetup($event)">
+</app-assistant-creation-wizard>

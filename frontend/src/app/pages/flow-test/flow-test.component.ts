@@ -1,5 +1,5 @@
 import { CommonModule, isPlatformBrowser } from '@angular/common';
-import { Component, Inject, OnInit, PLATFORM_ID, signal } from '@angular/core';
+import { Component, ElementRef, Inject, OnInit, PLATFORM_ID, ViewChild, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { ApiService } from '../../services/api';
@@ -12,6 +12,9 @@ import { ApiService } from '../../services/api';
   styleUrls: ['./flow-test.component.css']
 })
 export class FlowTestComponent implements OnInit {
+  @ViewChild('messagesContainer') private messagesContainer?: ElementRef<HTMLElement>;
+  @ViewChild('messageInput') private messageInput?: ElementRef<HTMLInputElement>;
+
   projectId!: number;
   chatbotId!: number;
 
@@ -90,6 +93,7 @@ export class FlowTestComponent implements OnInit {
 
     if (text !== '__start__') {
       this.messages.update(messages => [...messages, { role: 'user', text }]);
+      this.queueChatUiUpdate();
     }
     this.input = '';
     this.loading.set(true);
@@ -106,10 +110,12 @@ export class FlowTestComponent implements OnInit {
         this.sessionId.set(result.session_id);
         this.messages.update(messages => [...messages, ...this.toBotMessages(result)]);
         this.loading.set(false);
+        this.queueChatUiUpdate();
       },
       error: err => {
         this.setFriendlyError(err, '', 'Flow test failed.');
         this.loading.set(false);
+        this.queueChatUiUpdate();
       }
     });
   }
@@ -117,35 +123,57 @@ export class FlowTestComponent implements OnInit {
   private toBotMessages(result: any) {
     const mode = result.mode_used || 'flow';
     const retrievalMode = result.retrieval_mode || '';
-    const sources = result.sources || [];
+    const sources = this.showSourceReferences() ? result.sources || [] : [];
     if (Array.isArray(result.messages) && result.messages.length > 0) {
-      return result.messages.map((item: any) => ({
-        role: 'bot' as const,
-        text: item.text || '',
-        options: item.options || [],
-        mode,
-        retrievalMode,
-        sources
-      }));
+      return result.messages
+        .map((item: any) => ({
+          role: 'bot' as const,
+          text: item.text || '',
+          options: this.chatOptions(item.options || []),
+          mode,
+          retrievalMode,
+          sources
+        }))
+        .filter((item: any) => item.text.trim() || item.options.length);
     }
 
-    return [{
+    const message = {
       role: 'bot' as const,
       text: result.response || '',
-      options: result.options || [],
+      options: this.chatOptions(result.options || []),
       mode,
       retrievalMode,
       sources
-    }];
+    };
+
+    return message.text.trim() || message.options.length ? [message] : [];
   }
 
-  responseLabel(item: { mode?: string; retrievalMode?: string }) {
-    const mode = item.mode || 'flow';
-    if (mode.includes('rag')) return `AI/RAG${item.retrievalMode ? ' - ' + item.retrievalMode : ''}`;
-    if (mode === 'fallback') return 'Fallback';
-    if (item.retrievalMode === 'keyword') return 'Keyword retrieval';
-    if (item.retrievalMode === 'semantic') return 'Semantic retrieval';
-    return 'Flow message';
+  chatOptions(options?: string[]) {
+    return (options || []).filter(option => {
+      const value = String(option || '').trim();
+      return value && value.toLowerCase() !== 'next';
+    });
+  }
+
+  showSourceReferences() {
+    return this.context()?.chatbot?.rag_settings?.show_sources !== false;
+  }
+
+  senderLabel(item: { role: 'user' | 'bot' }) {
+    return item.role === 'user' ? 'User' : 'Assistant';
+  }
+
+  private queueChatUiUpdate() {
+    if (!this.isBrowser) return;
+
+    window.setTimeout(() => {
+      const container = this.messagesContainer?.nativeElement;
+      if (container) {
+        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+      }
+      this.messageInput?.nativeElement?.focus();
+    });
   }
 
   private setFriendlyError(err: any, preferredTitle: string, fallback: string) {

@@ -1,115 +1,275 @@
-<div class="page-header">
-  <div>
-    <p class="eyebrow">Admin</p>
-    <h2>Users</h2>
-  </div>
-</div>
+<section class="admin-users-page">
+  <header class="users-hero">
+    <div>
+      <p class="eyebrow">ADMIN MANAGEMENT</p>
+      <h2>Users</h2>
+      <p>Manage platform users, roles, and account access.</p>
+    </div>
+    <button type="button" class="primary-action" (click)="openAddUserModal()">+ Add User</button>
+  </header>
 
-<section class="panel create-panel">
-  <h3>Create user</h3>
-  <form class="create-form" (ngSubmit)="createUser()">
-    <label>
-      Name
-      <input name="name" [(ngModel)]="newUser.name" autocomplete="name" />
+  <section class="kpi-grid" aria-label="User summary">
+    <article class="kpi-card total">
+      <span class="kpi-icon">U</span>
+      <div>
+        <small>Total Users</small>
+        <strong>{{ totalUsers() }}</strong>
+        <p>All platform user accounts</p>
+      </div>
+    </article>
+    <article class="kpi-card active">
+      <span class="kpi-icon">A</span>
+      <div>
+        <small>Active Users</small>
+        <strong>{{ activeUsers() }}</strong>
+        <p>Accounts with platform access</p>
+      </div>
+    </article>
+    <article class="kpi-card disabled">
+      <span class="kpi-icon">D</span>
+      <div>
+        <small>Disabled Users</small>
+        <strong>{{ disabledUsers() }}</strong>
+        <p>Accounts currently blocked</p>
+      </div>
+    </article>
+    <article class="kpi-card managers">
+      <span class="kpi-icon">M</span>
+      <div>
+        <small>Managers</small>
+        <strong>{{ managers() }}</strong>
+        <p>Workspace owner accounts</p>
+      </div>
+    </article>
+  </section>
+
+  <section class="filter-card" aria-label="User filters">
+    <label class="search-field">
+      <span>Search</span>
+      <div class="input-shell">
+        <b aria-hidden="true">S</b>
+        <input
+          name="search"
+          [(ngModel)]="search"
+          (ngModelChange)="updateSearch($event)"
+          placeholder="Name or email"
+        />
+      </div>
     </label>
+
     <label>
-      Email
-      <input name="email" type="email" [(ngModel)]="newUser.email" autocomplete="email" />
-    </label>
-    <label>
-      Password
-      <input name="password" type="password" [(ngModel)]="newUser.password" autocomplete="new-password" />
-    </label>
-    <label>
-      Role
-      <select name="role" [(ngModel)]="newUser.role">
+      <span>Role</span>
+      <select name="roleFilter" [(ngModel)]="roleFilter" (ngModelChange)="updateRoleFilter($event)">
+        <option value="">All roles</option>
+        <option value="admin">Admin</option>
         <option value="manager">Manager</option>
         <option value="end_user">End user</option>
-        <option value="admin">Admin</option>
       </select>
     </label>
-  <button type="submit" [disabled]="creating()">{{ creating() ? 'Creating...' : 'Create' }}</button>
+
+    <label>
+      <span>Status</span>
+      <select name="statusFilter" [(ngModel)]="statusFilter" (ngModelChange)="updateStatusFilter($event)">
+        <option value="">All statuses</option>
+        <option value="active">Active</option>
+        <option value="disabled">Disabled</option>
+      </select>
+    </label>
+
+    <div class="filter-actions">
+      <button type="button" class="primary-action compact" (click)="applyFilters()">Apply</button>
+      <button type="button" class="secondary-action compact" (click)="resetFilters()">Reset</button>
+    </div>
+  </section>
+
+  <p *ngIf="error()" class="alert-error">{{ error() }}</p>
+
+  <section class="users-table-card">
+    <div class="table-header">
+      <div>
+        <h3>Platform Users</h3>
+        <p>{{ rangeStart() }}-{{ rangeEnd() }} of {{ totalUsersCount }} users</p>
+      </div>
+    </div>
+
+    <div *ngIf="loading()" class="loading-state">Loading users...</div>
+
+    <div class="table-scroll" *ngIf="!loading() && users().length > 0">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Role</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th>Last Login</th>
+            <th class="actions-col">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let user of pagedUsers()">
+            <td>
+              <div class="identity-cell">
+                <span class="user-avatar">{{ initials(user) }}</span>
+                <strong>{{ user.name }}</strong>
+              </div>
+            </td>
+            <td class="email-cell">{{ user.email }}</td>
+            <td>
+              <span class="badge role-badge" [ngClass]="'role-' + user.role">{{ roleLabel(user.role) }}</span>
+            </td>
+            <td>
+              <span class="badge status-badge" [class.status-disabled]="user.status === 'disabled'">
+                {{ statusLabel(user.status) }}
+              </span>
+            </td>
+            <td>{{ user.created_at | date:'mediumDate' }}</td>
+            <td>
+              <span *ngIf="lastLoginLabel(user); else neverSignedIn">{{ user.last_login_at | date:'mediumDate' }}</span>
+              <ng-template #neverSignedIn><span class="muted-cell">Never signed in</span></ng-template>
+            </td>
+            <td class="actions-col">
+              <div class="action-menu">
+                <button
+                  type="button"
+                  class="icon-button"
+                  aria-label="Open user actions"
+                  [attr.aria-expanded]="openMenuId() === user.id"
+                  (click)="toggleMenu(user)"
+                >
+                  ...
+                </button>
+                <div class="menu-panel" *ngIf="openMenuId() === user.id">
+                  <button type="button" (click)="openDetails(user)">View details</button>
+                  <button
+                    type="button"
+                    *ngIf="user.status === 'active'"
+                    [disabled]="actionId() === user.id"
+                    (click)="askStatusChange(user, 'disabled')"
+                  >
+                    Disable user
+                  </button>
+                  <button
+                    type="button"
+                    *ngIf="user.status === 'disabled'"
+                    [disabled]="actionId() === user.id"
+                    (click)="askStatusChange(user, 'active')"
+                  >
+                    Activate user
+                  </button>
+                </div>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div *ngIf="!loading() && users().length === 0" class="empty-state">
+      <strong>No users found</strong>
+      <p>Adjust filters or add a new user to the platform.</p>
+    </div>
+
+    <footer class="pagination-bar" *ngIf="!loading() && totalUsersCount > pageSize">
+      <span>Page {{ currentPage }} of {{ totalPages() }}</span>
+      <div>
+        <button type="button" class="secondary-action compact" (click)="previousPage()" [disabled]="currentPage === 1">Previous</button>
+        <button type="button" class="secondary-action compact" (click)="nextPage()" [disabled]="currentPage === totalPages()">Next</button>
+      </div>
+    </footer>
+  </section>
+</section>
+
+<div class="modal-backdrop" *ngIf="addModalOpen()" role="dialog" aria-modal="true" aria-labelledby="add-user-title">
+  <form class="modal-card user-modal" (ngSubmit)="createUser()">
+    <div class="modal-header">
+      <div>
+        <p class="eyebrow">ADMIN MANAGEMENT</p>
+        <h3 id="add-user-title">Add User</h3>
+      </div>
+      <button type="button" class="close-button" aria-label="Close add user modal" (click)="closeAddUserModal()">x</button>
+    </div>
+
+    <div class="form-grid">
+      <label>
+        <span>Name</span>
+        <input name="name" [(ngModel)]="newUser.name" autocomplete="name" [class.invalid]="fieldInvalid('name')" />
+        <small *ngIf="fieldInvalid('name')">Name is required.</small>
+      </label>
+      <label>
+        <span>Email</span>
+        <input name="email" type="email" [(ngModel)]="newUser.email" autocomplete="email" [class.invalid]="fieldInvalid('email')" />
+        <small *ngIf="fieldInvalid('email')">Email is required.</small>
+      </label>
+      <label>
+        <span>Password</span>
+        <input name="password" type="password" [(ngModel)]="newUser.password" autocomplete="new-password" [class.invalid]="fieldInvalid('password')" />
+        <small *ngIf="fieldInvalid('password')">Password is required.</small>
+      </label>
+      <label>
+        <span>Role</span>
+        <select name="role" [(ngModel)]="newUser.role">
+          <option value="manager">Manager</option>
+          <option value="end_user">End user</option>
+          <option value="admin">Admin</option>
+        </select>
+      </label>
+    </div>
+
+    <p *ngIf="createError()" class="alert-error">{{ createError() }}</p>
+
+    <div class="modal-actions">
+      <button type="button" class="secondary-action" (click)="closeAddUserModal()" [disabled]="creating()">Cancel</button>
+      <button type="submit" class="primary-action" [disabled]="creating()">{{ creating() ? 'Creating...' : 'Create User' }}</button>
+    </div>
   </form>
-  <p *ngIf="createError()" class="error">{{ createError() }}</p>
-</section>
+</div>
 
-<section class="toolbar">
-  <label class="search">
-    Search
-    <input
-      name="search"
-      [(ngModel)]="search"
-      (ngModelChange)="updateSearch($event)"
-      placeholder="Name or email"
-    />
-  </label>
-  <label>
-    Role
-    <select name="roleFilter" [(ngModel)]="roleFilter" (ngModelChange)="updateRoleFilter($event)">
-      <option value="">All roles</option>
-      <option value="admin">Admin</option>
-      <option value="manager">Manager</option>
-      <option value="end_user">End user</option>
-    </select>
-  </label>
-  <label>
-    Status
-    <select name="statusFilter" [(ngModel)]="statusFilter" (ngModelChange)="updateStatusFilter($event)">
-      <option value="">All statuses</option>
-      <option value="active">Active</option>
-      <option value="disabled">Disabled</option>
-    </select>
-  </label>
-  <button type="button" (click)="loadUsers()">Apply</button>
-  <button type="button" class="secondary" (click)="resetFilters()">Reset</button>
-</section>
+<div class="modal-backdrop" *ngIf="selectedUser()" role="dialog" aria-modal="true" aria-labelledby="user-details-title">
+  <section class="modal-card detail-modal">
+    <div class="modal-header">
+      <div>
+        <p class="eyebrow">USER DETAILS</p>
+        <h3 id="user-details-title">{{ selectedUser()?.name }}</h3>
+      </div>
+      <button type="button" class="close-button" aria-label="Close user details" (click)="closeDetails()">x</button>
+    </div>
 
-<p *ngIf="error()" class="error">{{ error() }}</p>
-<p *ngIf="loading()" class="muted">Loading users...</p>
+    <div class="detail-list">
+      <span>Name <strong>{{ selectedUser()?.name }}</strong></span>
+      <span>Email <strong>{{ selectedUser()?.email }}</strong></span>
+      <span>Role <strong>{{ roleLabel(selectedUser()?.role) }}</strong></span>
+      <span>Status <strong>{{ statusLabel(selectedUser()?.status) }}</strong></span>
+      <span>Created date <strong>{{ selectedUser()?.created_at | date:'medium' }}</strong></span>
+      <span>Last login <strong>{{ selectedUser()?.last_login_at ? (selectedUser()?.last_login_at | date:'medium') : 'Never signed in' }}</strong></span>
+      <span *ngIf="selectedUser()?.project_count !== undefined">Project count <strong>{{ selectedUser()?.project_count }}</strong></span>
+      <span *ngIf="selectedUser()?.chatbot_count !== undefined">Chatbot count <strong>{{ selectedUser()?.chatbot_count }}</strong></span>
+    </div>
+  </section>
+</div>
 
-<table *ngIf="!loading() && users().length > 0">
-  <thead>
-    <tr>
-      <th>Name</th>
-      <th>Email</th>
-      <th>Role</th>
-      <th>Status</th>
-      <th>Created</th>
-      <th>Actions</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr *ngFor="let user of users()">
-      <td>{{ user.name }}</td>
-      <td>{{ user.email }}</td>
-      <td><span class="role">{{ user.role }}</span></td>
-      <td>
-        <span class="status" [class.disabled]="user.status === 'disabled'">
-          {{ user.status }}
-        </span>
-      </td>
-      <td>{{ user.created_at | date:'mediumDate' }}</td>
-      <td>
-        <button
-          type="button"
-          class="secondary"
-          *ngIf="user.status === 'active'"
-          [disabled]="actionId() === user.id"
-          (click)="setStatus(user, 'disabled')"
-        >
-          Disable
-        </button>
-        <button
-          type="button"
-          *ngIf="user.status === 'disabled'"
-          [disabled]="actionId() === user.id"
-          (click)="setStatus(user, 'active')"
-        >
-          Activate
-        </button>
-      </td>
-    </tr>
-  </tbody>
-</table>
-
-<p *ngIf="!loading() && users().length === 0" class="empty">No users found.</p>
+<div class="modal-backdrop" *ngIf="confirmAction()" role="dialog" aria-modal="true" aria-labelledby="confirm-user-title">
+  <section class="modal-card confirm-modal">
+    <div class="modal-header">
+      <div>
+        <p class="eyebrow">CONFIRM ACTION</p>
+        <h3 id="confirm-user-title">{{ confirmTitle() }}</h3>
+      </div>
+      <button type="button" class="close-button" aria-label="Close confirmation" (click)="closeConfirmation()">x</button>
+    </div>
+    <p>{{ confirmMessage() }}</p>
+    <strong>{{ confirmAction()?.user?.name }} - {{ confirmAction()?.user?.email }}</strong>
+    <div class="modal-actions">
+      <button type="button" class="secondary-action" (click)="closeConfirmation()" [disabled]="!!actionId()">Cancel</button>
+      <button
+        type="button"
+        class="primary-action danger"
+        (click)="confirmStatusChange()"
+        [disabled]="actionId() === confirmAction()?.user?.id"
+      >
+        {{ actionId() === confirmAction()?.user?.id ? 'Updating...' : (confirmAction()?.status === 'disabled' ? 'Disable User' : 'Activate User') }}
+      </button>
+    </div>
+  </section>
+</div>

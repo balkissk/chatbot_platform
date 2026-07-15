@@ -190,7 +190,8 @@ def merge_node_rag_settings(rag_settings: dict, node_config: dict | None) -> dic
     if "strict_context" in node_config:
         settings["strict_context"] = _bool_setting(node_config.get("strict_context"), settings["strict_context"])
     if "show_sources" in node_config:
-        settings["show_sources"] = _bool_setting(node_config.get("show_sources"), settings["show_sources"])
+        node_show_sources = _bool_setting(node_config.get("show_sources"), settings["show_sources"])
+        settings["show_sources"] = bool(settings["show_sources"] and node_show_sources)
     if "response_length" in node_config:
         settings["response_length"] = _response_length(node_config.get("response_length"), settings["response_length"])
 

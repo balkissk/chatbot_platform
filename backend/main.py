@@ -1,5 +1,10 @@
 import os
 
+from config.settings import get_settings
+
+settings = get_settings()
+print("BACKEND_BASE_URL =", settings.backend_base_url)
+
 from fastapi import FastAPI
 from routes.chatbot_routes import router as chatbot_router
 from database.db import Base, engine
@@ -15,6 +20,10 @@ from routes.auth_routes import router as auth_router
 from routes.flow_routes import router as flow_router
 from routes.public_routes import router as public_router
 from routes.admin_analytics_routes import router as admin_analytics_router
+from routes.health_routes import router as health_router
+from routes.channel_routes import router as channel_router
+from routes.legal_routes import router as legal_router
+from routes.platform_settings_routes import router as platform_settings_router
 
 
 DEFAULT_ALLOWED_ORIGINS = [
@@ -35,6 +44,7 @@ openapi_tags = [
     {"name": "Flow Builder", "description": "Builder flows, nodes, transitions, and visual chatbot logic."},
     {"name": "Chat", "description": "Authenticated chat sessions and streaming chat endpoints."},
     {"name": "Public API", "description": "Public chatbot pages, widget script, and external API chat endpoints."},
+    {"name": "Channels", "description": "Channel deployment settings for public chat, widget, and REST API."},
     {"name": "Admin Analytics", "description": "Admin analytics overview, sessions, and conversation details."},
 ]
 
@@ -66,7 +76,11 @@ app.include_router(knowledge_router, tags=["Knowledge Base"])
 app.include_router(flow_router, tags=["Flow Builder"])
 app.include_router(chat_router, tags=["Chat"])
 app.include_router(public_router, tags=["Public API"])
+app.include_router(channel_router, tags=["Channels"])
 app.include_router(admin_analytics_router, tags=["Admin Analytics"])
+app.include_router(health_router)
+app.include_router(legal_router)
+app.include_router(platform_settings_router)
 
 @app.get("/", tags=["System"])
 def home():

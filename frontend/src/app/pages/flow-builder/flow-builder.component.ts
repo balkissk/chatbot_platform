@@ -49,23 +49,26 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
   message = signal('');
 
   nodeType = 'message';
-  selectedTemplate = '';
-  templates = signal<any[]>([]);
-  applyingTemplate = signal(false);
   blockCategories = ['Basic', 'AI', 'Data Collection', 'Logic', 'Integration'];
   blockTypes = [
     { value: 'message', label: 'Message', icon: 'M', category: 'Basic', description: 'Send text and continue.', iconBg: '#ccfbf1', iconColor: '#0f766e' },
     { value: 'question', label: 'Question', icon: 'Q', category: 'Basic', description: 'Ask and save a response.', iconBg: '#dbeafe', iconColor: '#2563eb' },
     { value: 'buttons', label: 'Buttons', icon: 'B', category: 'Basic', description: 'Offer button choices.', iconBg: '#fef3c7', iconColor: '#b45309' },
     { value: 'end', label: 'End', icon: 'E', category: 'Basic', description: 'Close the conversation.', iconBg: '#f1f5f9', iconColor: '#475569' },
-    { value: 'rag_answer', label: 'AI/RAG Answer', icon: 'AI', category: 'AI', description: 'Answer from AI and documents.', iconBg: '#ede9fe', iconColor: '#7c3aed' },
+    { value: 'rag_answer', label: 'AI Answer', icon: 'AI', category: 'AI', description: 'Answer with an AI prompt.', iconBg: '#ede9fe', iconColor: '#7c3aed' },
+    { value: 'knowledge_search', label: 'Knowledge Search', icon: 'KS', category: 'AI', description: 'Answer using uploaded documents.', iconBg: '#cffafe', iconColor: '#0e7490' },
+    { value: 'ai_router', label: 'AI Router', icon: 'RT', category: 'AI', description: 'Route by detected intent.', iconBg: '#e0e7ff', iconColor: '#4f46e5' },
+    { value: 'ai_classifier', label: 'AI Classifier', icon: 'CL', category: 'AI', description: 'Classify a message into categories.', iconBg: '#f5d0fe', iconColor: '#a21caf' },
     { value: 'collect_name', label: 'Collect Name', icon: 'N', category: 'Data Collection', description: 'Capture visitor name.', iconBg: '#e0f2fe', iconColor: '#0369a1' },
     { value: 'collect_email', label: 'Collect Email', icon: '@', category: 'Data Collection', description: 'Capture and validate email.', iconBg: '#ecfccb', iconColor: '#4d7c0f' },
     { value: 'collect_phone', label: 'Collect Phone', icon: 'P', category: 'Data Collection', description: 'Capture and validate phone.', iconBg: '#fae8ff', iconColor: '#a21caf' },
     { value: 'condition', label: 'Condition', icon: 'IF', category: 'Logic', description: 'Route by variable value.', iconBg: '#ffedd5', iconColor: '#c2410c' },
+    { value: 'confidence_check', label: 'Confidence Check', icon: 'CF', category: 'Logic', description: 'Check confidence before routing.', iconBg: '#fef9c3', iconColor: '#a16207' },
+    { value: 'lead_score', label: 'Lead Score', icon: 'LS', category: 'Logic', description: 'Score and qualify a lead.', iconBg: '#dcfce7', iconColor: '#15803d' },
     { value: 'set_variable', label: 'Set Variable', icon: 'V', category: 'Logic', description: 'Set a value manually.', iconBg: '#dcfce7', iconColor: '#15803d' },
-    { value: 'api_request', label: 'API Request', icon: 'API', category: 'Integration', description: 'Call a webhook at runtime.', iconBg: '#ffe4e6', iconColor: '#e11d48' },
-    { value: 'handoff', label: 'Handoff', icon: 'H', category: 'Integration', description: 'Route to a human team.', iconBg: '#cffafe', iconColor: '#0e7490' }
+    { value: 'meeting_scheduler', label: 'Meeting Scheduler', icon: 'MS', category: 'Integration', description: 'Collect a meeting preference.', iconBg: '#dbeafe', iconColor: '#2563eb' },
+    { value: 'api_request', label: 'API Call', icon: 'API', category: 'Integration', description: 'Call a webhook at runtime.', iconBg: '#ffe4e6', iconColor: '#e11d48' },
+    { value: 'handoff', label: 'Human Handoff', icon: 'H', category: 'Integration', description: 'Route to a human team.', iconBg: '#cffafe', iconColor: '#0e7490' }
   ];
   conditionOperators = [
     { value: 'equals', label: 'equals' },
@@ -154,7 +157,6 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
         this.transitions.set(context.flow.transitions || []);
         this.selectedNode.set(null);
         this.loading.set(false);
-        this.loadTemplates();
         this.loadDocuments();
         setTimeout(() => this.fitToScreen(), 0);
       },
@@ -162,13 +164,6 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
         this.error.set(err.error?.detail || 'Could not load flow');
         this.loading.set(false);
       }
-    });
-  }
-
-  loadTemplates() {
-    this.api.getFlowTemplates().subscribe({
-      next: templates => this.templates.set(templates.filter(template => template.key !== 'blank')),
-      error: () => this.templates.set([])
     });
   }
 
@@ -292,7 +287,7 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
 
     const key = ['question', 'collect_name', 'collect_email', 'collect_phone'].includes(node.type)
       ? 'prompt'
-      : ['handoff', 'end', 'action', 'set_variable', 'api_request'].includes(node.type)
+      : ['handoff', 'end', 'action', 'set_variable', 'api_request', 'ai_router', 'ai_classifier', 'confidence_check', 'lead_score', 'meeting_scheduler', 'knowledge_search'].includes(node.type)
         ? 'message'
         : 'text';
     this.selectedNode.set({
@@ -517,17 +512,38 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
       : type === 'rag_answer'
         ? {
             prompt: 'Answer clearly and stay helpful.',
+            use_knowledge_base: false,
+            answer_only_from_documents: false,
+            show_sources: false,
+            response_length: 'medium',
+            fallback: 'I do not have enough information to answer that yet.',
+            continue_rag: true
+          }
+      : type === 'knowledge_search'
+        ? {
+            prompt: 'Use the uploaded knowledge base to answer accurately.',
             use_knowledge_base: true,
             answer_only_from_documents: true,
             show_sources: true,
             response_length: 'medium',
             fallback: 'I could not find this in the uploaded documents.',
-            continue_rag: true
+            continue_rag: true,
+            message: 'Searching knowledge.'
           }
+      : type === 'ai_router'
+        ? { instructions: 'Classify the user intent and route to the best next step.', output_variable: 'detected_intent', routes: ['General'], message: 'Routing your request.' }
+      : type === 'ai_classifier'
+        ? { instructions: 'Classify the latest user message.', output_variable: 'classification', categories: ['General'], message: 'Classifying the request.' }
         : type === 'condition'
           ? { field: '__last_input', operator: 'equals', value: 'Yes', message: 'Checking condition' }
           : type === 'set_variable'
             ? { action_type: 'set_variable', field: 'status', value: 'qualified', message: 'Saved.' }
+          : type === 'confidence_check'
+            ? { threshold: 0.65, variable: 'confidence', message: 'Checking confidence.' }
+          : type === 'lead_score'
+            ? { input_variables: ['user_question', 'user_email'], score_variable: 'lead_score', default_score: 50, message: 'Scoring this request.' }
+          : type === 'meeting_scheduler'
+            ? { field: 'preferred_time', message: 'What meeting time works best?', timezone: 'local' }
           : type === 'collect_name'
             ? { prompt: 'What is your name?', field: 'user_name' }
           : type === 'collect_email'
@@ -872,7 +888,13 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
       question: 'Asks the visitor for information and saves the answer.',
       buttons: 'Shows clear choices. Each button needs a next step.',
       condition: 'Routes the conversation based on a saved answer.',
-      rag_answer: 'Uses AI and optional uploaded documents to answer the visitor.',
+      rag_answer: 'Uses AI instructions to answer the visitor without requiring documents.',
+      knowledge_search: 'Uses uploaded documents and optional source references to answer the visitor.',
+      ai_router: 'Detects user intent and stores the route for downstream logic.',
+      ai_classifier: 'Classifies a user message into configured categories.',
+      confidence_check: 'Stores or evaluates a confidence signal before the next step.',
+      lead_score: 'Scores a lead using collected variables.',
+      meeting_scheduler: 'Collects a preferred meeting time for follow-up.',
       action: 'Updates saved conversation data or hands off the conversation.',
       collect_name: 'Asks for the visitor name and saves it to a variable.',
       collect_email: 'Asks for an email address and validates the format before continuing.',
@@ -915,7 +937,7 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
   localNodeWarnings(node: FlowNode) {
     const warnings: string[] = [];
     const outgoing = this.outgoing(node);
-    if (!this.isTerminalNode(node) && !['buttons', 'condition', 'rag_answer'].includes(node.type) && !outgoing.length) {
+    if (!this.isTerminalNode(node) && !['buttons', 'condition', 'rag_answer', 'knowledge_search'].includes(node.type) && !outgoing.length) {
       warnings.push('Missing next step');
     }
     if (node.type === 'buttons') {
@@ -928,35 +950,11 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
       if (!labels.includes('true')) warnings.push('Missing true path');
       if (!labels.includes('false')) warnings.push('Missing false path');
     }
-    if (node.type === 'rag_answer' && !String(node.config?.['fallback'] || '').trim()) warnings.push('Missing fallback');
+    if (['rag_answer', 'knowledge_search'].includes(node.type) && !String(node.config?.['fallback'] || '').trim()) warnings.push('Missing fallback');
     if (node.type === 'collect_email' && !String(node.config?.['field'] || '').trim()) warnings.push('Missing email variable');
     if (node.type === 'api_request' && !String(node.config?.['url'] || '').trim()) warnings.push('Missing URL');
+    if (node.type === 'meeting_scheduler' && !String(node.config?.['field'] || '').trim()) warnings.push('Missing meeting variable');
     return warnings;
-  }
-
-  applyTemplate() {
-    const flowId = this.context()?.flow?.id;
-    if (!flowId || !this.selectedTemplate) return;
-    if (!confirm('Replace the current draft flow with this template? Existing blocks and connectors will be removed.')) return;
-
-    this.applyingTemplate.set(true);
-    this.error.set('');
-    this.api.applyFlowTemplate(flowId, this.selectedTemplate).subscribe({
-      next: flow => {
-        this.context.update(context => context ? { ...context, flow } : context);
-        this.nodes.set([...flow.nodes].sort((a: FlowNode, b: FlowNode) => a.position_y - b.position_y || a.position_x - b.position_x));
-        this.transitions.set(flow.transitions || []);
-        this.selectedNode.set(null);
-        this.validationErrors.set([]);
-        this.message.set('Template applied');
-        this.applyingTemplate.set(false);
-        setTimeout(() => this.fitToScreen(), 0);
-      },
-      error: err => {
-        this.error.set(err.error?.detail || 'Could not apply template');
-        this.applyingTemplate.set(false);
-      }
-    });
   }
 
   goTestFlow() {
@@ -1103,6 +1101,18 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
       if (node.type === 'api_request') {
         upsert(config['response_field'], node, 'object');
       }
+      if (['ai_router', 'ai_classifier'].includes(node.type)) {
+        upsert(config['output_variable'], node, 'intent');
+      }
+      if (node.type === 'lead_score') {
+        upsert(config['score_variable'], node, 'number');
+      }
+      if (node.type === 'confidence_check') {
+        upsert(config['variable'], node, 'number');
+      }
+      if (node.type === 'meeting_scheduler') {
+        upsert(config['field'], node, 'datetime');
+      }
       if (node.type === 'handoff') {
         upsert(config['email_field'], node, 'email');
         upsert(config['phone_field'], node, 'phone');
@@ -1116,6 +1126,22 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
   }
 
   goBack() {
-    this.router.navigate(['/dashboard/projects', this.projectId, 'chatbots']);
+    const selectedTemplate = this.route.snapshot.queryParamMap.get('template');
+    this.router.navigate(
+      ['/dashboard/projects', this.projectId, 'chatbots', this.chatbotId, 'templates'],
+      selectedTemplate ? { queryParams: { template: selectedTemplate } } : undefined
+    );
+  }
+
+  knowledgeBaseReturnUrl() {
+    return this.router.url;
+  }
+
+  isAiAnswerNode(type: string) {
+    return type === 'rag_answer' || type === 'knowledge_search';
+  }
+
+  isAdvancedPlaceholder(type: string) {
+    return ['ai_router', 'ai_classifier', 'confidence_check', 'lead_score', 'meeting_scheduler'].includes(type);
   }
 }

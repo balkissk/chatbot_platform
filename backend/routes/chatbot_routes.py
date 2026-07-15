@@ -3,7 +3,7 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 from database.db import SessionLocal
 from models.chatbot import Chatbot
@@ -18,6 +18,8 @@ from models.project import Project
 from models.user import User
 from models.version import VersionChatbot
 from services.auth import require_roles
+from services.audit import record_audit_log
+from services.flow_validation import validate_flow_version
 from services.rag_settings import normalize_rag_settings
 from services.templates import create_starter_flow
 
@@ -29,6 +31,15 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def delete_legacy_chatbot_notifications(db: Session, chatbot_id: int) -> None:
+    exists = db.execute(text("SELECT to_regclass('public.notifications')")).scalar()
+    if exists:
+        db.execute(
+            text("DELETE FROM notifications WHERE chatbot_id = :chatbot_id"),
+            {"chatbot_id": chatbot_id}
+        )
 
 
 def ensure_project_access(db: Session, project_id: int, current_user: User) -> Project:
@@ -124,6 +135,13 @@ def chatbot_version_stats_for_ids(db: Session, chatbot_ids: list[int]) -> dict[i
 
 
 def serialize_chatbot(chatbot: Chatbot, stats: dict | None = None) -> dict:
+    counts = stats or {
+        "version_count": 0,
+        "published_version_count": 0,
+        "draft_version_count": 0,
+        "archived_version_count": 0,
+    }
+    is_published = bool(counts.get("published_version_count", 0))
     return {
         "id": chatbot.id,
         "name": chatbot.name,
@@ -131,23 +149,22 @@ def serialize_chatbot(chatbot: Chatbot, stats: dict | None = None) -> dict:
         "language": chatbot.language,
         "type": chatbot.type,
         "purpose": chatbot.purpose,
+        "assistant_type": chatbot.purpose,
         "mode": chatbot.mode,
         "channel": chatbot.channel,
         "build_method": chatbot.build_method,
+        "creation_mode": chatbot.build_method,
         "template_key": chatbot.template_key,
         "is_active": chatbot.is_active,
+        "status": "published" if is_published else "draft",
+        "published": is_published,
         "active_version_id": chatbot.active_version_id,
         "public_api_key": chatbot.public_api_key,
         "public_api_enabled": chatbot.public_api_enabled,
         "rag_settings": normalize_rag_settings(chatbot.rag_settings),
         "created_at": chatbot.created_at,
         "project_id": chatbot.project_id,
-        **(stats or {
-            "version_count": 0,
-            "published_version_count": 0,
-            "draft_version_count": 0,
-            "archived_version_count": 0,
-        })
+        **counts
     }
 
 
@@ -373,6 +390,86 @@ def unanswered_question_rows(db: Session, chatbot_id: int) -> list[dict]:
 
     return sorted(grouped.values(), key=lambda item: (item["count"], item["last_asked_at"]), reverse=True)[:25]
 
+
+def percent(part: int, total: int) -> int:
+    return round((part / total) * 100) if total else 0
+
+
+def first_user_message(messages: list[ConversationMessage]) -> ConversationMessage | None:
+    return next((message for message in messages if message.role == "user"), None)
+
+
+def first_bot_after(messages: list[ConversationMessage], user_message: ConversationMessage) -> ConversationMessage | None:
+    return next(
+        (
+            message for message in messages
+            if message.role == "bot" and message.created_at and user_message.created_at and message.created_at >= user_message.created_at
+        ),
+        None
+    )
+
+
+def latency_ms(user_message: ConversationMessage | None, bot_message: ConversationMessage | None) -> int | None:
+    if not user_message or not bot_message or not user_message.created_at or not bot_message.created_at:
+        return None
+    return max(0, round((bot_message.created_at - user_message.created_at).total_seconds() * 1000))
+
+
+def operation_recommendations(
+    coverage_score: int,
+    resolution_rate: int,
+    health_score: int,
+    gaps: list[dict],
+    failed_documents: int,
+    flow_valid: bool,
+    published_version: VersionChatbot | None,
+    has_handoff: bool
+) -> list[dict]:
+    recommendations = []
+    if gaps:
+        recommendations.append({
+            "title": "Upload missing documentation",
+            "message": f"{len(gaps)} recurring knowledge gaps were detected from fallback answers.",
+            "priority": "high"
+        })
+    if coverage_score < 60:
+        recommendations.append({
+            "title": "Improve knowledge coverage",
+            "message": "Many user questions are not answered with retrieved knowledge chunks.",
+            "priority": "high"
+        })
+    if resolution_rate < 70 and not has_handoff:
+        recommendations.append({
+            "title": "Add Human Handoff",
+            "message": "Resolution is low and no handoff block is available for fallback cases.",
+            "priority": "medium"
+        })
+    if failed_documents:
+        recommendations.append({
+            "title": "Reprocess failed documents",
+            "message": f"{failed_documents} document upload or processing issue needs attention.",
+            "priority": "high"
+        })
+    if not flow_valid:
+        recommendations.append({
+            "title": "Fix flow validation issues",
+            "message": "The current flow has validation errors before it is deployment-ready.",
+            "priority": "high"
+        })
+    if not published_version:
+        recommendations.append({
+            "title": "Publish a version",
+            "message": "No published version is available for production deployment.",
+            "priority": "medium"
+        })
+    if health_score >= 85 and coverage_score >= 70 and not recommendations:
+        recommendations.append({
+            "title": "Monitor and iterate",
+            "message": "The assistant is healthy. Review conversations weekly for new knowledge gaps.",
+            "priority": "low"
+        })
+    return recommendations[:6]
+
 @router.post("/chatbots")
 def create_chatbot(
     chatbot: ChatbotCreate,
@@ -389,10 +486,10 @@ def create_chatbot(
         description=(chatbot.description or "").strip(),
         language=chatbot.language,
         type=chatbot.type,
-        purpose=chatbot.purpose,
+        purpose=chatbot.assistant_type or chatbot.purpose,
         mode=chatbot.mode,
         channel=chatbot.channel,
-        build_method=chatbot.build_method,
+        build_method=chatbot.creation_mode or chatbot.build_method,
         template_key=chatbot.template_key,
         public_api_key=new_public_api_key(),
         public_api_enabled=True,
@@ -422,7 +519,22 @@ def create_chatbot(
     db.commit()
     create_starter_flow(db, first_version.id, "blank")
 
-    return serialize_chatbot(new_chatbot)
+    record_audit_log(
+        db,
+        actor=current_user,
+        action="CHATBOT_CREATED",
+        resource_type="chatbot",
+        resource_id=new_chatbot.id,
+        resource_name=new_chatbot.name,
+        metadata={"project_id": new_chatbot.project_id},
+    )
+
+    return serialize_chatbot(new_chatbot, {
+        "version_count": 1,
+        "published_version_count": 0,
+        "draft_version_count": 1,
+        "archived_version_count": 0,
+    })
 
 @router.get("/chatbots")
 def get_chatbots(
@@ -436,6 +548,216 @@ def get_chatbots(
     ensure_public_api_keys(db, chatbots)
     version_stats = chatbot_version_stats_for_ids(db, [chatbot.id for chatbot in chatbots])
     return [serialize_chatbot(chatbot, version_stats.get(chatbot.id)) for chatbot in chatbots]
+
+
+@router.get("/chatbots/{id}/operations-dashboard")
+def get_chatbot_operations_dashboard(
+    id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "manager"))
+):
+    chatbot = get_accessible_chatbot(db, id, current_user)
+    sessions = db.query(ConversationSession).filter(
+        ConversationSession.chatbot_id == chatbot.id
+    ).order_by(ConversationSession.updated_at.desc()).limit(300).all()
+    session_ids = [session.id for session in sessions]
+    grouped_messages = messages_by_session(db, session_ids)
+    all_messages = [message for messages in grouped_messages.values() for message in messages]
+    user_messages = [message for message in all_messages if message.role == "user"]
+    bot_messages = [message for message in all_messages if message.role == "bot"]
+    source_backed_answers = [message for message in bot_messages if message.sources]
+    fallback_answers = [message for message in bot_messages if message_response_mode(message) == "fallback"]
+
+    handoff_sessions = [
+        session for session in sessions
+        if (session.variables or {}).get("__handoff_requested")
+    ]
+    runtime_error_events = [
+        message for message in bot_messages
+        if any(marker in (message.content or "").lower() for marker in (
+            "could not answer right now",
+            "request failed",
+            "runtime error",
+            "timeout",
+            "timed out",
+            "ai service could not",
+        ))
+    ]
+
+    version_rows = db.query(VersionChatbot).filter(
+        VersionChatbot.chatbot_id == chatbot.id
+    ).order_by(VersionChatbot.version_number.desc()).all()
+    current_version = next((version for version in version_rows if version.id == chatbot.active_version_id), None) or version_rows[0] if version_rows else None
+    draft_version = next((version for version in version_rows if version.status == "draft"), None) or current_version
+    published_versions = [version for version in version_rows if version.status == "published"]
+    last_published = published_versions[0] if published_versions else None
+
+    version_ids = [version.id for version in version_rows]
+    knowledge_base_ids = [
+        row.id for row in db.query(KnowledgeBase.id).filter(
+            KnowledgeBase.version_id.in_(version_ids)
+        ).all()
+    ] if version_ids else []
+    documents = db.query(Document).filter(Document.knowledge_base_id.in_(knowledge_base_ids)).all() if knowledge_base_ids else []
+    document_ids = [document.id for document in documents]
+    chunks = db.query(Chunk).filter(Chunk.document_id.in_(document_ids)).all() if document_ids else []
+    failed_documents = len([document for document in documents if document.status == "failed" or document.error_message])
+    failed_embeddings = len([chunk for chunk in chunks if chunk.embedding_status == "failed" or chunk.embedding_error])
+    ready_embeddings = len([chunk for chunk in chunks if chunk.embedding_status == "ready" or chunk.embedding])
+
+    flow_validation = validate_flow_version(db, draft_version.id) if draft_version else {
+        "valid": False,
+        "errors": ["No version exists for this chatbot."]
+    }
+    llm_config = db.query(LLMConfig).filter(LLMConfig.version_id == draft_version.id).first() if draft_version else None
+    has_handoff = bool(
+        draft_version and db.query(FlowNode).join(Flow, FlowNode.flow_id == Flow.id).filter(
+            Flow.version_id == draft_version.id,
+            FlowNode.type == "handoff"
+        ).first()
+    )
+
+    knowledge_gap_rows = unanswered_question_rows(db, chatbot.id)
+    coverage_score = percent(len(source_backed_answers), len(user_messages))
+    resolution_rate = percent(len(sessions) - len(handoff_sessions), len(sessions))
+    retrieval_failures = len(fallback_answers)
+    failed_requests = len(runtime_error_events)
+    timeout_events = len([
+        message for message in runtime_error_events
+        if "timeout" in (message.content or "").lower() or "timed out" in (message.content or "").lower()
+    ])
+    health_penalty = min(100, (failed_requests * 10) + (retrieval_failures * 6) + (failed_documents * 12) + (failed_embeddings * 8))
+    runtime_health = max(0, 100 - health_penalty)
+
+    recent_events = []
+    for document in sorted(documents, key=lambda item: item.created_at or datetime.min, reverse=True)[:5]:
+        if document.status == "failed" or document.error_message:
+            recent_events.append({
+                "type": "error",
+                "title": "Document processing failed",
+                "message": document.error_message or document.filename,
+                "created_at": document.created_at
+            })
+        elif document.status in {"processing", "uploaded"}:
+            recent_events.append({
+                "type": "warning",
+                "title": "Document is still processing",
+                "message": document.filename,
+                "created_at": document.created_at
+            })
+    for message in fallback_answers[:6]:
+        recent_events.append({
+            "type": "warning",
+            "title": "Retrieval fallback",
+            "message": message.content[:180],
+            "created_at": message.created_at
+        })
+    for message in runtime_error_events[:6]:
+        recent_events.append({
+            "type": "error",
+            "title": "Runtime issue",
+            "message": message.content[:180],
+            "created_at": message.created_at
+        })
+    if last_published:
+        recent_events.append({
+            "type": "deployment",
+            "title": "Version published",
+            "message": f"Version {last_published.version_number} is published.",
+            "created_at": last_published.published_at or last_published.created_at
+        })
+    recent_events = sorted(recent_events, key=lambda item: item.get("created_at") or datetime.min, reverse=True)[:8]
+
+    replay_rows = []
+    for session in sessions[:8]:
+        messages = grouped_messages.get(session.id, [])
+        user_message = first_user_message(messages)
+        bot_message = first_bot_after(messages, user_message) if user_message else None
+        if not user_message and not bot_message:
+            continue
+        replay_rows.append({
+            "session_id": session.id,
+            "user_message": user_message.content if user_message else "",
+            "ai_response": bot_message.content if bot_message else "",
+            "retrieved_chunks": bot_message.sources if bot_message and bot_message.sources else [],
+            "latency_ms": latency_ms(user_message, bot_message),
+            "created_at": session.created_at,
+            "updated_at": session.updated_at
+        })
+
+    validation_items = [
+        {
+            "label": "Flow validation",
+            "status": "ready" if flow_validation.get("valid") else "needs_attention",
+            "message": "Flow is valid." if flow_validation.get("valid") else "; ".join(flow_validation.get("errors", [])[:3])
+        },
+        {
+            "label": "Knowledge Base",
+            "status": "ready" if documents and not failed_documents and len(chunks) == ready_embeddings else "needs_attention",
+            "message": f"{len(documents)} documents, {len(chunks)} chunks, {ready_embeddings} embeddings ready."
+        },
+        {
+            "label": "AI configuration",
+            "status": "ready" if llm_config and llm_config.model else "needs_attention",
+            "message": f"Model: {llm_config.model}" if llm_config and llm_config.model else "No AI configuration found."
+        },
+        {
+            "label": "Deployment readiness",
+            "status": "ready" if last_published and chatbot.public_api_enabled else "needs_attention",
+            "message": "Published and deployable." if last_published and chatbot.public_api_enabled else "Publish a version before deployment."
+        }
+    ]
+
+    return {
+        "widgets": {
+            "knowledge_coverage_score": {
+                "value": coverage_score,
+                "covered_questions": len(source_backed_answers),
+                "total_questions": len(user_messages)
+            },
+            "ai_resolution_rate": {
+                "value": resolution_rate,
+                "resolved_without_handoff": len(sessions) - len(handoff_sessions),
+                "total_conversations": len(sessions)
+            },
+            "runtime_health": {
+                "value": runtime_health,
+                "failed_requests": failed_requests,
+                "retrieval_failures": retrieval_failures,
+                "runtime_errors": len(runtime_error_events),
+                "timeout_events": timeout_events
+            }
+        },
+        "knowledge_gaps": knowledge_gap_rows[:8],
+        "ai_recommendations": operation_recommendations(
+            coverage_score,
+            resolution_rate,
+            runtime_health,
+            knowledge_gap_rows,
+            failed_documents + failed_embeddings,
+            bool(flow_validation.get("valid")),
+            last_published,
+            has_handoff
+        ),
+        "validation_center": validation_items,
+        "recent_runtime_events": recent_events,
+        "conversation_replay": replay_rows,
+        "current_version": {
+            "active_version": {
+                "id": current_version.id,
+                "version_number": current_version.version_number,
+                "status": current_version.status,
+                "created_at": current_version.created_at,
+                "published_at": current_version.published_at
+            } if current_version else None,
+            "last_published_version": {
+                "id": last_published.id,
+                "version_number": last_published.version_number,
+                "published_at": last_published.published_at
+            } if last_published else None,
+            "rollback_available": len(published_versions) > 1
+        }
+    }
 
 
 @router.get("/chatbots/{id}/analytics")
@@ -709,10 +1031,22 @@ def update_chatbot(
     chatbot.purpose = payload.purpose
     chatbot.mode = payload.mode
     chatbot.channel = payload.channel
+    if payload.creation_mode or payload.build_method:
+        chatbot.build_method = payload.creation_mode or payload.build_method
     chatbot.template_key = payload.template_key
 
     db.commit()
     db.refresh(chatbot)
+
+    record_audit_log(
+        db,
+        actor=current_user,
+        action="CHATBOT_UPDATED",
+        resource_type="chatbot",
+        resource_id=chatbot.id,
+        resource_name=chatbot.name,
+        metadata={"project_id": chatbot.project_id},
+    )
 
     return serialize_chatbot(chatbot)
 
@@ -729,6 +1063,16 @@ def update_chatbot_status(
     db.commit()
     db.refresh(chatbot)
 
+    record_audit_log(
+        db,
+        actor=current_user,
+        action="CHATBOT_UPDATED",
+        resource_type="chatbot",
+        resource_id=chatbot.id,
+        resource_name=chatbot.name,
+        metadata={"is_active": chatbot.is_active, "project_id": chatbot.project_id},
+    )
+
     return serialize_chatbot(chatbot)
 
 @router.delete("/chatbots/{id}")
@@ -738,7 +1082,11 @@ def delete_chatbot(
     current_user: User = Depends(require_roles("admin", "manager"))
 ):
     chatbot = get_accessible_chatbot(db, id, current_user)
+    deleted_chatbot_id = chatbot.id
+    deleted_chatbot_name = chatbot.name
+    deleted_project_id = chatbot.project_id
     chatbot.active_version_id = None
+    delete_legacy_chatbot_notifications(db, id)
     db.commit()
 
     sessions = db.query(ConversationSession).filter(
@@ -770,23 +1118,37 @@ def delete_chatbot(
         if config:
             db.delete(config)
 
-        knowledge_base = db.query(KnowledgeBase).filter(
+        knowledge_bases = db.query(KnowledgeBase).filter(
             KnowledgeBase.version_id == version.id
-        ).first()
-        if knowledge_base:
-            documents = db.query(Document).filter(
-                Document.knowledge_base_id == knowledge_base.id
-            ).all()
-            for document in documents:
-                db.query(Chunk).filter(Chunk.document_id == document.id).delete()
-                db.delete(document)
-            db.delete(knowledge_base)
+        ).all()
+        knowledge_base_ids = [knowledge_base.id for knowledge_base in knowledge_bases]
+        if knowledge_base_ids:
+            document_ids = [
+                document_id for (document_id,) in db.query(Document.id).filter(
+                    Document.knowledge_base_id.in_(knowledge_base_ids)
+                ).all()
+            ]
+            if document_ids:
+                db.query(Chunk).filter(Chunk.document_id.in_(document_ids)).delete(synchronize_session=False)
+                db.query(Document).filter(Document.id.in_(document_ids)).delete(synchronize_session=False)
+            db.query(KnowledgeBase).filter(KnowledgeBase.id.in_(knowledge_base_ids)).delete(synchronize_session=False)
+            db.flush()
 
         db.delete(version)
 
     db.flush()
     db.delete(chatbot)
     db.commit()
+
+    record_audit_log(
+        db,
+        actor=current_user,
+        action="CHATBOT_DELETED",
+        resource_type="chatbot",
+        resource_id=deleted_chatbot_id,
+        resource_name=deleted_chatbot_name,
+        metadata={"project_id": deleted_project_id},
+    )
 
     return {"message": "deleted"}
 @router.get("/projects/{project_id}/chatbots")

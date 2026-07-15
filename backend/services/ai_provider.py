@@ -3,7 +3,9 @@ from collections.abc import Generator
 
 import requests
 
+from config.settings import load_environment
 
+load_environment()
 AI_PROVIDER = os.getenv("AI_PROVIDER", "ollama").strip().lower()
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")

@@ -1,5 +1,5 @@
 import { CommonModule, isPlatformBrowser } from '@angular/common';
-import { Component, Inject, OnInit, PLATFORM_ID, signal } from '@angular/core';
+import { Component, Inject, OnDestroy, OnInit, PLATFORM_ID, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { ApiService } from '../../services/api';
@@ -11,7 +11,7 @@ import { ApiService } from '../../services/api';
   templateUrl: './knowledge-base.component.html',
   styleUrls: ['./knowledge-base.component.css']
 })
-export class KnowledgeBaseComponent implements OnInit {
+export class KnowledgeBaseComponent implements OnInit, OnDestroy {
   projectId!: number;
   chatbotId!: number;
 
@@ -51,6 +51,7 @@ export class KnowledgeBaseComponent implements OnInit {
   };
 
   private isBrowser: boolean;
+  private documentStatusPoll?: ReturnType<typeof setInterval>;
 
   constructor(
     private route: ActivatedRoute,
@@ -66,6 +67,10 @@ export class KnowledgeBaseComponent implements OnInit {
     this.chatbotId = Number(this.route.snapshot.paramMap.get('chatbotId'));
     if (!this.isBrowser) return;
     this.loadChatbot();
+  }
+
+  ngOnDestroy() {
+    this.stopDocumentStatusPolling();
   }
 
   loadChatbot() {
@@ -132,16 +137,20 @@ export class KnowledgeBaseComponent implements OnInit {
     this.loadDocuments();
   }
 
-  loadDocuments() {
+  loadDocuments(background = false) {
     const versionId = this.selectedVersionId();
     if (!versionId) return;
 
-    this.loading.set(true);
+    if (!background) {
+      this.loading.set(true);
+    }
     this.error.set('');
     this.api.getDocuments(versionId).subscribe({
       next: documents => {
         this.documents.set(documents);
         this.loading.set(false);
+        this.syncSelectedDocument(documents);
+        this.updateDocumentStatusPolling();
       },
       error: err => {
         this.error.set(err.error?.detail || 'Could not load documents');
@@ -175,12 +184,14 @@ export class KnowledgeBaseComponent implements OnInit {
         content,
         content_encoding: isPdf ? 'base64' : undefined
       }).subscribe({
-        next: () => {
+        next: (document: any) => {
           input.value = '';
           this.selectedFileName = '';
           this.uploadLoading.set(false);
-          this.message.set('Document uploaded and chunked');
-          this.loadDocuments();
+          this.message.set('Document uploaded. Processing in background.');
+          this.documents.update(documents => [document, ...documents.filter(item => item.id !== document.id)]);
+          this.updateDocumentStatusPolling();
+          this.loadDocuments(true);
         },
         error: err => {
           this.error.set(err.error?.detail || 'Upload failed');
@@ -199,6 +210,36 @@ export class KnowledgeBaseComponent implements OnInit {
     } else {
       reader.readAsText(file);
     }
+  }
+
+  private syncSelectedDocument(documents: any[]) {
+    const selected = this.selectedDocument();
+    if (!selected) return;
+
+    const updated = documents.find(document => document.id === selected.id);
+    if (updated) {
+      this.selectedDocument.set(updated);
+    }
+  }
+
+  private updateDocumentStatusPolling() {
+    if (!this.hasProcessingDocuments()) {
+      this.stopDocumentStatusPolling();
+      return;
+    }
+
+    if (this.documentStatusPoll || !this.isBrowser) return;
+    this.documentStatusPoll = setInterval(() => this.loadDocuments(true), 2500);
+  }
+
+  private stopDocumentStatusPolling() {
+    if (!this.documentStatusPoll) return;
+    clearInterval(this.documentStatusPoll);
+    this.documentStatusPoll = undefined;
+  }
+
+  private hasProcessingDocuments() {
+    return this.documents().some(document => this.lifecycleStatus(document) === 'processing');
   }
 
   openDocument(document: any) {
@@ -345,6 +386,9 @@ export class KnowledgeBaseComponent implements OnInit {
 
   lifecycleStatus(document: any) {
     if (document.error_message || String(document.status || '').includes('failed')) return 'failed';
+    if ((document.chunks_count || 0) > 0 && Number(document.embeddings_count || 0) < Number(document.chunks_count || 0)) {
+      return 'processing';
+    }
     if ((document.chunks_count || 0) > 0 && document.status === 'processed') return 'ready';
     if ((document.chunks_count || 0) > 0) return 'chunked';
     if (document.status === 'processing') return 'processing';
@@ -354,7 +398,16 @@ export class KnowledgeBaseComponent implements OnInit {
   embeddingSummary(document: any) {
     const selected = this.selectedDocument();
     const chunks = selected?.id === document.id ? this.chunks() : [];
-    if (!chunks.length) return document.chunks_count ? 'Open document to inspect embeddings' : 'No chunks yet';
+    if (!chunks.length) {
+      const ready = Number(document.embeddings_count || 0);
+      const failed = Number(document.failed_embeddings_count || 0);
+      const pending = Number(document.pending_embeddings_count || 0);
+      const total = Number(document.chunks_count || 0);
+      if (!total) return 'No chunks yet';
+      if (failed) return `${failed} failed, ${ready} ready`;
+      if (pending) return `${ready}/${total} ready, ${pending} pending`;
+      return `${ready}/${total} embeddings ready`;
+    }
     const ready = chunks.filter(chunk => chunk.embedding_status === 'ready').length;
     const failed = chunks.filter(chunk => chunk.embedding_status === 'failed').length;
     if (failed) return `${failed} failed, ${ready} ready`;
@@ -372,9 +425,7 @@ export class KnowledgeBaseComponent implements OnInit {
   }
 
   totalEmbeddings() {
-    const selected = this.selectedDocument();
-    if (!selected) return 0;
-    return this.chunks().filter(chunk => chunk.embedding_status === 'ready').length;
+    return this.documents().reduce((total, document) => total + Number(document.embeddings_count || 0), 0);
   }
 
   processingStatus() {
@@ -386,6 +437,12 @@ export class KnowledgeBaseComponent implements OnInit {
   }
 
   goBack() {
+    const returnUrl = this.route.snapshot.queryParamMap.get('returnUrl');
+    if (returnUrl && returnUrl.startsWith('/dashboard/')) {
+      this.router.navigateByUrl(returnUrl);
+      return;
+    }
+
     this.router.navigate(['/dashboard/projects', this.projectId, 'chatbots']);
   }
 }

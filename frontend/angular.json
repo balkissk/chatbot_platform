@@ -31,7 +31,10 @@
             "server": "src/main.server.ts",
             "outputMode": "server",
             "security": {
-              "allowedHosts": []
+              "allowedHosts": [
+                "localhost",
+                "127.0.0.1"
+              ]
             },
             "ssr": {
               "entry": "src/server.ts"
@@ -54,6 +57,7 @@
               "outputHashing": "all"
             },
             "development": {
+              "aot": true,
               "optimization": false,
               "extractLicenses": false,
               "sourceMap": true
@@ -63,6 +67,12 @@
         },
         "serve": {
           "builder": "@angular/build:dev-server",
+          "options": {
+            "allowedHosts": [
+              "localhost",
+              "127.0.0.1"
+            ]
+          },
           "configurations": {
             "production": {
               "buildTarget": "frontend:build:production"

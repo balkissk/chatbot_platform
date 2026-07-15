@@ -9,10 +9,12 @@ from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from config.settings import load_environment
 from database.db import SessionLocal
 from models.user import User
 
 
+load_environment()
 JWT_SECRET = os.getenv("JWT_SECRET", "0123456789abcdef0123456789abcdef")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 JWT_EXPIRES_SECONDS = 60 * 60 * 24

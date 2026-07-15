@@ -1,5 +1,4 @@
 import { Routes } from '@angular/router';
-import { ProjectsComponent } from './pages/projects/projects.component';
 import { authGuard } from './guards/auth.guard';
 import { roleGuard } from './guards/role.guard';
 
@@ -23,6 +22,12 @@ export const routes: Routes = [
         .then(m => m.RegisterComponent)
   },
   {
+    path: 'privacy-policy',
+    loadComponent: () =>
+      import('./pages/privacy-policy/privacy-policy.component')
+        .then(m => m.PrivacyPolicyComponent)
+  },
+  {
     path: 'dashboard',
     canActivate: [authGuard, roleGuard],
     data: { roles: ['admin', 'manager'] },
@@ -37,7 +42,12 @@ export const routes: Routes = [
           import('./pages/profile/profile.component')
             .then(m => m.ProfileComponent)
       },
-      { path: 'projects', component: ProjectsComponent },
+      {
+        path: 'projects',
+        loadComponent: () =>
+          import('./pages/projects/projects.component')
+            .then(m => m.ProjectsComponent)
+      },
       {
         path: 'projects/:projectId/chatbots',
         loadComponent: () =>
@@ -67,6 +77,18 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./pages/flow-builder/flow-builder.component')
             .then(m => m.FlowBuilderComponent)
+      },
+      {
+        path: 'projects/:projectId/chatbots/:chatbotId/templates',
+        loadComponent: () =>
+          import('./pages/template-selection/template-selection.component')
+            .then(m => m.TemplateSelectionComponent)
+      },
+      {
+        path: 'projects/:projectId/chatbots/:chatbotId/ai-generator',
+        loadComponent: () =>
+          import('./pages/ai-generator/ai-generator.component')
+            .then(m => m.AiGeneratorComponent)
       },
       {
         path: 'projects/:projectId/chatbots/:chatbotId/flow/test',
@@ -110,10 +132,40 @@ export const routes: Routes = [
             .then(m => m.AdminConversationsComponent)
       },
       {
+        path: 'chatbots',
+        loadComponent: () =>
+          import('./pages/admin-chatbots/admin-chatbots.component')
+            .then(m => m.AdminChatbotsComponent)
+      },
+      {
+        path: 'runtime-logs',
+        loadComponent: () =>
+          import('./pages/admin-runtime-logs/admin-runtime-logs.component')
+            .then(m => m.AdminRuntimeLogsComponent)
+      },
+      {
+        path: 'analytics',
+        loadComponent: () =>
+          import('./pages/admin-analytics/admin-analytics.component')
+            .then(m => m.AdminAnalyticsComponent)
+      },
+      {
         path: 'users',
         loadComponent: () =>
           import('./pages/admin-users/admin-users.component')
             .then(m => m.AdminUsersComponent)
+      },
+      {
+        path: 'audit-logs',
+        loadComponent: () =>
+          import('./pages/admin-audit-logs/admin-audit-logs.component')
+            .then(m => m.AdminAuditLogsComponent)
+      },
+      {
+        path: 'platform-settings',
+        loadComponent: () =>
+          import('./pages/admin-platform-settings/admin-platform-settings.component')
+            .then(m => m.AdminPlatformSettingsComponent)
       }
     ]
   },

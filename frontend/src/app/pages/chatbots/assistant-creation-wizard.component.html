@@ -1,0 +1,147 @@
+<section class="modal-backdrop">
+  <div class="wizard-modal">
+    <button class="close-button" type="button" (click)="close()">x</button>
+
+    <div class="wizard-header">
+      <p class="eyebrow">Assistant setup</p>
+      <h2>{{ title }}</h2>
+      <p class="muted">{{ description }}</p>
+    </div>
+
+    <div class="stepper" aria-label="Assistant creation steps">
+      <span
+        *ngFor="let step of steps; let index = index"
+        [class.active]="currentStep() === index + 1"
+        [class.done]="currentStep() > index + 1">
+        {{ index + 1 }} {{ step }}
+      </span>
+    </div>
+
+    <section *ngIf="currentStep() === 1" class="wizard-step">
+      <div>
+        <p class="eyebrow">Step 1</p>
+        <h3>What kind of assistant do you want to create?</h3>
+      </div>
+
+      <div class="option-grid purpose-grid">
+        <button
+          class="option-card"
+          type="button"
+          [class.selected]="state.assistant_type === 'customer_support'"
+          (click)="selectAssistantType('customer_support')">
+          <span>CS</span>
+          <strong>Customer Support Assistant</strong>
+          <small>Answer customer questions and escalate complex issues.</small>
+        </button>
+        <button
+          class="option-card"
+          type="button"
+          [class.selected]="state.assistant_type === 'employee_knowledge'"
+          (click)="selectAssistantType('employee_knowledge')">
+          <span>EK</span>
+          <strong>Employee Knowledge Assistant</strong>
+          <small>Help employees search internal company knowledge.</small>
+        </button>
+        <button
+          class="option-card"
+          type="button"
+          [class.selected]="state.assistant_type === 'training_certification'"
+          (click)="selectAssistantType('training_certification')">
+          <span>TC</span>
+          <strong>Training & Certification Assistant</strong>
+          <small>Recommend courses and Microsoft certification programs.</small>
+        </button>
+        <button
+          class="option-card"
+          type="button"
+          [class.selected]="state.assistant_type === 'lead_generation'"
+          (click)="selectAssistantType('lead_generation')">
+          <span>LG</span>
+          <strong>Lead Generation Assistant</strong>
+          <small>Capture leads and qualify potential customers.</small>
+        </button>
+        <button
+          class="option-card"
+          type="button"
+          [class.selected]="state.assistant_type === 'custom'"
+          (click)="selectAssistantType('custom')">
+          <span>CU</span>
+          <strong>Custom Assistant</strong>
+          <small>Build a fully customized assistant from scratch.</small>
+        </button>
+      </div>
+    </section>
+
+    <section *ngIf="currentStep() === 2" class="wizard-step">
+      <div>
+        <p class="eyebrow">Step 2</p>
+        <h3>How do you want to start?</h3>
+      </div>
+
+      <div class="option-grid">
+        <button
+          class="option-card"
+          type="button"
+          [class.selected]="state.creation_mode === 'scratch'"
+          (click)="selectCreationMode('scratch')">
+          <span>ST</span>
+          <strong>Start From Scratch</strong>
+          <small>Open an empty Flow Builder and design the assistant manually.</small>
+        </button>
+        <button
+          class="option-card"
+          type="button"
+          [class.selected]="state.creation_mode === 'template'"
+          (click)="selectCreationMode('template')">
+          <span>TP</span>
+          <strong>Use Template</strong>
+          <small>Start from a future curated template for this assistant purpose.</small>
+        </button>
+        <button
+          class="option-card"
+          type="button"
+            [class.selected]="state.creation_mode === 'ai'"
+            (click)="selectCreationMode('ai')">
+            <span>AI</span>
+            <strong>Build With AI</strong>
+            <small>Describe your goal and generate a ready-to-edit assistant flow.</small>
+          </button>
+      </div>
+    </section>
+
+    <section *ngIf="currentStep() === 3" class="wizard-step">
+      <div>
+        <p class="eyebrow">Step 3</p>
+        <h3>Basic Configuration</h3>
+      </div>
+
+      <div class="form-grid">
+        <label>
+          Assistant Name
+          <input [(ngModel)]="state.name" placeholder="Support assistant" required>
+        </label>
+        <label>
+          Description
+          <input [(ngModel)]="state.description" placeholder="Helps users with common questions">
+        </label>
+        <label>
+          Language
+          <select [(ngModel)]="state.language" required>
+            <option value="fr">French</option>
+            <option value="en">English</option>
+            <option value="ar">Arabic</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <div class="wizard-footer">
+      <button class="secondary" type="button" (click)="goBack()" [disabled]="currentStep() === 1 || submitting">Back</button>
+      <button class="secondary" type="button" (click)="close()" [disabled]="submitting">Cancel</button>
+      <button *ngIf="currentStep() < 3" class="primary" type="button" (click)="goNext()" [disabled]="!canContinue() || submitting">Next</button>
+      <button *ngIf="currentStep() === 3" class="primary" type="button" (click)="finish()" [disabled]="!canContinue() || submitting">
+        {{ submitting ? submittingLabel : finishLabel }}
+      </button>
+    </div>
+  </div>
+</section>

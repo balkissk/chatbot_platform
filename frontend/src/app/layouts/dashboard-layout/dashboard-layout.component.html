@@ -1,47 +1,169 @@
-<div class="shell" [class.nav-collapsed]="navCollapsed">
-  <aside class="sidebar" *ngIf="!navCollapsed">
-    <div class="brand-row">
-      <div class="brand">
-        <strong>ChatBot Factory</strong>
-        <span>INSOMEA</span>
+<div class="pcoded-shell" [class.navbar-collapsed]="navCollapsed">
+  <nav class="pcoded-navbar menu-light" *ngIf="!navCollapsed">
+    <div class="navbar-wrapper">
+      <div class="navbar-content">
+        <div class="side-profile">
+          <div class="profile-avatar">{{ initials() }}</div>
+          <div>
+            <strong>{{ displayName() }}</strong>
+            <span>{{ displayRole() }}</span>
+          </div>
+        </div>
+
+        <ul class="nav pcoded-inner-navbar">
+          <li class="pcoded-menu-caption" *ngIf="auth.currentUser()?.role === 'admin'"><label>Admin</label></li>
+          <li *ngIf="auth.currentUser()?.role === 'admin'" class="nav-item">
+            <a routerLink="/admin/dashboard" routerLinkActive="active">
+              <span class="pcoded-micon">D</span>
+              <span class="pcoded-mtext">Dashboard</span>
+            </a>
+          </li>
+
+          <li class="pcoded-menu-caption" *ngIf="auth.currentUser()?.role === 'admin'"><label>Management</label></li>
+          <li *ngIf="auth.currentUser()?.role === 'admin'" class="nav-item">
+            <a routerLink="/admin/users" routerLinkActive="active">
+              <span class="pcoded-micon">U</span>
+              <span class="pcoded-mtext">Users</span>
+            </a>
+          </li>
+          <li *ngIf="auth.currentUser()?.role === 'admin'" class="nav-item">
+            <a routerLink="/dashboard/projects" routerLinkActive="active">
+              <span class="pcoded-micon">P</span>
+              <span class="pcoded-mtext">Projects</span>
+            </a>
+          </li>
+          <li *ngIf="auth.currentUser()?.role === 'admin'" class="nav-item">
+            <a routerLink="/admin/chatbots" routerLinkActive="active">
+              <span class="pcoded-micon">C</span>
+              <span class="pcoded-mtext">Chatbots</span>
+            </a>
+          </li>
+          <li class="pcoded-menu-caption" *ngIf="auth.currentUser()?.role === 'admin'"><label>Monitoring</label></li>
+          <li *ngIf="auth.currentUser()?.role === 'admin'" class="nav-item">
+            <a routerLink="/admin/conversations" routerLinkActive="active">
+              <span class="pcoded-micon">C</span>
+              <span class="pcoded-mtext">Conversations</span>
+            </a>
+          </li>
+          <li *ngIf="auth.currentUser()?.role === 'admin'" class="nav-item">
+            <a routerLink="/admin/runtime-logs" routerLinkActive="active">
+              <span class="pcoded-micon">L</span>
+              <span class="pcoded-mtext">Runtime Logs</span>
+            </a>
+          </li>
+          <li class="pcoded-menu-caption" *ngIf="auth.currentUser()?.role === 'admin'"><label>Insights</label></li>
+          <li *ngIf="auth.currentUser()?.role === 'admin'" class="nav-item">
+            <a routerLink="/admin/analytics" routerLinkActive="active">
+              <span class="pcoded-micon">A</span>
+              <span class="pcoded-mtext">Analytics</span>
+            </a>
+          </li>
+          <li *ngIf="auth.currentUser()?.role === 'admin'" class="nav-item">
+            <a routerLink="/admin/audit-logs" routerLinkActive="active">
+              <span class="pcoded-micon">A</span>
+              <span class="pcoded-mtext">Audit Logs</span>
+            </a>
+          </li>
+
+          <li class="pcoded-menu-caption" *ngIf="auth.currentUser()?.role === 'admin'"><label>Configuration</label></li>
+          <li *ngIf="auth.currentUser()?.role === 'admin'" class="nav-item">
+            <a routerLink="/admin/platform-settings" routerLinkActive="active">
+              <span class="pcoded-micon">S</span>
+              <span class="pcoded-mtext">Platform Settings</span>
+            </a>
+          </li>
+          <li *ngIf="auth.currentUser()?.role === 'admin'" class="nav-item">
+            <a routerLink="/dashboard/profile" routerLinkActive="active">
+              <span class="pcoded-micon">U</span>
+              <span class="pcoded-mtext">Profile</span>
+            </a>
+          </li>
+
+          <li class="pcoded-menu-caption" *ngIf="auth.currentUser()?.role !== 'admin'"><label>Workspace</label></li>
+          <li *ngIf="auth.currentUser()?.role !== 'admin'" class="nav-item">
+            <a routerLink="/dashboard/projects" routerLinkActive="active">
+              <span class="pcoded-micon">P</span>
+              <span class="pcoded-mtext">Projects</span>
+            </a>
+          </li>
+          <li *ngIf="auth.currentUser()?.role !== 'admin'" class="nav-item">
+            <a routerLink="/dashboard/profile" routerLinkActive="active">
+              <span class="pcoded-micon">U</span>
+              <span class="pcoded-mtext">Profile</span>
+            </a>
+          </li>
+        </ul>
       </div>
-      <button class="nav-toggle" type="button" (click)="toggleNav()" aria-label="Hide navigation" title="Hide navigation">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M15 18l-6-6 6-6"></path>
-        </svg>
-      </button>
+    </div>
+  </nav>
+
+  <header class="navbar pcoded-header">
+    <div class="m-header">
+      <a href="javascript:void(0)" class="mobile-menu" title="Toggle menu" (click)="toggleNav()"><span></span></a>
+      <a routerLink="/admin/dashboard" class="b-brand">
+        <span class="logo-thumb">C</span>
+        <span class="logo-main">ChatBot Factory</span>
+      </a>
     </div>
 
-    <nav>
-      <a *ngIf="auth.currentUser()?.role !== 'admin'" routerLink="/dashboard/projects" routerLinkActive="active">Projects</a>
-      <a routerLink="/dashboard/profile" routerLinkActive="active">Profile</a>
-      <a *ngIf="auth.currentUser()?.role === 'admin'" routerLink="/admin/dashboard" routerLinkActive="active">Dashboard</a>
-      <a *ngIf="auth.currentUser()?.role === 'admin'" routerLink="/admin/conversations" routerLinkActive="active">Conversations</a>
-      <a *ngIf="auth.currentUser()?.role === 'admin'" routerLink="/admin/users" routerLinkActive="active">Users</a>
-    </nav>
-  </aside>
+    <div class="collapse navbar-collapse">
+      <div class="navbar-nav ms-auto topbar-actions">
+        <button class="notification-button menu-button" type="button" aria-label="Notifications" title="Notifications">
+          <svg lucideBell size="18" aria-hidden="true"></svg>
+          <span class="notification-dot" aria-hidden="true"></span>
+        </button>
 
-  <main class="workspace">
-    <header class="topbar">
-      <button
-        *ngIf="navCollapsed"
-        class="nav-toggle floating"
-        type="button"
-        (click)="toggleNav()"
-        aria-label="Show navigation"
-        title="Show navigation">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M9 18l6-6-6-6"></path>
-        </svg>
-      </button>
-      <div>
-        <p>{{ auth.currentUser()?.name }} - {{ auth.currentUser()?.role }}</p>
+        <div class="profile-menu">
+          <button
+            class="profile-toggle menu-button"
+            type="button"
+            aria-haspopup="menu"
+            [attr.aria-expanded]="userMenuOpen"
+            (click)="toggleUserMenu()">
+            <span class="account-avatar account-avatar-sm">{{ initials() }}</span>
+            <span class="profile-name">{{ displayName() }}</span>
+            <svg lucideChevronDown class="profile-chevron" size="16" aria-hidden="true"></svg>
+          </button>
+
+          <div class="dropdown-menu account-menu" *ngIf="userMenuOpen" role="menu">
+            <div class="pro-head">
+              <span class="account-avatar account-avatar-lg">{{ initials() }}</span>
+              <div class="account-identity">
+                <strong>{{ displayName() }}</strong>
+                <span>{{ displayRole() }}</span>
+              </div>
+            </div>
+            <ul class="pro-body">
+              <li>
+                <button class="account-menu-item menu-button" type="button" routerLink="/dashboard/profile" role="menuitem" (click)="closeUserMenu()">
+                  <svg lucideUser size="16" aria-hidden="true"></svg>
+                  <span>Profile</span>
+                </button>
+              </li>
+              <li class="menu-separator">
+                <button class="account-menu-item menu-button" type="button" role="menuitem" (click)="auth.logout()">
+                  <svg lucideLogOut size="16" aria-hidden="true"></svg>
+                  <span>Sign out</span>
+                </button>
+              </li>
+            </ul>
+          </div>
+        </div>
       </div>
-      <button class="signout-button" (click)="auth.logout()">Sign out</button>
-    </header>
+    </div>
+  </header>
 
-    <section class="content">
-      <router-outlet></router-outlet>
-    </section>
+  <main class="pcoded-main-container">
+    <div class="pcoded-wrapper">
+      <div class="pcoded-content">
+        <div class="pcoded-inner-content">
+          <div class="main-body">
+            <div class="page-wrapper">
+              <router-outlet></router-outlet>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </main>
 </div>

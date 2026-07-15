@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from database.db import SessionLocal
@@ -13,6 +13,7 @@ from models.project import Project
 from models.user import User
 from models.version import VersionChatbot
 from services.auth import require_roles
+from services.audit import record_audit_log
 from services.document_ingestion import DocumentExtractionError, extract_document_text
 from services.rag import chunk_document, embed_chunk, get_or_create_knowledge_base, retrieve_relevant_chunks_with_mode
 from services.rag_settings import normalize_rag_settings
@@ -65,86 +66,167 @@ def ensure_document_access(db: Session, document_id: int, current_user: User) ->
 
 def document_response(db: Session, document: Document) -> DocumentResponse:
     chunks_count = db.query(Chunk).filter(Chunk.document_id == document.id).count()
+    ready_embeddings_count = db.query(Chunk).filter(
+        Chunk.document_id == document.id,
+        Chunk.embedding_status == "ready",
+        Chunk.embedding.isnot(None),
+    ).count()
+    failed_embeddings_count = db.query(Chunk).filter(
+        Chunk.document_id == document.id,
+        Chunk.embedding_status == "failed",
+    ).count()
+    pending_embeddings_count = db.query(Chunk).filter(
+        Chunk.document_id == document.id,
+        Chunk.embedding_status == "pending",
+    ).count()
     if document.chunks_count != chunks_count:
         document.chunks_count = chunks_count
         db.commit()
         db.refresh(document)
+
+    response_status = document.status or "processed"
+    if chunks_count and ready_embeddings_count == chunks_count:
+        response_status = "processed"
+    elif failed_embeddings_count:
+        response_status = "embedding_failed"
+    elif chunks_count and ready_embeddings_count < chunks_count:
+        response_status = "processing"
 
     return DocumentResponse(
         id=document.id,
         filename=document.filename,
         content_type=document.content_type,
         size_bytes=document.size_bytes or 0,
-        status=document.status or "processed",
+        status=response_status,
         error_message=document.error_message,
         processed_at=document.processed_at,
         created_at=document.created_at,
         chunks_count=chunks_count,
+        embeddings_count=ready_embeddings_count,
+        failed_embeddings_count=failed_embeddings_count,
+        pending_embeddings_count=pending_embeddings_count,
         pages_count=(document.raw_text or "").count("\n\nPage ") + 1
         if (document.content_type or "").split(";")[0].strip().lower() == "application/pdf" and document.raw_text
         else None
     )
 
 
+def process_document_background(
+    document_id: int,
+    filename: str,
+    content_type: str | None,
+    content: str,
+    content_encoding: str | None
+) -> None:
+    db = SessionLocal()
+    try:
+        document = db.query(Document).filter(Document.id == document_id).first()
+        if not document:
+            return
+
+        try:
+            extracted_text, size_bytes = extract_document_text(
+                filename=filename,
+                content_type=content_type,
+                content=content or "",
+                content_encoding=content_encoding
+            )
+            chunks = chunk_document(extracted_text)
+            if not chunks:
+                raise DocumentExtractionError("Document has no readable text")
+        except DocumentExtractionError as exc:
+            document.status = "failed"
+            document.error_message = str(exc)
+            document.processed_at = datetime.utcnow()
+            document.chunks_count = 0
+            db.commit()
+            return
+
+        document.raw_text = extracted_text
+        document.size_bytes = size_bytes
+        document.error_message = None
+
+        db.query(Chunk).filter(Chunk.document_id == document.id).delete()
+        db.flush()
+
+        ready_chunks = 0
+        failed_chunks = 0
+        for index, chunk_data in enumerate(chunks):
+            chunk = Chunk(
+                document_id=document.id,
+                order=index,
+                title=chunk_data.title,
+                section_type=chunk_data.section_type,
+                metadata_json=chunk_data.metadata or {},
+                text=chunk_data.text,
+                embedding_id=f"local-embedding-{document.id}-{index}",
+                embedding_status="pending"
+            )
+            embed_chunk(chunk)
+            if chunk.embedding_status == "ready":
+                ready_chunks += 1
+            else:
+                failed_chunks += 1
+            db.add(chunk)
+
+        document.status = "embedding_failed" if failed_chunks else "processed"
+        document.error_message = "Some chunks failed embedding generation" if failed_chunks else None
+        document.processed_at = datetime.utcnow()
+        document.chunks_count = len(chunks)
+        db.commit()
+    finally:
+        db.close()
+
+
 @router.post("/versions/{version_id}/documents", response_model=DocumentResponse)
 def ingest_document(
     version_id: int,
     payload: DocumentIngest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "manager"))
 ):
     ensure_version_access(db, version_id, current_user)
 
-    try:
-        content, size_bytes = extract_document_text(
-            filename=payload.filename,
-            content_type=payload.content_type,
-            content=payload.content or "",
-            content_encoding=payload.content_encoding
-        )
-    except DocumentExtractionError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    chunks = chunk_document(content)
-    if not chunks:
-        raise HTTPException(status_code=400, detail="Document has no readable text")
-
     knowledge_base = get_or_create_knowledge_base(db, version_id)
-    now = datetime.utcnow()
+    filename = payload.filename.strip()
+    if not filename:
+        raise HTTPException(status_code=400, detail="Document filename is required")
 
     document = Document(
         knowledge_base_id=knowledge_base.id,
-        filename=payload.filename.strip(),
+        filename=filename,
         content_type=payload.content_type,
-        storage_url=f"local://version-{version_id}/{payload.filename}",
-        raw_text=content,
-        size_bytes=size_bytes,
-        status="processed",
+        storage_url=f"local://version-{version_id}/{filename}",
+        raw_text=None,
+        size_bytes=len(payload.content or ""),
+        status="processing",
         error_message=None,
-        processed_at=now,
-        chunks_count=len(chunks)
+        processed_at=None,
+        chunks_count=0
     )
 
     db.add(document)
     db.commit()
     db.refresh(document)
+    background_tasks.add_task(
+        process_document_background,
+        document.id,
+        filename,
+        payload.content_type,
+        payload.content or "",
+        payload.content_encoding
+    )
 
-    for index, chunk_data in enumerate(chunks):
-        chunk = Chunk(
-            document_id=document.id,
-            order=index,
-            title=chunk_data.title,
-            section_type=chunk_data.section_type,
-            metadata_json=chunk_data.metadata or {},
-            text=chunk_data.text,
-            embedding_id=f"local-embedding-{document.id}-{index}",
-            embedding_status="pending"
-        )
-        embed_chunk(chunk)
-        db.add(chunk)
-
-    db.commit()
-    db.refresh(document)
+    record_audit_log(
+        db,
+        actor=current_user,
+        action="DOCUMENT_UPLOADED",
+        resource_type="document",
+        resource_id=document.id,
+        resource_name=document.filename,
+        metadata={"version_id": version_id, "content_type": document.content_type, "size_bytes": document.size_bytes},
+    )
 
     return document_response(db, document)
 
@@ -191,6 +273,14 @@ def update_document(
         document.content_type = payload.content_type.strip() or None
     db.commit()
     db.refresh(document)
+    record_audit_log(
+        db,
+        actor=current_user,
+        action="KNOWLEDGE_BASE_UPDATED",
+        resource_type="document",
+        resource_id=document.id,
+        resource_name=document.filename,
+    )
     return document_response(db, document)
 
 
@@ -349,9 +439,20 @@ def delete_document(
     current_user: User = Depends(require_roles("admin", "manager"))
 ):
     document = ensure_document_access(db, document_id, current_user)
+    deleted_document_id = document.id
+    deleted_filename = document.filename
 
     db.query(Chunk).filter(Chunk.document_id == document.id).delete()
     db.delete(document)
     db.commit()
+
+    record_audit_log(
+        db,
+        actor=current_user,
+        action="DOCUMENT_DELETED",
+        resource_type="document",
+        resource_id=deleted_document_id,
+        resource_name=deleted_filename,
+    )
 
     return {"message": "Document deleted"}

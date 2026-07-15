@@ -1,0 +1,72 @@
+<section class="settings-page">
+  <header class="page-hero">
+    <div>
+      <p class="eyebrow">CONFIGURATION</p>
+      <h1>Platform Settings</h1>
+      <p>Manage general platform identity and default administrative preferences.</p>
+    </div>
+    <button type="button" class="secondary-button" (click)="load()" [disabled]="loading() || saving()">
+      {{ loading() ? 'Refreshing...' : 'Refresh' }}
+    </button>
+  </header>
+
+  <p *ngIf="error()" class="error-banner">{{ error() }}</p>
+  <p *ngIf="success()" class="success-banner">{{ success() }}</p>
+  <p *ngIf="loading()" class="muted loading-state">Loading platform settings...</p>
+
+  <section class="settings-card" *ngIf="!loading()">
+    <div class="card-header">
+      <div>
+        <p class="eyebrow">General Settings</p>
+        <h2>Platform identity</h2>
+      </div>
+      <div class="meta" *ngIf="metadata() as meta">
+        <span>Last updated: {{ meta.updated_at ? (meta.updated_at | date:'medium') : 'Not saved yet' }}</span>
+        <span *ngIf="meta.updated_by_name">Updated by: {{ meta.updated_by_name }}</span>
+      </div>
+    </div>
+
+    <form class="settings-form" (ngSubmit)="save()">
+      <label>
+        Platform Name
+        <input
+          name="platform_name"
+          [(ngModel)]="form.platform_name"
+          maxlength="80"
+          required
+          placeholder="ChatBot Factory">
+        <small class="field-error" *ngIf="platformNameError()">{{ platformNameError() }}</small>
+      </label>
+
+      <label>
+        Support Email
+        <input
+          name="support_email"
+          [(ngModel)]="form.support_email"
+          type="email"
+          required
+          placeholder="support@example.com">
+        <small class="field-error" *ngIf="supportEmailError()">{{ supportEmailError() }}</small>
+      </label>
+
+      <label>
+        Default Page Size
+        <select name="default_page_size" [(ngModel)]="form.default_page_size" required>
+          <option [ngValue]="10">10</option>
+          <option [ngValue]="25">25</option>
+          <option [ngValue]="50">50</option>
+          <option [ngValue]="100">100</option>
+        </select>
+        <small class="field-help">Persisted preference for future admin pagination defaults.</small>
+        <small class="field-error" *ngIf="pageSizeError()">{{ pageSizeError() }}</small>
+      </label>
+
+      <div class="form-actions">
+        <button type="button" class="secondary-button" (click)="reset()" [disabled]="saving() || !hasChanges()">Reset unsaved changes</button>
+        <button type="submit" class="primary-button" [disabled]="saving() || !isValid() || !hasChanges()">
+          {{ saving() ? 'Saving...' : 'Save Changes' }}
+        </button>
+      </div>
+    </form>
+  </section>
+</section>

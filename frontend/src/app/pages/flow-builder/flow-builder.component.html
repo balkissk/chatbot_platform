@@ -15,7 +15,7 @@
         <path d="M6 22v-4H2"></path>
       </svg>
     </button>
-    <button class="secondary icon-action" type="button" (click)="goBack()" aria-label="Back to chatbots" title="Back to chatbots">
+    <button class="secondary icon-action" type="button" (click)="goBack()" aria-label="Back to Template Marketplace" title="Back to Template Marketplace">
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M19 12H5"></path>
         <path d="M12 19l-7-7 7-7"></path>
@@ -62,18 +62,10 @@
         </section>
       </div>
 
-      <div class="template-card">
-        <p class="eyebrow">Templates</p>
-        <select [(ngModel)]="selectedTemplate">
-          <option value="">Choose template</option>
-          <option *ngFor="let template of templates()" [value]="template.key">{{ template.name }}</option>
-        </select>
-        <button type="button" class="secondary" (click)="applyTemplate()" [disabled]="!selectedTemplate || applyingTemplate()">
-          {{ applyingTemplate() ? 'Applying...' : 'Apply template' }}
-        </button>
-      </div>
-
-      <button class="secondary" [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId, 'knowledge']">
+      <button
+        class="secondary"
+        [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId, 'knowledge']"
+        [queryParams]="{ returnUrl: knowledgeBaseReturnUrl() }">
         Knowledge Base
       </button>
     </aside>
@@ -224,7 +216,7 @@
           </div>
         </div>
 
-        <label *ngIf="node.type !== 'rag_answer' && node.type !== 'condition' && node.type !== 'set_variable' && node.type !== 'api_request'">
+        <label *ngIf="!isAiAnswerNode(node.type) && node.type !== 'condition' && node.type !== 'set_variable' && node.type !== 'api_request' && !isAdvancedPlaceholder(node.type)">
           Text
           <textarea rows="5" [ngModel]="nodeText(node)" (ngModelChange)="setNodeText($event)"></textarea>
         </label>
@@ -263,8 +255,8 @@
           </label>
         </section>
 
-        <section class="condition-box" *ngIf="node.type === 'rag_answer'">
-          <p class="eyebrow">AI/RAG</p>
+        <section class="condition-box" *ngIf="isAiAnswerNode(node.type)">
+          <p class="eyebrow">{{ node.type === 'knowledge_search' ? 'Knowledge Search' : 'AI Answer' }}</p>
           <label>
             Prompt / instructions
             <textarea rows="4" [ngModel]="nodeConfigValue(node, 'prompt')" (ngModelChange)="updateNodeConfig('prompt', $event)"></textarea>
@@ -294,6 +286,64 @@
           <label class="checkbox-row">
             <input type="checkbox" [ngModel]="!!node.config['continue_rag']" (ngModelChange)="updateNodeConfig('continue_rag', $event)">
             Continue AI/RAG at this block
+          </label>
+        </section>
+
+        <section class="condition-box" *ngIf="isAdvancedPlaceholder(node.type)">
+          <p class="eyebrow">Advanced Block</p>
+          <label>
+            Runtime message
+            <textarea rows="3" [ngModel]="nodeConfigValue(node, 'message')" (ngModelChange)="updateNodeConfig('message', $event)" placeholder="Short internal or user-facing message."></textarea>
+          </label>
+
+          <label *ngIf="node.type === 'ai_router' || node.type === 'ai_classifier'">
+            Instructions
+            <textarea rows="4" [ngModel]="nodeConfigValue(node, 'instructions')" (ngModelChange)="updateNodeConfig('instructions', $event)" placeholder="Explain how the AI should route or classify."></textarea>
+          </label>
+
+          <label *ngIf="node.type === 'ai_router' || node.type === 'ai_classifier'">
+            Output variable
+            <input [ngModel]="nodeConfigValue(node, 'output_variable')" (ngModelChange)="updateNodeConfig('output_variable', $event)" placeholder="detected_intent">
+          </label>
+
+          <label *ngIf="node.type === 'ai_router'">
+            Routes JSON
+            <textarea rows="4" [ngModel]="jsonConfigValue(node, 'routes')" (ngModelChange)="updateNodeJsonConfig('routes', $event)" placeholder='["Support","Sales","Billing"]'></textarea>
+          </label>
+
+          <label *ngIf="node.type === 'ai_classifier'">
+            Categories JSON
+            <textarea rows="4" [ngModel]="jsonConfigValue(node, 'categories')" (ngModelChange)="updateNodeJsonConfig('categories', $event)" placeholder='["General","Urgent","Follow up"]'></textarea>
+          </label>
+
+          <label *ngIf="node.type === 'confidence_check'">
+            Confidence variable
+            <input [ngModel]="nodeConfigValue(node, 'variable')" (ngModelChange)="updateNodeConfig('variable', $event)" placeholder="confidence">
+          </label>
+
+          <label *ngIf="node.type === 'confidence_check'">
+            Threshold
+            <input type="number" min="0" max="1" step="0.05" [ngModel]="nodeConfigValue(node, 'threshold') || 0.65" (ngModelChange)="updateNodeConfig('threshold', $event)">
+          </label>
+
+          <label *ngIf="node.type === 'lead_score'">
+            Score variable
+            <input [ngModel]="nodeConfigValue(node, 'score_variable')" (ngModelChange)="updateNodeConfig('score_variable', $event)" placeholder="lead_score">
+          </label>
+
+          <label *ngIf="node.type === 'lead_score'">
+            Input variables JSON
+            <textarea rows="4" [ngModel]="jsonConfigValue(node, 'input_variables')" (ngModelChange)="updateNodeJsonConfig('input_variables', $event)" placeholder='["user_question","user_email"]'></textarea>
+          </label>
+
+          <label *ngIf="node.type === 'meeting_scheduler'">
+            Meeting variable
+            <input [ngModel]="nodeConfigValue(node, 'field')" (ngModelChange)="updateNodeConfig('field', $event)" placeholder="preferred_time">
+          </label>
+
+          <label *ngIf="node.type === 'meeting_scheduler'">
+            Timezone
+            <input [ngModel]="nodeConfigValue(node, 'timezone')" (ngModelChange)="updateNodeConfig('timezone', $event)" placeholder="local">
           </label>
         </section>
 

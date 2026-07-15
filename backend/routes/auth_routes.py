@@ -1,18 +1,22 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
+from models.chatbot import Chatbot
+from models.project import Project
 from models.user import User
 from models.user_schema import (
     RegistrationResponse,
     TokenResponse,
     UserCreate,
+    UserListResponse,
     UserLogin,
     UserPasswordUpdate,
     UserProfileUpdate,
     UserResponse,
+    UserStatsResponse,
     UserStatusUpdate,
 )
 from services.auth import (
@@ -24,11 +28,12 @@ from services.auth import (
     require_roles,
     verify_password,
 )
+from services.audit import record_audit_log
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
-def serialize_user(user: User) -> UserResponse:
+def serialize_user(user: User, project_count: int | None = None, chatbot_count: int | None = None) -> UserResponse:
     return UserResponse(
         id=user.id,
         name=user.name,
@@ -36,8 +41,61 @@ def serialize_user(user: User) -> UserResponse:
         role=user.role,
         status=user.status,
         email_verified=user.email_verified_at is not None,
-        created_at=user.created_at
+        created_at=user.created_at,
+        last_login_at=user.last_login_at,
+        project_count=project_count,
+        chatbot_count=chatbot_count,
     )
+
+
+def user_stats(db: Session) -> dict:
+    return {
+        "total_users": db.query(User.id).count(),
+        "active_users": db.query(User.id).filter(User.status == "active").count(),
+        "disabled_users": db.query(User.id).filter(User.status == "disabled").count(),
+        "managers": db.query(User.id).filter(User.role == "manager").count(),
+    }
+
+
+def aggregate_user_counts(db: Session, user_ids: list[int]) -> dict[int, dict[str, int]]:
+    if not user_ids:
+        return {}
+
+    project_rows = db.query(
+        Project.user_id,
+        func.count(Project.id),
+    ).filter(
+        Project.user_id.in_(user_ids)
+    ).group_by(Project.user_id).all()
+
+    chatbot_rows = db.query(
+        Project.user_id,
+        func.count(Chatbot.id),
+    ).join(
+        Chatbot,
+        Chatbot.project_id == Project.id,
+    ).filter(
+        Project.user_id.in_(user_ids)
+    ).group_by(Project.user_id).all()
+
+    counts = {user_id: {"project_count": 0, "chatbot_count": 0} for user_id in user_ids}
+    for user_id, count in project_rows:
+        counts[user_id]["project_count"] = count
+    for user_id, count in chatbot_rows:
+        counts[user_id]["chatbot_count"] = count
+    return counts
+
+
+def serialize_users_with_counts(db: Session, users: list[User]) -> list[UserResponse]:
+    counts = aggregate_user_counts(db, [user.id for user in users])
+    return [
+        serialize_user(
+            user,
+            project_count=counts.get(user.id, {}).get("project_count", 0),
+            chatbot_count=counts.get(user.id, {}).get("chatbot_count", 0),
+        )
+        for user in users
+    ]
 
 
 @router.post("/register", response_model=RegistrationResponse)
@@ -81,6 +139,10 @@ def login(payload: UserLogin, db: Session = Depends(get_db)):
     if user.status != "active":
         raise HTTPException(status_code=403, detail="Account is not active")
 
+    user.last_login_at = datetime.utcnow()
+    db.commit()
+    db.refresh(user)
+
     return TokenResponse(
         access_token=create_access_token(user),
         user=serialize_user(user)
@@ -106,9 +168,21 @@ def update_profile(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    previous_name = user.name
     user.name = name
     db.commit()
     db.refresh(user)
+
+    if previous_name != name:
+        record_audit_log(
+            db,
+            actor=user,
+            action="PROFILE_UPDATED",
+            resource_type="user",
+            resource_id=user.id,
+            resource_name=user.name,
+            metadata={"changed_fields": ["name"]},
+        )
 
     return serialize_user(user)
 
@@ -126,20 +200,36 @@ def update_password(
     if not verify_password(payload.current_password, user.password_hash):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
 
-    if len(payload.new_password) < 8:
-        raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
-
     user.password_hash = hash_password(payload.new_password)
     db.commit()
+
+    record_audit_log(
+        db,
+        actor=user,
+        action="PASSWORD_CHANGED",
+        resource_type="user",
+        resource_id=user.id,
+        resource_name=user.name,
+    )
 
     return {"message": "Password updated"}
 
 
-@router.get("/users", response_model=list[UserResponse])
+@router.get("/users/stats", response_model=UserStatsResponse)
+def get_user_stats(
+    current_user: User = Depends(require_roles("admin")),
+    db: Session = Depends(get_db)
+):
+    return user_stats(db)
+
+
+@router.get("/users")
 def list_users(
     search: str | None = Query(default=None),
     role: str | None = Query(default=None),
     status: str | None = Query(default=None),
+    page: int | None = Query(default=None, ge=1),
+    page_size: int | None = Query(default=None, ge=1, le=100),
     current_user: User = Depends(require_roles("admin")),
     db: Session = Depends(get_db)
 ):
@@ -156,8 +246,23 @@ def list_users(
         status = normalize_status(status)
         query = query.filter(User.status == status)
 
-    users = query.order_by(User.created_at.desc()).all()
-    return [serialize_user(user) for user in users]
+    total = query.count()
+    query = query.order_by(User.created_at.desc(), User.id.desc())
+
+    if page is not None or page_size is not None:
+        page = page or 1
+        page_size = page_size or 10
+        users = query.offset((page - 1) * page_size).limit(page_size).all()
+        return UserListResponse(
+            items=serialize_users_with_counts(db, users),
+            total=total,
+            page=page,
+            page_size=page_size,
+            stats=UserStatsResponse(**user_stats(db)),
+        )
+
+    users = query.all()
+    return serialize_users_with_counts(db, users)
 
 
 @router.post("/users", response_model=UserResponse)
@@ -182,6 +287,15 @@ def create_user(
     db.add(user)
     db.commit()
     db.refresh(user)
+
+    record_audit_log(
+        db,
+        actor=current_user,
+        action="USER_CREATED",
+        resource_type="user",
+        resource_id=user.id,
+        resource_name=user.name,
+    )
 
     return serialize_user(user)
 
@@ -209,9 +323,21 @@ def update_user_status(
         if active_admins <= 1:
             raise HTTPException(status_code=400, detail="At least one active admin is required")
 
+    previous_status = user.status
     user.status = status
     db.commit()
     db.refresh(user)
+
+    if previous_status != status:
+        record_audit_log(
+            db,
+            actor=current_user,
+            action="USER_ACTIVATED" if status == "active" else "USER_DISABLED",
+            resource_type="user",
+            resource_id=user.id,
+            resource_name=user.name,
+            metadata={"previous_status": previous_status, "status": status},
+        )
 
     return serialize_user(user)
 

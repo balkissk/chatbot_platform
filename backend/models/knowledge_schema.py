@@ -25,6 +25,9 @@ class DocumentResponse(BaseModel):
     processed_at: datetime | None = None
     created_at: datetime | None = None
     chunks_count: int = 0
+    embeddings_count: int = 0
+    failed_embeddings_count: int = 0
+    pending_embeddings_count: int = 0
     pages_count: int | None = None
 
     class Config:

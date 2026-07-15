@@ -1,0 +1,127 @@
+<section class="setup-page">
+  <header class="setup-header">
+    <div>
+      <p class="eyebrow">Build With AI</p>
+      <h2>Generate your assistant</h2>
+      <p class="muted">Describe the assistant you want. ChatBot Factory will create a ready-to-edit starter flow.</p>
+    </div>
+
+    <button type="button" class="secondary" (click)="goBack()">Back to assistants</button>
+  </header>
+
+  <section class="generator-grid">
+    <form class="setup-card generator-form" (ngSubmit)="generateAssistant()">
+      <div class="card-heading">
+        <span>AI</span>
+        <div>
+          <h3>Assistant brief</h3>
+          <p class="muted">Use business language. The generated flow can be edited in Flow Builder.</p>
+        </div>
+      </div>
+
+      <label>
+        Assistant Goal
+        <textarea
+          [(ngModel)]="form.assistant_goal"
+          name="assistant_goal"
+          rows="5"
+          placeholder="Example: Help customers troubleshoot Microsoft 365 support issues and answer common service questions."></textarea>
+      </label>
+
+      <label>
+        Business Context
+        <textarea
+          [(ngModel)]="form.business_context"
+          name="business_context"
+          rows="5"
+          placeholder="Example: INSOMEA provides Microsoft Cloud, Azure, cybersecurity and training services for enterprise customers."></textarea>
+      </label>
+
+      <label>
+        Optional Knowledge Base Description
+        <textarea
+          [(ngModel)]="form.knowledge_base_description"
+          name="knowledge_base_description"
+          rows="4"
+          placeholder="Example: Product documentation, support procedures, course catalogs, policies or FAQs."></textarea>
+      </label>
+
+      <p class="error" *ngIf="error()">{{ error() }}</p>
+
+      <button type="submit" class="primary" [disabled]="!canGenerate()">
+        {{ loading() ? 'Generating...' : 'Generate Assistant' }}
+      </button>
+    </form>
+
+    <aside class="setup-card preview-card">
+      <p class="eyebrow">Generated Output</p>
+      <ng-container *ngIf="generated(); else emptyPreview">
+        <h3>{{ generated()?.assistant_name }}</h3>
+        <p class="muted">{{ generated()?.assistant_description }}</p>
+
+        <div class="summary-grid">
+          <div>
+            <span>Domain</span>
+            <strong>{{ generated()?.detected_domain }}</strong>
+          </div>
+          <div>
+            <span>Flow type</span>
+            <strong>{{ generated()?.recommended_flow_type }}</strong>
+          </div>
+          <div>
+            <span>Confidence</span>
+            <strong>{{ generated()?.generation_confidence | percent:'1.0-0' }}</strong>
+          </div>
+        </div>
+
+        <div class="summary-section" *ngIf="generated()?.detected_intents?.length">
+          <span>Detected intents</span>
+          <div class="summary-tags">
+            <small *ngFor="let intent of generated()?.detected_intents">{{ intent }}</small>
+          </div>
+        </div>
+
+        <div class="summary-section" *ngIf="generated()?.suggested_kb_categories?.length">
+          <span>Suggested knowledge categories</span>
+          <div class="summary-tags">
+            <small *ngFor="let category of generated()?.suggested_kb_categories">{{ category }}</small>
+          </div>
+        </div>
+
+        <div class="summary-section" *ngIf="generated()?.suggested_variables?.length">
+          <span>Variables</span>
+          <div class="summary-tags">
+            <small *ngFor="let variable of generated()?.suggested_variables">{{ variable }}</small>
+          </div>
+        </div>
+
+        <div class="summary-section" *ngIf="generated()?.suggested_advanced_blocks?.length">
+          <span>Advanced blocks</span>
+          <div class="summary-tags">
+            <small *ngFor="let block of generated()?.suggested_advanced_blocks">{{ block }}</small>
+          </div>
+        </div>
+
+        <div class="explanation">
+          <span>Generation reasoning</span>
+          <p>{{ generated()?.generation_explanation }}</p>
+        </div>
+
+        <div class="preview-list">
+          <span *ngFor="let node of generated()?.generated_nodes">{{ node.label }} · {{ node.type }}</span>
+        </div>
+      </ng-container>
+
+      <ng-template #emptyPreview>
+        <h3>Ready-to-edit flow</h3>
+        <p class="muted">After generation, the assistant opens directly in Flow Builder with generated nodes already loaded.</p>
+        <div class="preview-list muted-list">
+          <span>Assistant name</span>
+          <span>Welcome message</span>
+          <span>Recommended template</span>
+          <span>Initial flow structure</span>
+        </div>
+      </ng-template>
+    </aside>
+  </section>
+</section>

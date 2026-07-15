@@ -13,15 +13,17 @@ export class ApiService {
   private projectCache = new Map<number, Observable<any>>();
   private projectChatbotsCache = new Map<number, Observable<any[]>>();
   private projectChatbotsValueCache = new Map<number, any[]>();
+  private cacheToken = '';
 
   constructor(private http: HttpClient) {}
 
   getProjects(search = '', force = false, limit = 50, offset = 0) {
+    this.ensureCacheScope();
     const params: any = {};
     if (search.trim()) params.search = search.trim();
     params.limit = limit;
     params.offset = offset;
-    const key = `${search.trim()}|${limit}|${offset}`;
+    const key = `${this.cacheToken}|${search.trim()}|${limit}|${offset}`;
     if (force || !this.projectsCache.has(key)) {
       this.projectsCache.set(
         key,
@@ -36,7 +38,13 @@ export class ApiService {
     return this.projectsCache.get(key)!;
   }
 
+  getProjectsSummary() {
+    this.ensureCacheScope();
+    return this.http.get<any>(`${this.baseUrl}/projects/summary`);
+  }
+
   getProject(projectId: number, force = false) {
+    this.ensureCacheScope();
     if (force || !this.projectCache.has(projectId)) {
       this.projectCache.set(
         projectId,
@@ -47,12 +55,14 @@ export class ApiService {
   }
 
   createProject(data: any) {
+    this.ensureCacheScope();
     return this.http.post(`${this.baseUrl}/projects`, data).pipe(
       tap(() => this.clearProjectCaches())
     );
   }
 
   updateProject(projectId: number, data: any) {
+    this.ensureCacheScope();
     return this.http.put(`${this.baseUrl}/projects/${projectId}`, data).pipe(
       tap((project: any) => {
         this.clearProjectCaches(projectId);
@@ -62,6 +72,7 @@ export class ApiService {
   }
 
   deleteProject(projectId: number) {
+    this.ensureCacheScope();
     return this.http.delete(`${this.baseUrl}/projects/${projectId}`).pipe(
       tap(() => this.clearProjectCaches(projectId))
     );
@@ -70,6 +81,7 @@ export class ApiService {
   // ===== CHATBOTS =====
 
   getChatbotsByProject(projectId: number, force = false) {
+    this.ensureCacheScope();
     if (force || !this.projectChatbotsCache.has(projectId)) {
       this.projectChatbotsCache.set(
         projectId,
@@ -83,6 +95,7 @@ export class ApiService {
   }
 
   getCachedChatbotsByProject(projectId: number) {
+    this.ensureCacheScope();
     return this.projectChatbotsValueCache.get(projectId);
   }
 
@@ -99,6 +112,10 @@ export class ApiService {
 
   getChatbotAnalytics(chatbotId: number) {
     return this.http.get<any>(`${this.baseUrl}/chatbots/${chatbotId}/analytics`);
+  }
+
+  getChatbotOperationsDashboard(chatbotId: number) {
+    return this.http.get<any>(`${this.baseUrl}/chatbots/${chatbotId}/operations-dashboard`);
   }
 
   getChatbotConversations(chatbotId: number, filters: any = {}) {
@@ -138,6 +155,30 @@ export class ApiService {
 
   regenerateChatbotApiKey(chatbotId: number) {
     return this.http.put<any>(`${this.baseUrl}/chatbots/${chatbotId}/api-key/regenerate`, {});
+  }
+
+  getChatbotChannels(chatbotId: number) {
+    return this.http.get<any[]>(`${this.baseUrl}/chatbots/${chatbotId}/channels`);
+  }
+
+  createChatbotChannel(chatbotId: number, channelType: string, data: any) {
+    return this.http.post<any>(`${this.baseUrl}/chatbots/${chatbotId}/channels/${channelType}`, data);
+  }
+
+  updateChatbotChannel(chatbotId: number, channelType: string, data: any) {
+    return this.http.put<any>(`${this.baseUrl}/chatbots/${chatbotId}/channels/${channelType}`, data);
+  }
+
+  deleteChatbotChannel(chatbotId: number, channelType: string) {
+    return this.http.delete<any>(`${this.baseUrl}/chatbots/${chatbotId}/channels/${channelType}`);
+  }
+
+  testChatbotChannel(chatbotId: number, channelType: string) {
+    return this.http.post<any>(`${this.baseUrl}/chatbots/${chatbotId}/channels/${channelType}/test`, {});
+  }
+
+  clearChatbotChannelError(chatbotId: number, channelType: string) {
+    return this.http.patch<any>(`${this.baseUrl}/chatbots/${chatbotId}/channels/${channelType}/clear-error`, {});
   }
 
   getChatbotRagSettings(chatbotId: number) {
@@ -214,6 +255,14 @@ export class ApiService {
 
   applyFlowTemplate(flowId: number, templateKey: string) {
     return this.http.post<any>(`${this.baseUrl}/flows/${flowId}/template`, { template_key: templateKey });
+  }
+
+  generateAssistantWithAi(data: any) {
+    return this.http.post<any>(`${this.baseUrl}/assistants/ai-generate`, data);
+  }
+
+  applyGeneratedFlow(flowId: number, data: any) {
+    return this.http.post<any>(`${this.baseUrl}/flows/${flowId}/generated`, data);
   }
 
   getChatbotBuilder(chatbotId: number) {
@@ -358,6 +407,36 @@ export class ApiService {
     return this.http.get<any>(`${this.baseUrl}/admin/analytics/overview`);
   }
 
+  getAdminPlatformAnalytics(range = '30d') {
+    return this.http.get<any>(`${this.baseUrl}/admin/analytics/platform`, {
+      params: { range }
+    });
+  }
+
+  getAdminAuditLogs(params: any = {}) {
+    return this.http.get<any>(`${this.baseUrl}/admin/analytics/audit-logs`, { params });
+  }
+
+  getAdminChatbots(params: any = {}) {
+    return this.http.get<any>(`${this.baseUrl}/admin/analytics/chatbots`, { params });
+  }
+
+  getAdminChatbot(chatbotId: number) {
+    return this.http.get<any>(`${this.baseUrl}/admin/analytics/chatbots/${chatbotId}`);
+  }
+
+  getAdminRuntimeLogs(params: any = {}) {
+    return this.http.get<any>(`${this.baseUrl}/admin/analytics/runtime-logs`, { params });
+  }
+
+  getPlatformSettings() {
+    return this.http.get<any>(`${this.baseUrl}/admin/platform-settings`);
+  }
+
+  updatePlatformSettings(data: any) {
+    return this.http.put<any>(`${this.baseUrl}/admin/platform-settings`, data);
+  }
+
   getAdminSessions(chatbotId?: number) {
     const params: any = {};
     if (chatbotId) params.chatbot_id = chatbotId;
@@ -388,6 +467,17 @@ export class ApiService {
     } else {
       this.projectChatbotsCache.clear();
       this.projectChatbotsValueCache.clear();
+    }
+  }
+
+  private ensureCacheScope() {
+    const token = typeof localStorage === 'undefined'
+      ? ''
+      : (localStorage.getItem('chatbot_factory_token') || '');
+    if (token !== this.cacheToken) {
+      this.cacheToken = token;
+      this.clearProjectCaches();
+      this.clearChatbotCaches();
     }
   }
 

@@ -1,80 +1,315 @@
-<div class="page-header">
-  <div>
-    <p class="eyebrow">Admin</p>
-    <h2>Dashboard</h2>
+<div class="gradient-admin-dashboard">
+  <div class="dashboard-toolbar">
+    <div>
+      <h5>Admin Dashboard</h5>
+      <p>ChatBot Factory platform analytics and monitoring</p>
+    </div>
+    <button class="btn btn-primary btn-sm btn-round" type="button" (click)="load()" [disabled]="loading()">
+      {{ loading() ? 'Refreshing...' : 'Refresh' }}
+    </button>
   </div>
-  <button class="secondary" (click)="load()" [disabled]="loading()">
-    {{ loading() ? 'Refreshing...' : 'Refresh' }}
-  </button>
+
+  <p *ngIf="error()" class="alert alert-danger">{{ error() }}</p>
+
+  <div *ngIf="loading()" class="card loading-card">
+    <div class="card-body">
+      <span class="loader"></span>
+      <span>Loading dashboard...</span>
+    </div>
+  </div>
+
+  <ng-container *ngIf="overview() as data">
+    <div class="row">
+      <div class="col-md-6 col-xl-3">
+        <div class="card order-card bg-c-blue">
+          <div class="card-body">
+            <h6 class="text-white">Total Users</h6>
+            <h2 class="text-end text-white">
+              <i class="card-icon float-start">U</i>
+              <span>{{ data.users.total }}</span>
+            </h2>
+            <p class="m-b-0">
+              Active users
+              <span class="float-end">{{ data.users.active }}</span>
+            </p>
+            <p class="m-b-0">
+              Disabled users / managers
+              <span class="float-end">{{ data.users.disabled }} / {{ data.users.active_managers }}</span>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-6 col-xl-3">
+        <div class="card order-card bg-c-green">
+          <div class="card-body">
+            <h6 class="text-white">Total Chatbots</h6>
+            <h2 class="text-end text-white">
+              <i class="card-icon float-start">C</i>
+              <span>{{ data.chatbots.total }}</span>
+            </h2>
+            <p class="m-b-0">
+              Published chatbots
+              <span class="float-end">{{ data.chatbots.published }}</span>
+            </p>
+            <p class="m-b-0">
+              Draft chatbots
+              <span class="float-end">{{ data.chatbots.draft }}</span>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-6 col-xl-3">
+        <div class="card order-card bg-c-yellow">
+          <div class="card-body">
+            <h6 class="text-white">Total Conversations</h6>
+            <h2 class="text-end text-white">
+              <i class="card-icon float-start">S</i>
+              <span>{{ data.conversations.total }}</span>
+            </h2>
+            <p class="m-b-0">
+              Conversations today
+              <span class="float-end">{{ data.conversations.today }}</span>
+            </p>
+            <p class="m-b-0">
+              Total messages
+              <span class="float-end">{{ data.conversations.total_messages }}</span>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-6 col-xl-3">
+        <div class="card order-card bg-c-red">
+          <div class="card-body">
+            <h6 class="text-white">Runtime Success</h6>
+            <h2 class="text-end text-white">
+              <i class="card-icon float-start">R</i>
+              <span>{{ metricPercent(data.runtime.success_rate) }}</span>
+            </h2>
+            <p class="m-b-0">
+              Failed requests
+              <span class="float-end">{{ valueOrUnavailable(data.runtime.failed_requests) }}</span>
+            </p>
+            <p class="m-b-0">
+              Avg response time
+              <span class="float-end">{{ msValue(data.runtime.average_response_time_ms) }}</span>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-xl-6 col-md-12">
+        <div class="card chart-card">
+          <div class="card-header">
+            <h5>Platform Usage</h5>
+          </div>
+          <div class="card-body">
+            <div class="chart-empty">
+              <div class="line-chart-frame">
+                <div class="chart-grid"></div>
+                <div class="usage-bars" *ngIf="data.usage.conversations.length > 0">
+                  <span
+                    *ngFor="let value of data.usage.conversations"
+                    [style.height.%]="usageHeight(value, data.usage)"
+                    [title]="value + ' conversations'"
+                  ></span>
+                </div>
+                <div class="usage-bars runtime-bars" *ngIf="data.usage.runtime_requests !== null">
+                  <span
+                    *ngFor="let value of data.usage.runtime_requests"
+                    [style.height.%]="usageHeight(value, data.usage)"
+                    [title]="value + ' runtime requests'"
+                  ></span>
+                </div>
+                <div class="empty-chart-message" *ngIf="data.usage.runtime_requests === null">
+                  <strong>Time-series data unavailable</strong>
+                  <span>Conversations are shown from persisted sessions. Runtime request history will appear after new runtime executions are logged.</span>
+                </div>
+              </div>
+              <div class="chart-legend">
+                <span><i class="legend-blue"></i>Conversations</span>
+                <span><i class="legend-green"></i>Runtime Requests</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-xl-6 col-md-12">
+        <div class="row">
+          <div class="col-md-6">
+            <div class="card donut-card">
+              <div class="card-body">
+                <div class="row align-center">
+                  <div class="col-auto">
+                    <span>Chatbot Status</span>
+                  </div>
+                  <div class="col text-end">
+                    <h2 class="mb-0">{{ data.chatbots.total }}</h2>
+                    <span class="text-c-green">Tracked</span>
+                  </div>
+                </div>
+
+                <div
+                  class="donut-ring"
+                  [class.unavailable]="!data.chatbots.total"
+                  [style.background]="data.chatbots.total ? 'conic-gradient(#4680ff 0 ' + ((data.chatbots.published / data.chatbots.total) * 100) + '%, #2ed8b6 0 100%)' : ''"
+                >
+                  <span>{{ data.chatbots.total ? 'Status' : 'No data' }}</span>
+                </div>
+
+                <div class="row mt-3 text-center">
+                  <div class="col">
+                    <h3 class="m-0"><i class="dot dot-blue"></i>{{ data.chatbots.published }}</h3>
+                    <span>Published</span>
+                  </div>
+                  <div class="col">
+                    <h3 class="m-0"><i class="dot dot-green"></i>{{ data.chatbots.draft }}</h3>
+                    <span>Draft</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-md-6">
+            <div class="card donut-card bg-primary text-white">
+              <div class="card-body">
+                <div class="row align-center">
+                  <div class="col-auto">
+                    <span>Conversation Channels</span>
+                  </div>
+                  <div class="col text-end">
+                    <h2 class="mb-0 text-white">{{ channelTotal(data.channels) }}</h2>
+                    <span class="text-white">Tracked sessions</span>
+                  </div>
+                </div>
+
+                <div class="donut-ring channel-unavailable" [style.background]="channelGradient(data.channels)">
+                  <span>{{ channelTotal(data.channels) ? 'Channels' : 'No data' }}</span>
+                </div>
+
+                <div class="channel-list">
+                  <span>Public Chat: {{ data.channels.public_chat }}</span>
+                  <span>Widget: {{ data.channels.widget }}</span>
+                  <span>REST API: {{ data.channels.api }}</span>
+                  <span *ngIf="data.channels.legacy_other">Legacy/Other: {{ data.channels.legacy_other }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-6 col-lg-3">
+        <div class="card metric-card">
+          <div class="card-body text-center">
+            <i class="metric-icon text-c-blue">U</i>
+            <h4><span class="text-c-blue">{{ data.users.new_this_month }}</span></h4>
+            <p>New Users</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-6 col-lg-3">
+        <div class="card metric-card">
+          <div class="card-body text-center">
+            <i class="metric-icon text-c-green">P</i>
+            <h4><span class="text-c-green">{{ data.chatbots.published }}</span></h4>
+            <p>Published Chatbots</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-6 col-lg-3">
+        <div class="card metric-card">
+          <div class="card-body text-center">
+            <i class="metric-icon text-c-yellow">D</i>
+            <h4><span class="text-c-yellow">{{ data.knowledge_base.total_documents }}</span></h4>
+            <p>Documents Uploaded</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-6 col-lg-3">
+        <div class="card metric-card">
+          <div class="card-body text-center">
+            <i class="metric-icon text-c-red">F</i>
+            <h4><span class="text-c-red">{{ valueOrUnavailable(data.runtime.failed_requests) }}</span></h4>
+            <p>Failed Runtime Requests</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-12">
+        <div class="card table-card">
+          <div class="card-header">
+            <h5>Recent Platform Activity</h5>
+          </div>
+          <div class="card-body">
+            <div *ngIf="data.recent_activity.items.length === 0" class="empty-state">No platform audit activity recorded yet.</div>
+            <div class="table-responsive" *ngIf="data.recent_activity.items.length > 0">
+              <table class="table table-hover">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Actor</th>
+                    <th>Action</th>
+                    <th>Resource</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let item of data.recent_activity.items">
+                    <td>{{ item.created_at | date:'short' }}</td>
+                    <td>{{ item.actor_name || item.actor_email || 'System' }}</td>
+                    <td>{{ item.action }}</td>
+                    <td>{{ item.resource_name || (item.resource_type + ' #' + item.resource_id) }}</td>
+                    <td><span class="badge bg-primary">{{ item.status }}</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-12">
+        <div class="card table-card">
+          <div class="card-header">
+            <h5>Top Chatbots</h5>
+          </div>
+          <div class="card-body">
+            <div *ngIf="data.top_chatbots.length === 0" class="empty-state">No chatbot conversation ranking is available yet.</div>
+            <div class="table-responsive" *ngIf="data.top_chatbots.length > 0">
+              <table class="table table-hover">
+                <thead>
+                  <tr>
+                    <th>Chatbot Name</th>
+                    <th>Owner</th>
+                    <th>Project</th>
+                    <th>Conversations</th>
+                    <th>Published Version</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let bot of data.top_chatbots">
+                    <td>{{ bot.chatbot_name || ('Chatbot ' + bot.chatbot_id) }}</td>
+                    <td>{{ bot.owner_name || bot.owner_email || 'Unavailable' }}</td>
+                    <td>{{ bot.project_name || 'Unavailable' }}</td>
+                    <td>{{ bot.conversation_count }}</td>
+                    <td>{{ bot.published_version_label || 'Unavailable' }}</td>
+                    <td><span class="badge bg-success">{{ bot.status }}</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </ng-container>
 </div>
-
-<p *ngIf="error()" class="error">{{ error() }}</p>
-<p *ngIf="loading()" class="muted">Loading dashboard...</p>
-
-<ng-container *ngIf="overview() as data">
-  <section class="stats-grid">
-    <article>
-      <span>Projects</span>
-      <strong>{{ data.total_projects }}</strong>
-    </article>
-    <article>
-      <span>Chatbots</span>
-      <strong>{{ data.total_chatbots }}</strong>
-    </article>
-    <article>
-      <span>Active chatbots</span>
-      <strong>{{ data.active_chatbots }}</strong>
-    </article>
-    <article>
-      <span>Published versions</span>
-      <strong>{{ data.published_versions }}</strong>
-    </article>
-    <article>
-      <span>Conversations</span>
-      <strong>{{ data.total_sessions }}</strong>
-    </article>
-    <article>
-      <span>Messages</span>
-      <strong>{{ data.total_messages }}</strong>
-    </article>
-    <article>
-      <span>Conversations today</span>
-      <strong>{{ data.sessions_today }}</strong>
-    </article>
-    <article>
-      <span>Messages today</span>
-      <strong>{{ data.messages_today }}</strong>
-    </article>
-  </section>
-
-  <section class="dashboard-grid">
-    <section class="panel">
-      <div class="panel-header">
-        <h3>Top chatbots</h3>
-      </div>
-      <div *ngIf="data.top_chatbots.length === 0" class="empty">No conversations yet.</div>
-      <div *ngFor="let bot of data.top_chatbots" class="row">
-        <div>
-          <strong>{{ bot.chatbot_name || ('Chatbot ' + bot.chatbot_id) }}</strong>
-          <p>ID {{ bot.chatbot_id }}</p>
-        </div>
-        <span>{{ bot.conversation_count }} conversations</span>
-      </div>
-    </section>
-
-    <section class="panel">
-      <div class="panel-header">
-        <h3>Recent conversations</h3>
-        <a routerLink="/admin/conversations">View all</a>
-      </div>
-      <div *ngIf="data.recent_sessions.length === 0" class="empty">No conversation history yet.</div>
-      <a *ngFor="let session of data.recent_sessions" class="row link-row" [routerLink]="['/admin/conversations']" [queryParams]="{ sessionId: session.id }">
-        <div>
-          <strong>{{ session.chatbot_name }}</strong>
-          <p>{{ session.last_message || 'No messages' }}</p>
-        </div>
-        <span>#{{ session.id }}</span>
-      </a>
-    </section>
-  </section>
-</ng-container>

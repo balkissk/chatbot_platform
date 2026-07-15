@@ -17,4 +17,5 @@ class User(Base):
     email_verified_at = Column(DateTime, nullable=True)
     email_verification_token = Column(String, nullable=True, index=True)
     email_verification_expires_at = Column(DateTime, nullable=True)
+    last_login_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

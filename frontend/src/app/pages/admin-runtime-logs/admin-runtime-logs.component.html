@@ -1,0 +1,96 @@
+<section class="runtime-logs-page">
+  <header class="page-hero">
+    <div>
+      <p class="eyebrow">MONITORING</p>
+      <h1>Runtime Logs</h1>
+      <p>Review persisted Unified Runtime executions across chatbots and channels.</p>
+    </div>
+    <button class="secondary-button" type="button" (click)="load()" [disabled]="loading()">
+      {{ loading() ? 'Refreshing...' : 'Refresh' }}
+    </button>
+  </header>
+
+  <section class="filter-card">
+    <label>
+      Chatbot ID
+      <input [(ngModel)]="chatbotId" type="number" min="1" placeholder="Any chatbot">
+    </label>
+    <label>
+      Status
+      <select [(ngModel)]="status">
+        <option value="">All</option>
+        <option value="success">Success</option>
+        <option value="failed">Failed</option>
+      </select>
+    </label>
+    <label>
+      Channel
+      <select [(ngModel)]="channel">
+        <option value="">All</option>
+        <option value="public_chat">Public Chat</option>
+        <option value="widget">Web Widget</option>
+        <option value="api">REST API</option>
+      </select>
+    </label>
+    <div class="filter-actions">
+      <button class="primary-button" type="button" (click)="load(true)" [disabled]="loading()">Apply</button>
+      <button class="ghost-button" type="button" (click)="resetFilters()" [disabled]="loading()">Reset</button>
+    </div>
+  </section>
+
+  <p *ngIf="error()" class="error-banner">{{ error() }}</p>
+
+  <section class="table-card">
+    <div class="table-header">
+      <div>
+        <p class="eyebrow">Runtime Monitoring</p>
+        <h2>Execution history</h2>
+      </div>
+      <span>{{ pageLabel() }}</span>
+    </div>
+
+    <p *ngIf="loading()" class="muted loading-state">Loading runtime logs...</p>
+    <div *ngIf="!loading() && items().length === 0" class="empty-state">
+      <strong>No runtime logs found.</strong>
+      <p>Executions will appear here after chatbots are used through supported channels.</p>
+    </div>
+
+    <div class="table-scroll" *ngIf="items().length > 0">
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Chatbot</th>
+            <th>Project</th>
+            <th>Owner</th>
+            <th>Channel</th>
+            <th>Status</th>
+            <th>RAG</th>
+            <th>Response Time</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let log of items()">
+            <td>{{ log.created_at | date:'medium' }}</td>
+            <td>
+              <strong>{{ log.chatbot_name || 'Deleted chatbot' }}</strong>
+              <small *ngIf="log.chatbot_id">#{{ log.chatbot_id }}</small>
+            </td>
+            <td>{{ log.project_name || 'No project' }}</td>
+            <td>{{ log.owner_name || 'Unknown owner' }}</td>
+            <td>{{ log.channel }}</td>
+            <td><span class="status-badge" [class.failed]="log.status === 'failed'">{{ log.status }}</span></td>
+            <td>{{ log.rag_used ? 'Used' : 'No' }}</td>
+            <td>{{ log.response_time_ms !== null && log.response_time_ms !== undefined ? (log.response_time_ms + ' ms') : 'Not available' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pagination" *ngIf="total() > limit">
+      <button class="ghost-button" type="button" (click)="previousPage()" [disabled]="offset === 0 || loading()">Previous</button>
+      <span>{{ pageLabel() }}</span>
+      <button class="ghost-button" type="button" (click)="nextPage()" [disabled]="offset + limit >= total() || loading()">Next</button>
+    </div>
+  </section>
+</section>

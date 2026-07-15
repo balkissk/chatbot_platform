@@ -92,6 +92,37 @@ def _continues_rag(node: FlowNode) -> bool:
     )
 
 
+def _truthy_config(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    return _normalized(str(value)) in {"1", "true", "yes", "on"}
+
+
+def _is_silent_input(node: FlowNode) -> bool:
+    config = node.config or {}
+    return any(
+        _truthy_config(config.get(key))
+        for key in ("silent", "silent_input", "hide_prompt", "hide_message")
+    )
+
+
+def _requests_human(message: str) -> bool:
+    text = _normalized(message)
+    return any(
+        phrase in text
+        for phrase in (
+            "human",
+            "agent",
+            "support team",
+            "real person",
+            "talk to someone",
+            "speak to someone",
+            "contact support",
+            "escalate",
+        )
+    )
+
+
 def _to_number(value) -> float | None:
     try:
         return float(str(value).strip())
@@ -280,7 +311,7 @@ def _serialize_state(
 ) -> dict:
     return {
         "response": response,
-        "messages": messages or [{"text": response, "options": options or []}],
+        "messages": messages if messages is not None else [{"text": response, "options": options or []}],
         "mode_used": used,
         "current_node_key": current_node_key,
         "variables": variables,
@@ -325,6 +356,15 @@ def execute_flow(
         next_key = transition.target_node_key if transition else None
         next_node = node_by_key.get(next_key)
         if next_node and next_node.type in {"question", "buttons"}:
+            if _is_silent_input(next_node):
+                return _serialize_state(
+                    _node_text(node),
+                    next_node.node_key,
+                    state,
+                    messages=[
+                        {"text": _node_text(node), "options": []}
+                    ]
+                )
             next_text = _node_text(next_node)
             options = _options_for(next_node, transitions)
             return _serialize_state(
@@ -359,6 +399,14 @@ def execute_flow(
                     rag_answer=rag_answer,
                     allow_rag_fallback=allow_rag_fallback
                 )
+
+        if _is_silent_input(node):
+            return _serialize_state(
+                "",
+                node.node_key,
+                state,
+                messages=[]
+            )
 
         return _serialize_state(_node_text(node), node.node_key, state)
 
@@ -439,7 +487,38 @@ def execute_flow(
             allow_rag_fallback=allow_rag_fallback
         )
 
-    if node.type == "rag_answer":
+    if node.type == "knowledge_search" and _truthy_config((node.config or {}).get("retrieval_only")):
+        if rag_answer:
+            transition = _first_transition(transitions, node.node_key)
+            query = message.strip() or state.get("__last_question") or state.get("__last_input") or ""
+            try:
+                result = rag_answer(query, state, node.config or {})
+            except TypeError:
+                result = rag_answer(query, state)
+
+            state["__knowledge_search_answer"] = result.get("response", "")
+            state["__knowledge_search_sources"] = result.get("sources", [])
+            state["__knowledge_search_mode"] = result.get("retrieval_mode", "")
+            if message.strip():
+                state["__last_input"] = message.strip()
+                state["__last_question"] = message.strip()
+
+            next_key = transition.target_node_key if transition else None
+            if next_key:
+                return execute_flow(
+                    db,
+                    version_id,
+                    "",
+                    next_key,
+                    state,
+                    rag_answer=rag_answer,
+                    allow_rag_fallback=allow_rag_fallback
+                )
+
+            return _serialize_state("", node.node_key, state, messages=[])
+        return _serialize_state("RAG is not configured for this chatbot.", node.node_key, state)
+
+    if node.type in {"rag_answer", "knowledge_search"}:
         if rag_answer:
             transition = _first_transition(transitions, node.node_key)
             query = message.strip() or state.get("__last_question") or state.get("__last_input") or ""
@@ -474,8 +553,45 @@ def execute_flow(
 
             next_key = transition.target_node_key if transition else None
             next_node = node_by_key.get(next_key)
+            fallback_transition = next(
+                (
+                    item for item in transitions
+                    if item.source_node_key == node.node_key
+                    and _normalized(item.label) in {"fallback", "handoff", "low_confidence"}
+                ),
+                None
+            )
+            should_handoff = bool(
+                fallback_transition
+                and (
+                    _requests_human(message or state.get("__last_question") or state.get("__last_input") or "")
+                    or result.get("mode_used") == "fallback"
+                )
+            )
+            if should_handoff:
+                handoff_result = execute_flow(
+                    db,
+                    version_id,
+                    "",
+                    fallback_transition.target_node_key,
+                    state,
+                    rag_answer=rag_answer,
+                    allow_rag_fallback=allow_rag_fallback
+                )
+                result_messages = result.get("messages") or [{"text": result.get("response", ""), "options": []}]
+                handoff_messages = handoff_result.get("messages") or []
+                result["messages"] = [*result_messages, *handoff_messages]
+                result["options"] = handoff_result.get("options") or []
+                result["current_node_key"] = handoff_result.get("current_node_key")
+                result["variables"] = handoff_result.get("variables") or state
+                result["mode_used"] = handoff_result.get("mode_used") or result.get("mode_used")
+                return result
 
             if next_node and next_node.type in {"question", "buttons"}:
+                if _is_silent_input(next_node):
+                    result["options"] = []
+                    result["current_node_key"] = next_node.node_key
+                    return result
                 next_text = _node_text(next_node)
                 options = _options_for(next_node, transitions)
                 messages = result.get("messages") or [
@@ -492,6 +608,31 @@ def execute_flow(
             result["current_node_key"] = next_key
             return result
         return _serialize_state("RAG is not configured for this chatbot.", node.node_key, state)
+
+    if node.type in {"ai_router", "ai_classifier", "confidence_check", "lead_score", "meeting_scheduler"}:
+        config = node.config or {}
+        if node.type in {"ai_router", "ai_classifier"}:
+            output_variable = config.get("output_variable") or "detected_intent"
+            state[output_variable] = state.get("__last_input") or "general"
+        if node.type == "lead_score":
+            state[config.get("score_variable") or "lead_score"] = config.get("default_score", 50)
+        if node.type == "meeting_scheduler":
+            field = config.get("field") or "preferred_time"
+            if message.strip():
+                state[field] = message.strip()
+        transition = _first_transition(transitions, node.node_key)
+        next_key = transition.target_node_key if transition else None
+        if next_key:
+            return execute_flow(
+                db,
+                version_id,
+                "",
+                next_key,
+                state,
+                rag_answer=rag_answer,
+                allow_rag_fallback=allow_rag_fallback
+            )
+        return _serialize_state(config.get("message") or _node_text(node), node.node_key, state)
 
     if node.type == "condition":
         matched = _evaluate_condition(node.config or {}, state)

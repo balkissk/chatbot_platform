@@ -26,6 +26,9 @@ export class ProfileComponent implements OnInit {
   currentPassword = '';
   newPassword = '';
   confirmPassword = '';
+  showCurrentPassword = false;
+  showNewPassword = false;
+  showConfirmPassword = false;
 
   private baseUrl = apiBaseUrl();
   private isBrowser: boolean;
@@ -66,6 +69,9 @@ export class ProfileComponent implements OnInit {
       this.error.set('Name is required');
       return;
     }
+    if (!this.canSaveProfile()) {
+      return;
+    }
 
     this.savingProfile.set(true);
     this.error.set('');
@@ -74,6 +80,7 @@ export class ProfileComponent implements OnInit {
     this.http.put<AuthUser>(`${this.baseUrl}/auth/me`, { name }).subscribe({
       next: user => {
         this.user.set(user);
+        this.name = user.name;
         this.auth.updateStoredUser(user);
         this.profileMessage.set('Profile updated');
         this.savingProfile.set(false);
@@ -98,6 +105,13 @@ export class ProfileComponent implements OnInit {
       this.passwordError.set('New passwords do not match');
       return;
     }
+    if (this.newPassword.length < 8) {
+      this.passwordError.set('New password must be at least 8 characters');
+      return;
+    }
+    if (this.savingPassword()) {
+      return;
+    }
 
     this.savingPassword.set(true);
 
@@ -117,5 +131,49 @@ export class ProfileComponent implements OnInit {
         this.savingPassword.set(false);
       }
     });
+  }
+
+  roleLabel(role: string) {
+    if (role === 'admin') return 'Platform Admin';
+    if (role === 'manager') return 'Manager';
+    if (role === 'end_user') return 'End User';
+    return role;
+  }
+
+  statusLabel(status: string) {
+    if (!status) return 'Unknown';
+    return status.charAt(0).toUpperCase() + status.slice(1);
+  }
+
+  trimmedName() {
+    return this.name.trim();
+  }
+
+  nameInvalid() {
+    const name = this.trimmedName();
+    return !name || name.length > 120;
+  }
+
+  profileChanged() {
+    const currentUser = this.user();
+    return !!currentUser && this.trimmedName() !== currentUser.name;
+  }
+
+  canSaveProfile() {
+    return !this.loading() && !this.savingProfile() && !this.nameInvalid() && this.profileChanged();
+  }
+
+  passwordInvalid() {
+    return (
+      !this.currentPassword ||
+      !this.newPassword ||
+      !this.confirmPassword ||
+      this.newPassword.length < 8 ||
+      this.newPassword !== this.confirmPassword
+    );
+  }
+
+  canChangePassword() {
+    return !this.savingPassword() && !this.passwordInvalid();
   }
 }

@@ -1,17 +1,34 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { PLATFORM_ID } from '@angular/core';
+import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { provideHttpClient } from '@angular/common/http';
 
-import { Chatbots } from './chatbots';
+import { ChatbotsComponent } from './chatbots.component';
 
 describe('Chatbots', () => {
-  let component: Chatbots;
-  let fixture: ComponentFixture<Chatbots>;
+  let component: ChatbotsComponent;
+  let fixture: ComponentFixture<ChatbotsComponent>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [Chatbots],
+      imports: [ChatbotsComponent],
+      providers: [
+        provideHttpClient(),
+        provideRouter([]),
+        { provide: PLATFORM_ID, useValue: 'server' },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: {
+              paramMap: convertToParamMap({ projectId: '1' }),
+              queryParamMap: convertToParamMap({})
+            }
+          }
+        }
+      ]
     }).compileComponents();
 
-    fixture = TestBed.createComponent(Chatbots);
+    fixture = TestBed.createComponent(ChatbotsComponent);
     component = fixture.componentInstance;
     await fixture.whenStable();
   });

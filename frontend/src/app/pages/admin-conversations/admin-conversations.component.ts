@@ -30,6 +30,8 @@ export class AdminConversationsComponent implements OnInit {
 
   ngOnInit() {
     if (!this.isBrowser) return;
+    const chatbotId = this.route.snapshot.queryParamMap.get('chatbotId');
+    if (chatbotId) this.chatbotFilter = chatbotId;
     this.loadSessions();
     const sessionId = Number(this.route.snapshot.queryParamMap.get('sessionId'));
     if (sessionId) this.openSession(sessionId);

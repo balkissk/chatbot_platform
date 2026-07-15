@@ -1,0 +1,72 @@
+:host {
+  display: block;
+}
+
+.privacy-page {
+  align-items: center;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(118, 205, 205, 0.18), transparent 32%),
+    radial-gradient(circle at 82% 8%, rgba(99, 102, 241, 0.1), transparent 28%),
+    #f4fafa;
+  color: #183b4a;
+  display: flex;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 48px 20px;
+}
+
+.privacy-card {
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #ddeeee;
+  border-radius: 24px;
+  box-shadow: 0 24px 70px rgba(24, 59, 74, 0.08);
+  max-width: 760px;
+  padding: 44px;
+  width: 100%;
+}
+
+.eyebrow {
+  color: #5e7486;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin: 0 0 12px;
+  text-transform: uppercase;
+}
+
+h1 {
+  color: #0f172a;
+  font-size: clamp(32px, 5vw, 48px);
+  line-height: 1.08;
+  margin: 0 0 28px;
+}
+
+.policy-content {
+  display: grid;
+  gap: 18px;
+}
+
+p {
+  color: #334155;
+  font-size: 18px;
+  line-height: 1.7;
+  margin: 0;
+}
+
+a {
+  color: #0f766e;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 640px) {
+  .privacy-card {
+    border-radius: 18px;
+    padding: 30px 22px;
+  }
+}

@@ -17,6 +17,7 @@ from models.user import User
 from models.version import VersionChatbot
 from models.version_schema import VersionCreate
 from services.auth import require_roles
+from services.audit import record_audit_log
 from services.flow_validation import validate_flow_version
 from services.templates import create_starter_flow
 
@@ -158,6 +159,16 @@ def create_version(
     create_default_llm_config(db, new_version.id)
     create_starter_flow(db, new_version.id, "blank")
 
+    record_audit_log(
+        db,
+        actor=current_user,
+        action="VERSION_CREATED",
+        resource_type="version",
+        resource_id=new_version.id,
+        resource_name=f"v{new_version.version_number}",
+        metadata={"chatbot_id": chatbot.id},
+    )
+
     return serialize_version(new_version, chatbot)
 
 
@@ -246,6 +257,16 @@ def publish_version(
     db.commit()
     db.refresh(version)
     db.refresh(chatbot)
+
+    record_audit_log(
+        db,
+        actor=current_user,
+        action="VERSION_PUBLISHED",
+        resource_type="version",
+        resource_id=version.id,
+        resource_name=f"v{version.version_number}",
+        metadata={"chatbot_id": chatbot.id},
+    )
 
     return {"message": "Version published", "version": serialize_version(version, chatbot)}
 

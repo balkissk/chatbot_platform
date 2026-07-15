@@ -17,9 +17,12 @@ This project is prepared as two deployable services:
 Set these application settings in Azure:
 
 ```text
+ENVIRONMENT=production
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/chatbot_db?sslmode=require
 JWT_SECRET=replace-with-a-long-random-secret
 JWT_ALGORITHM=HS256
+FRONTEND_BASE_URL=https://your-frontend-domain
+BACKEND_BASE_URL=https://your-backend-domain
 FRONTEND_URL=https://your-frontend-domain
 ALLOWED_ORIGINS=https://your-frontend-domain
 API_BASE_URL=https://your-backend-domain
@@ -38,7 +41,47 @@ SMTP_PASSWORD=
 SMTP_FROM=
 ```
 
+`DATABASE_URL` can be supplied directly, or you can omit it and provide PostgreSQL parts instead:
+
+```text
+ENVIRONMENT=production
+POSTGRES_HOST=your-server.postgres.database.azure.com
+POSTGRES_PORT=5432
+POSTGRES_DB=chatbot_db
+POSTGRES_USER=your_db_user
+POSTGRES_PASSWORD=your_db_password
+POSTGRES_SSLMODE=require
+```
+
 `AZURE_OPENAI_ENDPOINT` must be the Azure OpenAI resource endpoint only. Do not append `/openai`, `/deployments`, or a model path. The backend passes this value to the Azure OpenAI SDK as `azure_endpoint`.
+
+## Environment Profiles
+
+The backend supports Spring Boot-style profiles through `ENVIRONMENT`:
+
+- `ENVIRONMENT=development` loads `backend/.env.development`
+- `ENVIRONMENT=production` loads `backend/.env.production`
+
+The loader also reads `backend/.env` first for compatibility. Profile-specific files override values loaded from `backend/.env`, but real process environment variables, including Azure App Service application settings, always win.
+
+Local development:
+
+```powershell
+cd backend
+copy .env.example .env.development
+# edit .env.development for local PostgreSQL if needed
+$env:ENVIRONMENT="development"
+.\venv\Scripts\python.exe -m alembic upgrade head
+.\venv\Scripts\uvicorn.exe main:app --reload
+```
+
+Production:
+
+```text
+Set ENVIRONMENT=production in Azure App Service.
+Set DATABASE_URL or POSTGRES_* values in Azure App Service application settings.
+Do not deploy or commit backend/.env.production with real secrets.
+```
 
 Backend container startup runs:
 
@@ -59,10 +102,14 @@ Set these application settings in Azure:
 ```text
 PUBLIC_API_BASE_URL=https://your-backend-domain
 PUBLIC_FRONTEND_BASE_URL=https://your-frontend-domain
+VITE_BACKEND_BASE_URL=https://your-backend-domain
+VITE_FRONTEND_BASE_URL=https://your-frontend-domain
 PORT=8080
 ```
 
 The Angular SSR server serves `/config.js` dynamically from these values, so the frontend does not need local API URLs baked into the bundle.
+
+`FRONTEND_BASE_URL` and `BACKEND_BASE_URL` are used by deployment features to generate public chat links, widget scripts, REST API URLs, and WhatsApp/Messenger webhook URLs. In local development use `FRONTEND_BASE_URL=http://localhost:4200` and `BACKEND_BASE_URL=http://127.0.0.1:8000`.
 
 ## Docker Build Examples
 

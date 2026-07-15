@@ -1,4 +1,5 @@
 import os
+import time
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -6,6 +7,7 @@ from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from config.settings import load_environment
 from database.db import SessionLocal
 from models.chatbot import Chatbot
 from models.conversation import ConversationMessage, ConversationSession
@@ -13,8 +15,17 @@ from models.llm_config import LLMConfig
 from models.version import VersionChatbot
 from services.flow_runtime import execute_flow
 from routes.chat_routes import add_message, build_rag_response, prepare_rag_generation, session_history, stream_ai_answer, stream_event
+from services.unified_runtime import (
+    persist_runtime_log,
+    run_chatbot_message,
+    runtime_error_type,
+    runtime_response_time_ms,
+    runtime_rag_used,
+    sanitize_error_message,
+)
 
 router = APIRouter(prefix="/public")
+load_environment()
 PUBLIC_API_BASE_URL = os.getenv("PUBLIC_API_BASE_URL") or os.getenv("API_BASE_URL") or ""
 
 
@@ -26,6 +37,7 @@ class PublicChatRequest(BaseModel):
     chatbot_id: int
     message: str
     session_id: int | None = None
+    channel: str | None = None
 
 
 class PublicFeedbackRequest(BaseModel):
@@ -79,13 +91,18 @@ def get_active_version(db: Session, chatbot: Chatbot) -> VersionChatbot:
     return version
 
 
-def create_public_session(db: Session, chatbot_id: int, version_id: int) -> ConversationSession:
+def request_channel(payload: PublicChatRequest | None) -> str:
+    channel = str(getattr(payload, "channel", "") or "").strip().lower()
+    return "widget" if channel == "widget" else "web"
+
+
+def create_public_session(db: Session, chatbot_id: int, version_id: int, channel: str = "web") -> ConversationSession:
     session = ConversationSession(
         chatbot_id=chatbot_id,
         version_id=version_id,
         user_id=None,
         current_node_key=None,
-        variables={}
+        variables={"__channel": channel}
     )
     db.add(session)
     db.commit()
@@ -98,8 +115,9 @@ def get_or_create_public_session(
     payload: PublicChatRequest,
     version: VersionChatbot
 ) -> ConversationSession:
+    channel = request_channel(payload)
     if payload.session_id is None:
-        return create_public_session(db, payload.chatbot_id, version.id)
+        return create_public_session(db, payload.chatbot_id, version.id, channel)
 
     session = db.query(ConversationSession).filter(
         ConversationSession.id == payload.session_id,
@@ -111,7 +129,13 @@ def get_or_create_public_session(
         raise HTTPException(status_code=404, detail="Conversation session not found")
 
     if session.version_id != version.id:
-        return create_public_session(db, payload.chatbot_id, version.id)
+        return create_public_session(db, payload.chatbot_id, version.id, channel)
+
+    variables = session.variables or {}
+    if variables.get("__channel") != channel:
+        variables["__channel"] = channel
+        session.variables = variables
+        db.commit()
 
     return session
 
@@ -154,65 +178,15 @@ def start_public_chat_session(
 
 @router.post("/chat")
 def public_chat(data: PublicChatRequest, db: Session = Depends(get_db)):
-    chatbot = get_public_chatbot(db, data.chatbot_id)
-    version = get_active_version(db, chatbot)
-    config = db.query(LLMConfig).filter(LLMConfig.version_id == version.id).first()
-    if not config:
-        raise HTTPException(status_code=404, detail="Chatbot configuration is missing")
-
-    session = get_or_create_public_session(db, data, version)
-    variables = {**(session.variables or {})}
-
-    if data.message.strip():
-        add_message(db, session.id, "user", data.message.strip())
-        db.commit()
-
-    def rag_answer(message: str, fallback_variables: dict | None = None, node_config: dict | None = None):
-        return build_rag_response(
-            db=db,
-            version=version,
-            config=config,
-            message=message,
-            variables=fallback_variables or variables,
-            history=session_history(db, session.id),
-            mode_used="public_flow_rag",
-            node_config=node_config
-        )
-
-    result = execute_flow(
+    get_public_chatbot(db, data.chatbot_id)
+    return hide_public_sources(run_chatbot_message(
         db=db,
-        version_id=version.id,
+        chatbot_id=data.chatbot_id,
+        channel=request_channel(data),
+        external_user_id=None,
         message=data.message,
-        current_node_key=session.current_node_key,
-        variables=variables,
-        rag_answer=rag_answer,
-        allow_rag_fallback=False
-    )
-
-    session.current_node_key = result.get("current_node_key")
-    session.variables = result.get("variables") or {}
-
-    bot_messages = result.get("messages") or [
-        {"text": result.get("response", ""), "options": result.get("options", [])}
-    ]
-    for item in bot_messages:
-        add_message(
-            db,
-            session.id,
-            "bot",
-            item.get("text", ""),
-            options=item.get("options") or [],
-            sources=result.get("sources") or []
-        )
-
-    db.commit()
-
-    return hide_public_sources({
-        **result,
-        "session_id": session.id,
-        "current_node_key": session.current_node_key,
-        "variables": session.variables or {}
-    })
+        session_id=data.session_id,
+    ))
 
 
 @router.post("/chat/feedback")
@@ -240,54 +214,83 @@ def public_chat_feedback(data: PublicFeedbackRequest, db: Session = Depends(get_
 
 @router.post("/chat/stream")
 def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
-    chatbot = get_public_chatbot(db, data.chatbot_id)
-    version = get_active_version(db, chatbot)
-    config = db.query(LLMConfig).filter(LLMConfig.version_id == version.id).first()
-    if not config:
-        raise HTTPException(status_code=404, detail="Chatbot configuration is missing")
+    started_at = time.perf_counter()
+    channel = request_channel(data)
+    chatbot = None
+    version = None
+    session = None
+    rag_used = False
+    try:
+        chatbot = get_public_chatbot(db, data.chatbot_id)
+        version = get_active_version(db, chatbot)
+        config = db.query(LLMConfig).filter(LLMConfig.version_id == version.id).first()
+        if not config:
+            raise HTTPException(status_code=404, detail="Chatbot configuration is missing")
 
-    session = get_or_create_public_session(db, data, version)
-    variables = session.variables or {}
-
-    if data.message.strip():
-        add_message(db, session.id, "user", data.message.strip())
-        db.commit()
-
-    generation_holder: dict = {}
-
-    def rag_answer(message: str, fallback_variables: dict | None = None, node_config: dict | None = None):
-        generation_holder["generation"] = prepare_rag_generation(
-            db=db,
-            version=version,
-            config=config,
-            message=message,
-            variables=fallback_variables or variables,
-            history=session_history(db, session.id),
-            mode_used="public_flow_rag",
-            node_config=node_config
-        )
-        return {
-            "response": generation_holder["generation"].get("fallback_response") or "",
-            "messages": [{"text": generation_holder["generation"].get("fallback_response") or "", "options": []}],
-            "mode_used": "fallback" if generation_holder["generation"].get("fallback_response") else "public_flow_rag",
-            "retrieval_mode": generation_holder["generation"]["retrieval_mode"],
-            "model_used": generation_holder["generation"]["model_used"],
-            "version_used": version.id,
-            "current_node_key": None,
-            "variables": fallback_variables or variables,
-            "options": [],
-            "sources": generation_holder["generation"]["sources"]
+        session = get_or_create_public_session(db, data, version)
+        variables = {
+            **(session.variables or {}),
+            "__channel": channel,
         }
 
-    result = execute_flow(
-        db=db,
-        version_id=version.id,
-        message=data.message,
-        current_node_key=session.current_node_key,
-        variables=variables,
-        rag_answer=rag_answer,
-        allow_rag_fallback=False
-    )
+        if data.message.strip():
+            add_message(db, session.id, "user", data.message.strip())
+            db.commit()
+
+        generation_holder: dict = {}
+
+        def rag_answer(message: str, fallback_variables: dict | None = None, node_config: dict | None = None):
+            nonlocal rag_used
+            generation_holder["generation"] = prepare_rag_generation(
+                db=db,
+                version=version,
+                config=config,
+                message=message,
+                variables=fallback_variables or variables,
+                history=session_history(db, session.id),
+                mode_used="public_flow_rag",
+                node_config=node_config
+            )
+            rag_result = {
+                "response": generation_holder["generation"].get("fallback_response") or "",
+                "messages": [{"text": generation_holder["generation"].get("fallback_response") or "", "options": []}],
+                "mode_used": "fallback" if generation_holder["generation"].get("fallback_response") else "public_flow_rag",
+                "retrieval_mode": generation_holder["generation"]["retrieval_mode"],
+                "model_used": generation_holder["generation"]["model_used"],
+                "version_used": version.id,
+                "current_node_key": None,
+                "variables": fallback_variables or variables,
+                "options": [],
+                "sources": generation_holder["generation"]["sources"]
+            }
+            rag_used = rag_used or runtime_rag_used(rag_result)
+            return rag_result
+
+        result = execute_flow(
+            db=db,
+            version_id=version.id,
+            message=data.message,
+            current_node_key=session.current_node_key,
+            variables=variables,
+            rag_answer=rag_answer,
+            allow_rag_fallback=False
+        )
+    except Exception as exc:
+        db.rollback()
+        persist_runtime_log(
+            db,
+            chatbot=chatbot,
+            version=version,
+            session=session,
+            channel=channel,
+            status="failed",
+            rag_used=rag_used,
+            response_time_ms=runtime_response_time_ms(started_at),
+            error_type=runtime_error_type(exc),
+            error_message=sanitize_error_message(exc),
+            source="public_stream",
+        )
+        raise
 
     def event_generator():
         yield stream_event("start", {
@@ -313,6 +316,17 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
                     sources=result.get("sources") or []
                 )
             db.commit()
+            persist_runtime_log(
+                db,
+                chatbot=chatbot,
+                version=version,
+                session=session,
+                channel=channel,
+                status="success",
+                rag_used=rag_used,
+                response_time_ms=runtime_response_time_ms(started_at),
+                source="public_stream",
+            )
             yield stream_event("final", hide_public_sources({
                 **result,
                 "session_id": session.id,
@@ -336,6 +350,17 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
             session.variables = final_result.get("variables") or {}
             add_message(db, session.id, "bot", generation["fallback_response"], sources=[])
             db.commit()
+            persist_runtime_log(
+                db,
+                chatbot=chatbot,
+                version=version,
+                session=session,
+                channel=channel,
+                status="success",
+                rag_used=rag_used,
+                response_time_ms=runtime_response_time_ms(started_at),
+                source="public_stream",
+            )
             yield stream_event("final", hide_public_sources({
                 **final_result,
                 "session_id": session.id,
@@ -348,6 +373,19 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
             for token in stream_ai_answer(generation):
                 yield stream_event("token", {"text": token})
         except HTTPException as exc:
+            persist_runtime_log(
+                db,
+                chatbot=chatbot,
+                version=version,
+                session=session,
+                channel=channel,
+                status="failed",
+                rag_used=rag_used,
+                response_time_ms=runtime_response_time_ms(started_at),
+                error_type=runtime_error_type(exc),
+                error_message=sanitize_error_message(exc),
+                source="public_stream",
+            )
             yield stream_event("error", {"detail": exc.detail})
             return
 
@@ -382,6 +420,17 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
                 sources=final_result.get("sources") or []
             )
         db.commit()
+        persist_runtime_log(
+            db,
+            chatbot=chatbot,
+            version=version,
+            session=session,
+            channel=channel,
+            status="success",
+            rag_used=rag_used,
+            response_time_ms=runtime_response_time_ms(started_at),
+            source="public_stream",
+        )
 
         yield stream_event("final", hide_public_sources({
             **final_result,
@@ -418,7 +467,14 @@ def public_api_chat(
     x_chatbot_api_key: str | None = Header(default=None)
 ):
     get_api_chatbot(db, data.chatbot_id, x_chatbot_api_key)
-    return public_chat(data, db)
+    return run_chatbot_message(
+        db=db,
+        chatbot_id=data.chatbot_id,
+        channel="api",
+        external_user_id=None,
+        message=data.message,
+        session_id=data.session_id,
+    )
 
 
 @router.get("/widget.js")
@@ -504,7 +560,7 @@ def widget_script():
     fetch(apiBase + "/public/chat/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chatbot_id: Number(chatbotId), message: value, session_id: sessionId })
+      body: JSON.stringify({ chatbot_id: Number(chatbotId), message: value, session_id: sessionId, channel: "widget" })
     }).then(function (res) {
       if (!res.ok || !res.body) return res.json().then(function (body) { throw new Error(body.detail || "Chat failed"); });
       var reader = res.body.getReader();

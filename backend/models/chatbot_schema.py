@@ -5,6 +5,8 @@ class ChatbotCreate(BaseModel):
     name: str
     description: str | None = None
     language: str
+    assistant_type: str | None = None
+    creation_mode: str | None = None
     type: str = "builder"
     project_id: int
     purpose: str = "custom"
@@ -22,6 +24,8 @@ class ChatbotUpdate(BaseModel):
     purpose: str = "custom"
     mode: str = "builder"
     channel: str = "web_widget"
+    build_method: str | None = None
+    creation_mode: str | None = None
     template_key: str | None = None
 
 
