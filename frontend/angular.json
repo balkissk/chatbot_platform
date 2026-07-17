@@ -33,7 +33,9 @@
             "security": {
               "allowedHosts": [
                 "localhost",
-                "127.0.0.1"
+                "127.0.0.1",
+                "chatbot-factory-frontend-balkis-a4dchke0bucchbgk.francecentral-01.azurewebsites.net",
+                "chatbot-factory-frontend-balkis.azurewebsites.net"
               ]
             },
             "ssr": {
@@ -70,7 +72,9 @@
           "options": {
             "allowedHosts": [
               "localhost",
-              "127.0.0.1"
+              "127.0.0.1",
+              "chatbot-factory-frontend-balkis-a4dchke0bucchbgk.francecentral-01.azurewebsites.net",
+              "chatbot-factory-frontend-balkis.azurewebsites.net"
             ]
           },
           "configurations": {
