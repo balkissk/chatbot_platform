@@ -127,6 +127,22 @@ docker build -t chatbot-factory-frontend ./frontend
 docker run -p 8080:8080 -e PUBLIC_API_BASE_URL=http://localhost:8000 chatbot-factory-frontend
 ```
 
+## GitHub OIDC Authentication
+
+The frontend deployment uses Azure OIDC authentication through `azure/login` instead of publish profile authentication.
+
+A Microsoft Entra App Registration named `chatbot-factory-github-oidc` is configured for GitHub OIDC with a Federated Credential scoped to:
+
+- Organization: `balkissk`
+- Repository: `chatbot_platform`
+- Branch: `main`
+
+The App Registration has `Contributor` RBAC assigned only at the Resource Group scope:
+
+- `rg-balkis-chatbot-factory-v2`
+
+Do not store publish profiles or Azure credential values in the workflow file. If the App Registration is recreated in the future, update the GitHub `CLIENT_ID` secret to the new application client ID.
+
 ## Important Notes
 
 - Do not deploy the local `backend/venv`, `node_modules`, `.idea`, or `__pycache__` folders.
