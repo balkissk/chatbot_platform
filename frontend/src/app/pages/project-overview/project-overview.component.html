@@ -1,204 +1,336 @@
 <div class="project-page">
   <header class="workspace-header">
-    <div>
-      <p class="eyebrow">AI Operations</p>
-      <div class="title-row">
-        <h2>{{ project()?.name || ('Project ' + projectId) }}</h2>
-        <span class="status-badge" [class.published]="workspaceStatus() === 'Published'" [class.active]="workspaceStatus() === 'Active draft'">
-          {{ workspaceStatus() }}
-        </span>
-      </div>
-      <p class="muted">{{ project()?.description || 'Monitor assistant quality, runtime health and deployment readiness.' }}</p>
-      <small *ngIf="lastUpdated()">Last updated {{ lastUpdated() | date:'medium' }}</small>
+    <div class="breadcrumb">
+      <a routerLink="/dashboard/projects">Projects</a>
+      <svg lucideChevronRight size="13" aria-hidden="true"></svg>
+      <span>{{ project()?.name || ('Project ' + projectId) }}</span>
     </div>
 
-    <div class="actions">
-      <button class="primary" type="button" (click)="goToChatbots()">Manage Chatbots</button>
+    <div class="header-main">
+      <div>
+        <p class="eyebrow">Manager Workspace</p>
+        <div class="title-row">
+          <h2>{{ project()?.name || ('Project ' + projectId) }}</h2>
+          <span class="status-badge active">{{ lifecycleLabel() }}</span>
+          <span class="status-badge live">{{ liveLabel() }}</span>
+          <span *ngIf="healthLabel()" class="status-badge health">{{ healthLabel() }}</span>
+        </div>
+        <p class="muted">{{ project()?.description || 'Monitor assistant quality, runtime success, and publication readiness.' }}</p>
+      </div>
+    </div>
+
+    <div class="summary-pills" *ngIf="workspaceDashboard() || project()">
+      <span><strong>{{ workspaceSummary().total_assistants }}</strong> Assistants</span>
+      <span><strong>{{ workspaceSummary().published_assistants }}</strong> Published</span>
+      <span><strong>{{ workspaceSummary().draft_only_assistants }}</strong> Draft only</span>
+      <span *ngIf="lastUpdated()">Updated {{ lastUpdated() | date:'short' }}</span>
     </div>
   </header>
 
-  <p *ngIf="loading() || chatbotsLoading()" class="muted">Loading workspace...</p>
+  <section *ngIf="isArchived()" class="archive-banner">
+    <div>
+      <strong>This project is archived.</strong>
+      <p>Restore it to make changes.</p>
+    </div>
+    <button class="primary compact" type="button" (click)="restoreProject()" [disabled]="restoring()">
+      {{ restoring() ? 'Restoring...' : 'Restore Project' }}
+    </button>
+  </section>
+
   <p *ngIf="error()" class="error">{{ error() }}</p>
   <p *ngIf="message()" class="success">{{ message() }}</p>
 
-  <ng-container *ngIf="firstChatbot(); else noChatbotDashboard">
-    <section class="kpi-grid" aria-label="Assistant operations metrics">
-      <article class="kpi-card" *ngFor="let kpi of operationsWidgets(); let index = index" [class.featured]="index === 0" [ngClass]="kpi.tone">
-        <div class="kpi-topline">
-          <span>{{ kpi.label }}</span>
-          <i></i>
-        </div>
-        <strong>{{ formatKpiValue(kpi.value, kpi.suffix, kpi.prefix) }}</strong>
-        <small>{{ kpi.helper }}</small>
-      </article>
-    </section>
+    <section class="dashboard-layout" *ngIf="!noAssistantConfirmed()">
+      <main class="content-column">
+        <section *ngIf="dashboardDataLoading(); else kpiCards" class="kpi-grid kpi-skeleton-grid" aria-busy="true" aria-label="Loading project health summary">
+          <article class="kpi-card skeleton-card" *ngFor="let item of [1,2,3,4,5]">
+            <span class="skeleton-dot"></span>
+            <div class="skeleton-lines">
+              <span></span>
+              <strong></strong>
+              <small></small>
+            </div>
+          </article>
+        </section>
 
-    <p *ngIf="operationsLoading()" class="muted">Loading operational dashboard...</p>
+        <ng-template #kpiCards>
+        <section class="kpi-grid" aria-label="Project health summary">
+          <article class="kpi-card blue">
+            <span class="kpi-icon"><svg lucideActivity size="16" aria-hidden="true"></svg></span>
+            <div>
+              <p>Runtime Success</p>
+              <strong>{{ metricValue('Runtime Success Rate') }}</strong>
+              <small>{{ metricHelper('Runtime Success Rate', 'No runtime data yet') }}</small>
+            </div>
+          </article>
+          <article class="kpi-card green">
+            <span class="kpi-icon"><svg lucideSearchCheck size="16" aria-hidden="true"></svg></span>
+            <div>
+              <p>Knowledge Coverage</p>
+              <strong>{{ metricValue('Knowledge Answer Coverage') }}</strong>
+              <small>{{ metricHelper('Knowledge Answer Coverage', 'No knowledge usage yet') }}</small>
+            </div>
+          </article>
+          <article class="kpi-card purple">
+            <span class="kpi-icon"><svg lucideRadio size="16" aria-hidden="true"></svg></span>
+            <div>
+              <p>Requests</p>
+              <strong>{{ metricValue('Runtime Requests') }}</strong>
+              <small>{{ metricHelper('Runtime Requests', 'All tracked requests') }}</small>
+            </div>
+          </article>
+          <article class="kpi-card orange">
+            <span class="kpi-icon"><svg lucideGitBranch size="16" aria-hidden="true"></svg></span>
+            <div>
+              <p>Versions</p>
+              <strong>{{ versionInfo()?.latest_version ? ('v' + versionInfo()?.latest_version?.version_number) : 'None' }}</strong>
+              <small>{{ versionInfo()?.published_version ? ('v' + versionInfo()?.published_version?.version_number + ' live') : 'No live version' }}</small>
+            </div>
+          </article>
+          <article class="kpi-card red">
+            <span class="kpi-icon"><svg lucideTriangleAlert size="16" aria-hidden="true"></svg></span>
+            <div>
+              <p>Blockers</p>
+              <strong>{{ groupedRuntimeEvents().length }}</strong>
+              <small>{{ groupedRuntimeEvents().length ? 'Open items need review' : 'No active blockers' }}</small>
+            </div>
+          </article>
+        </section>
+        </ng-template>
 
-    <section class="ops-grid" *ngIf="!operationsLoading()">
-      <article class="panel validation-panel">
-        <div class="panel-header">
-          <div>
-            <p class="eyebrow">Validation Center</p>
-            <h3>Deployment readiness</h3>
+        <article class="panel action-panel">
+          <div class="section-title">
+            <span class="section-icon blue"><svg lucideSparkles size="15" aria-hidden="true"></svg></span>
+            <div>
+              <h3>Next Best Actions</h3>
+              <p>Prioritized fixes for this project.</p>
+            </div>
+            <span class="count-badge">{{ recommendations().length }}</span>
           </div>
-          <button class="secondary compact" type="button" (click)="goToFirstChatbot('flow')">Open Builder</button>
-        </div>
 
-        <div class="validation-list" *ngIf="validationItems().length; else noOpsData">
-          <div class="validation-row" *ngFor="let item of validationItems()" [class.ready]="item.status === 'ready'">
+          <div *ngIf="dashboardDataLoading(); else actionContent" class="action-list skeleton-list" aria-busy="true">
+            <span *ngFor="let item of [1,2,3]"></span>
+          </div>
+          <ng-template #actionContent>
+          <div class="action-list" *ngIf="recommendations().length; else noRecommendations">
+            <button
+              class="next-best-action-row"
+              type="button"
+              *ngFor="let item of recommendations()"
+              [class.high]="item.priority === 'high'"
+              [disabled]="!item.action"
+              (click)="handleRecommendation(item)">
+              <span class="priority-badge">{{ item.priority }}</span>
+              <div>
+                <strong>{{ item.title }}</strong>
+                <p>{{ item.message }}</p>
+                <small><b>{{ item.affected_assistant_name || 'Project workspace' }}</b> · {{ item.expected_impact || 'Improves workspace readiness.' }}</small>
+              </div>
+              <svg lucideChevronRight size="15" aria-hidden="true"></svg>
+            </button>
+          </div>
+          </ng-template>
+          <ng-template #noRecommendations>
+            <p class="empty-copy">No recommended actions right now. Run conversations to collect operational signals.</p>
+          </ng-template>
+        </article>
+
+        <article class="panel alerts-panel">
+          <div class="section-title">
+            <span class="section-icon red"><svg lucideBell size="15" aria-hidden="true"></svg></span>
+            <div>
+              <h3>Operational Alerts</h3>
+              <p>Grouped by assistant and alert type.</p>
+            </div>
+            <span class="count-badge">{{ groupedRuntimeEvents().length }}</span>
+          </div>
+
+          <div *ngIf="dashboardDataLoading(); else alertContent" class="event-list skeleton-list" aria-busy="true">
+            <span *ngFor="let item of [1,2,3]"></span>
+          </div>
+          <ng-template #alertContent>
+          <div class="event-list" *ngIf="groupedRuntimeEvents().length; else noEvents">
+            <article class="event-row" *ngFor="let event of groupedRuntimeEvents()" [class.error-event]="event.type === 'error'">
+              <span class="alert-type">{{ event.category || event.type }}</span>
+              <div>
+                <strong>{{ event.title }}</strong>
+                <p>{{ event.message }}</p>
+                <small>{{ event.affected_assistant_name || 'Project workspace' }}<ng-container *ngIf="event.count > 1"> · {{ event.count }} grouped</ng-container></small>
+              </div>
+              <time>{{ event.created_at | date:'short' }}</time>
+            </article>
+          </div>
+          </ng-template>
+          <ng-template #noEvents>
+            <p class="empty-copy">No operational alerts detected from runtime logs or document processing.</p>
+          </ng-template>
+        </article>
+
+        <article class="panel release-panel">
+          <div class="section-title">
+            <span class="section-icon purple"><svg lucideLayers size="15" aria-hidden="true"></svg></span>
+            <div>
+              <h3>Release State</h3>
+              <p>Draft, live, and rollback readiness.</p>
+            </div>
+            <button class="link-action" type="button" (click)="versionAction()">{{ versionActionLabel() }}</button>
+          </div>
+
+          <div *ngIf="dashboardDataLoading(); else releaseContent" class="release-grid release-skeleton-grid" aria-busy="true">
+            <span *ngFor="let item of [1,2,3]"></span>
+          </div>
+          <ng-template #releaseContent>
+          <div class="release-grid" *ngIf="versionInfo()?.latest_version; else noVersion">
+            <div class="release-card draft">
+              <span><svg lucideGitBranch size="15" aria-hidden="true"></svg> Draft Version</span>
+              <strong>v{{ versionInfo()?.latest_version?.version_number }}</strong>
+              <p>{{ versionInfo()?.latest_version_status || versionInfo()?.latest_version?.status }}</p>
+            </div>
+            <div class="release-card live">
+              <span><svg lucideRadio size="15" aria-hidden="true"></svg> Live Version</span>
+              <strong>{{ versionInfo()?.published_version ? ('v' + versionInfo()?.published_version?.version_number) : 'None' }}</strong>
+              <p>{{ versionInfo()?.last_published_at ? (versionInfo()?.last_published_at | date:'medium') : 'Not published' }}</p>
+            </div>
+            <div class="release-card rollback">
+              <span><svg lucideRotateCcw size="15" aria-hidden="true"></svg> Rollback</span>
+              <strong>{{ versionInfo()?.rollback_available ? 'Available' : 'Unavailable' }}</strong>
+              <p>{{ versionInfo()?.rollback_available ? 'Multiple published versions exist.' : 'Publish another version to enable rollback.' }}</p>
+            </div>
+          </div>
+          </ng-template>
+          <ng-template #noVersion>
+            <p class="empty-copy">No version data is available yet.</p>
+          </ng-template>
+        </article>
+      </main>
+
+      <aside class="sidebar-column">
+        <article class="panel checklist-panel">
+          <div class="section-title compact-title">
+            <span class="section-icon blue"><svg lucideListChecks size="15" aria-hidden="true"></svg></span>
+            <div>
+              <h3>Publication Checklist</h3>
+              <p>{{ readinessProgress().ready }}/{{ readinessProgress().total }} ready</p>
+            </div>
+          </div>
+          <div class="progress-bar" *ngIf="readinessProgress().total && !dashboardDataLoading()">
+            <span [style.width.%]="readinessProgress().percent"></span>
+          </div>
+          <div *ngIf="dashboardDataLoading(); else checklistContent" class="validation-list skeleton-list" aria-busy="true">
+            <span *ngFor="let item of [1,2,3,4]"></span>
+          </div>
+          <ng-template #checklistContent>
+          <div class="validation-list" *ngIf="validationItems().length; else noOpsData">
+            <div class="validation-row" *ngFor="let item of validationItems()" [class.ready]="item.status === 'ready'">
+              <span class="check-icon">
+                <svg *ngIf="item.status === 'ready'" lucideCircleCheck size="15" aria-hidden="true"></svg>
+                <svg *ngIf="item.status !== 'ready'" lucideCircleAlert size="15" aria-hidden="true"></svg>
+              </span>
+              <div>
+                <strong>{{ item.label }}</strong>
+                <p>{{ item.message }}</p>
+              </div>
+              <em>{{ statusLabel(item.status) }}</em>
+            </div>
+          </div>
+          </ng-template>
+        </article>
+
+        <article class="panel knowledge-card">
+          <div class="section-title compact-title">
+            <span class="outline-icon"><svg lucideDatabase size="16" aria-hidden="true"></svg></span>
+            <div>
+              <h3>Knowledge</h3>
+              <p>{{ knowledgeSummary() }}</p>
+            </div>
+          </div>
+          <div *ngIf="dashboardDataLoading(); else knowledgeContent" class="knowledge-status skeleton-list compact-skeleton" aria-busy="true">
             <span></span>
+            <strong></strong>
+            <small></small>
+          </div>
+          <ng-template #knowledgeContent>
+          <div class="knowledge-status">
+            <span></span>
+            <strong>{{ metricValue('Knowledge Answer Coverage') }}</strong>
+            <small>{{ metricHelper('Knowledge Answer Coverage', 'Coverage is calculated from real RAG usage.') }}</small>
+          </div>
+          </ng-template>
+        </article>
+
+        <article class="panel quality-panel">
+          <div class="section-title compact-title">
+            <span class="section-icon orange"><svg lucideClock3 size="15" aria-hidden="true"></svg></span>
             <div>
-              <strong>{{ item.label }}</strong>
-              <p>{{ item.message }}</p>
+              <h3>Quality Signals</h3>
+              <p>Recent runtime signals.</p>
             </div>
-            <em>{{ statusLabel(item.status) }}</em>
+            <button class="view-all-secondary" type="button" *ngIf="replayRows().length" (click)="goToFirstChatbot('analytics')">View all</button>
           </div>
-        </div>
-      </article>
 
-      <article class="panel recommendations-panel">
-        <div class="panel-header">
-          <div>
-            <p class="eyebrow">AI Recommendations</p>
-            <h3>Next best actions</h3>
+          <div *ngIf="dashboardDataLoading(); else replayContent" class="signal-list skeleton-list" aria-busy="true">
+            <span *ngFor="let item of [1,2,3]"></span>
           </div>
-        </div>
-
-        <div class="recommendation-list" *ngIf="recommendations().length; else noRecommendations">
-          <article class="recommendation" *ngFor="let item of recommendations()" [class.high]="item.priority === 'high'">
-            <span>{{ item.priority }}</span>
-            <div>
-              <strong>{{ item.title }}</strong>
-              <p>{{ item.message }}</p>
-            </div>
-          </article>
-        </div>
-        <ng-template #noRecommendations>
-          <p class="muted">No recommendations yet. Run conversations to collect operational signals.</p>
-        </ng-template>
-      </article>
-
-      <article class="panel gaps-panel">
-        <div class="panel-header">
-          <div>
-            <p class="eyebrow">Knowledge Gaps</p>
-            <h3>Missing topics</h3>
+          <ng-template #replayContent>
+          <div class="signal-list" *ngIf="visibleReplayRows().length; else noReplay">
+            <button class="quality-signal-row" type="button" *ngFor="let replay of visibleReplayRows()" (click)="openQualitySignal(replay)">
+              <svg lucideTriangleAlert size="15" aria-hidden="true"></svg>
+              <div>
+                <strong>{{ replay.issue_type }}</strong>
+                <small>{{ replay.session_id ? ('Session #' + replay.session_id) : 'No session' }} · {{ replay.latency_ms === null || replay.latency_ms === undefined ? 'No latency' : replay.latency_ms + ' ms' }}</small>
+              </div>
+            </button>
           </div>
-          <button class="secondary compact" type="button" (click)="goToFirstChatbot('knowledge')">Knowledge Base</button>
-        </div>
-
-        <div class="gap-list" *ngIf="knowledgeGaps().length; else noGaps">
-          <article class="gap-row" *ngFor="let gap of knowledgeGaps()">
-            <div>
-              <strong>{{ gap.question }}</strong>
-              <p>Asked {{ gap.count }} time{{ gap.count === 1 ? '' : 's' }}</p>
-            </div>
-            <small>{{ gap.last_asked_at | date:'medium' }}</small>
-          </article>
-        </div>
-        <ng-template #noGaps>
-          <p class="muted">No recurring unanswered questions detected yet.</p>
-        </ng-template>
-      </article>
-
-      <article class="panel version-panel">
-        <div class="panel-header">
-          <div>
-            <p class="eyebrow">Current Version</p>
-            <h3>Release state</h3>
-          </div>
-          <button class="secondary compact" type="button" (click)="goToFirstChatbot('versions')">Versions</button>
-        </div>
-
-        <div class="version-card" *ngIf="versionInfo()?.active_version; else noVersion">
-          <div>
-            <span>Active version</span>
-            <strong>v{{ versionInfo()?.active_version?.version_number }}</strong>
-            <p>{{ versionInfo()?.active_version?.status }}</p>
-          </div>
-          <div>
-            <span>Last published</span>
-            <strong>{{ versionInfo()?.last_published_version ? ('v' + versionInfo()?.last_published_version?.version_number) : 'None' }}</strong>
-            <p>{{ versionInfo()?.last_published_version?.published_at ? (versionInfo()?.last_published_version?.published_at | date:'medium') : 'Not published' }}</p>
-          </div>
-          <div>
-            <span>Rollback</span>
-            <strong>{{ versionInfo()?.rollback_available ? 'Available' : 'Unavailable' }}</strong>
-            <p>{{ versionInfo()?.rollback_available ? 'Multiple published versions exist.' : 'Publish another version to enable rollback.' }}</p>
-          </div>
-        </div>
-        <ng-template #noVersion>
-          <p class="muted">No version data is available yet.</p>
-        </ng-template>
-      </article>
+          </ng-template>
+          <ng-template #noReplay>
+            <p class="empty-copy">No recent quality signals require attention.</p>
+          </ng-template>
+        </article>
+      </aside>
     </section>
 
-    <section class="ops-grid lower" *ngIf="!operationsLoading()">
-      <article class="panel events-panel">
-        <div class="panel-header">
-          <div>
-            <p class="eyebrow">Runtime Events</p>
-            <h3>Recent warnings and errors</h3>
-          </div>
-        </div>
+  <section *ngIf="noAssistantConfirmed()" class="panel empty-dashboard">
+    <p class="eyebrow">No assistant yet</p>
+    <h3>Create an assistant to start monitoring operations.</h3>
+    <p class="muted">The operations dashboard will appear after this workspace has a chatbot and real conversation data.</p>
+    <button class="primary compact" type="button" (click)="newAssistant()" [disabled]="isArchived()">Create Assistant</button>
+  </section>
 
-        <div class="event-list" *ngIf="runtimeEvents().length; else noEvents">
-          <article class="event-row" *ngFor="let event of runtimeEvents()" [class.error-event]="event.type === 'error'">
-            <span>{{ event.type }}</span>
-            <div>
-              <strong>{{ event.title }}</strong>
-              <p>{{ event.message }}</p>
-            </div>
-            <small>{{ event.created_at | date:'short' }}</small>
-          </article>
-        </div>
-        <ng-template #noEvents>
-          <p class="muted">No runtime events detected from stored conversations and document processing.</p>
-        </ng-template>
-      </article>
-
-      <article class="panel replay-panel">
-        <div class="panel-header">
-          <div>
-            <p class="eyebrow">Conversation Replay</p>
-            <h3>Inspect answer quality</h3>
-          </div>
-          <button class="secondary compact" type="button" (click)="goToFirstChatbot('analytics')">Open Analytics</button>
-        </div>
-
-        <div class="replay-list" *ngIf="replayRows().length; else noReplay">
-          <article class="replay-row" *ngFor="let replay of replayRows()">
-            <div class="replay-copy">
-              <span>User</span>
-              <p>{{ replay.user_message || 'No user message recorded' }}</p>
-              <span>Assistant</span>
-              <p>{{ replay.ai_response || 'No AI response recorded' }}</p>
-            </div>
-            <div class="replay-meta">
-              <strong>{{ replay.latency_ms === null || replay.latency_ms === undefined ? 'No latency' : replay.latency_ms + ' ms' }}</strong>
-              <small>{{ replay.retrieved_chunks?.length || 0 }} retrieved chunks</small>
-              <small>Session #{{ replay.session_id }}</small>
-            </div>
-          </article>
-        </div>
-        <ng-template #noReplay>
-          <p class="muted">No conversation replay data yet.</p>
-        </ng-template>
-      </article>
-    </section>
-  </ng-container>
-
-  <ng-template #noChatbotDashboard>
-    <section class="panel empty-dashboard">
-      <p class="eyebrow">No assistant yet</p>
-      <h3>Create an assistant to start monitoring operations.</h3>
-      <p class="muted">The operations dashboard will appear after this workspace has a chatbot and real conversation data.</p>
-      <button class="primary" [routerLink]="['/dashboard/projects', projectId, 'chatbots']">Create Chatbot</button>
-    </section>
-  </ng-template>
+  <section *ngIf="workspaceError() && !workspaceLoading()" class="panel error-state">
+    <strong>Project overview could not be loaded.</strong>
+    <p class="muted">{{ workspaceError() }}</p>
+    <button class="secondary compact" type="button" (click)="loadWorkspaceDashboard()">Retry</button>
+  </section>
 
   <ng-template #noOpsData>
-    <p class="muted">No operational data is available yet.</p>
+    <p class="empty-copy">No operational data is available yet.</p>
   </ng-template>
+
+  <div class="drawer-backdrop" *ngIf="selectedQualitySignal()" (click)="closeQualitySignal()"></div>
+  <aside class="quality-drawer" *ngIf="selectedQualitySignal()" role="dialog" aria-modal="true" aria-label="Quality signal details">
+    <div class="drawer-header">
+      <div>
+        <p class="eyebrow">Quality Signal</p>
+        <h3>{{ selectedQualitySignal()?.issue_type }}</h3>
+      </div>
+      <button class="icon-button" type="button" aria-label="Close quality signal details" (click)="closeQualitySignal()">x</button>
+    </div>
+    <div class="drawer-section">
+      <strong>{{ selectedQualitySignal()?.reason || 'Review this conversation signal.' }}</strong>
+      <div class="drawer-meta">
+        <span>{{ signalSeverity(selectedQualitySignal()) }}</span>
+        <span>{{ selectedQualitySignal()?.latency_ms === null || selectedQualitySignal()?.latency_ms === undefined ? 'No latency' : selectedQualitySignal()?.latency_ms + ' ms' }}</span>
+        <span>{{ selectedQualitySignal()?.retrieved_chunks?.length || 0 }} retrieved chunks</span>
+        <span>{{ selectedQualitySignal()?.session_id ? ('Session #' + selectedQualitySignal()?.session_id) : 'No session link' }}</span>
+      </div>
+    </div>
+    <div class="drawer-section" *ngIf="selectedQualitySignal()?.user_message">
+      <span>User</span>
+      <p>{{ selectedQualitySignal()?.user_message }}</p>
+    </div>
+    <div class="drawer-section" *ngIf="selectedQualitySignal()?.ai_response">
+      <span>Assistant</span>
+      <p>{{ selectedQualitySignal()?.ai_response }}</p>
+    </div>
+  </aside>
 </div>

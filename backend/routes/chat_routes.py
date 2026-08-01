@@ -1,4 +1,6 @@
 import json
+import os
+import time
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -7,6 +9,7 @@ from sqlalchemy.orm import Session
 from database.db import SessionLocal
 from models.chat_schema import ChatRequest, ChatSessionCreate
 from models.chatbot import Chatbot
+from models.chatbot_schema import chatbot_language_instruction, safe_chatbot_language
 from models.conversation import ConversationMessage, ConversationSession
 from models.llm_config import LLMConfig
 from models.version import VersionChatbot
@@ -15,8 +18,20 @@ from services.auth import get_current_user
 from services.flow_runtime import execute_flow
 from services.rag import retrieve_relevant_chunks_with_mode
 from services.rag_settings import normalize_rag_settings
+from services.templates import localize_text
 
 router = APIRouter()
+
+
+def int_env(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+RAG_CONTEXT_CHARS_PER_CHUNK = int_env("RAG_CONTEXT_CHARS_PER_CHUNK", 1400)
+CHAT_HISTORY_MESSAGES = max(0, min(int_env("CHAT_HISTORY_MESSAGES", 6), 20))
 
 
 def get_db():
@@ -64,13 +79,13 @@ def get_chat_version(db: Session, chatbot_id: int, version_id: int | None, curre
     return version
 
 
-def create_session(db: Session, chatbot_id: int, version_id: int, user_id: int | None) -> ConversationSession:
+def create_session(db: Session, chatbot_id: int, version_id: int, user_id: int | None, language: str | None = None) -> ConversationSession:
     session = ConversationSession(
         chatbot_id=chatbot_id,
         version_id=version_id,
         user_id=user_id,
         current_node_key=None,
-        variables={}
+        variables={"__language": safe_chatbot_language(language)}
     )
     db.add(session)
     db.commit()
@@ -82,10 +97,11 @@ def get_or_create_session(
     db: Session,
     payload: ChatRequest,
     version: VersionChatbot,
-    current_user
+    current_user,
+    language: str | None = None
 ) -> ConversationSession:
     if payload.session_id is None:
-        return create_session(db, payload.chatbot_id, version.id, current_user.id)
+        return create_session(db, payload.chatbot_id, version.id, current_user.id, language)
 
     session = db.query(ConversationSession).filter(
         ConversationSession.id == payload.session_id,
@@ -98,14 +114,34 @@ def get_or_create_session(
     if session.user_id and session.user_id != current_user.id and current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Conversation session is not accessible")
 
+    variables = session.variables or {}
+    normalized_language = safe_chatbot_language(language)
+    if variables.get("__language") != normalized_language:
+        variables["__language"] = normalized_language
+        session.variables = variables
+        db.commit()
+
     return session
 
 
-def session_history(db: Session, session_id: int, limit: int = 8) -> list[ConversationMessage]:
+def session_history(
+    db: Session,
+    session_id: int,
+    limit: int | None = None,
+    exclude_latest_user_message: str | None = None,
+) -> list[ConversationMessage]:
+    limit = CHAT_HISTORY_MESSAGES if limit is None else max(0, min(int(limit), 20))
+    if limit <= 0:
+        return []
     rows = db.query(ConversationMessage).filter(
         ConversationMessage.session_id == session_id
-    ).order_by(ConversationMessage.id.desc()).limit(limit).all()
-    return list(reversed(rows))
+    ).order_by(ConversationMessage.id.desc()).limit(limit + 1).all()
+    history = list(reversed(rows))
+    if exclude_latest_user_message and history:
+        latest = history[-1]
+        if latest.role == "user" and latest.content.strip() == exclude_latest_user_message.strip():
+            history = history[:-1]
+    return history[-limit:]
 
 
 def format_history(messages: list[ConversationMessage]) -> str:
@@ -116,6 +152,50 @@ def format_history(messages: list[ConversationMessage]) -> str:
         f"{message.role}: {message.content}"
         for message in messages
     )
+
+
+def elapsed_ms(started_at: float) -> int:
+    return max(0, round((time.perf_counter() - started_at) * 1000))
+
+
+def estimated_token_count(text: str) -> int:
+    # tiktoken is not a project dependency; this is a safe rough estimate for diagnostics only.
+    return max(0, round(len(text or "") / 4))
+
+
+def compact_context_text(text: str) -> str:
+    value = (text or "").strip()
+    limit = max(400, min(RAG_CONTEXT_CHARS_PER_CHUNK, 3000))
+    if len(value) <= limit:
+        return value
+    return value[:limit].rstrip() + "\n[Context truncated for latency]"
+
+
+def unique_prompt_lines(lines: list[str]) -> list[str]:
+    seen = set()
+    result = []
+    for line in lines:
+        normalized = " ".join((line or "").strip().split())
+        if not normalized:
+            continue
+        key = normalized.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(normalized)
+    return result
+
+
+def prompt_variables(variables: dict) -> dict:
+    excluded = {
+        "__knowledge_search_sources",
+        "__last_api_response",
+    }
+    return {
+        key: value
+        for key, value in (variables or {}).items()
+        if key not in excluded and not key.endswith("_sources")
+    }
 
 
 def add_message(
@@ -214,11 +294,15 @@ def prepare_rag_generation(
     mode_used: str = "flow_rag",
     node_config: dict | None = None
 ) -> dict:
+    prompt_started_at = time.perf_counter()
+    db_started_at = time.perf_counter()
     chatbot = db.query(Chatbot).filter(Chatbot.id == version.chatbot_id).first()
+    prompt_db_query_ms = elapsed_ms(db_started_at)
     rag_settings = merge_node_rag_settings(
         normalize_rag_settings(chatbot.rag_settings if chatbot else None),
         node_config
     )
+    retrieval_started_at = time.perf_counter()
     if rag_settings.get("use_knowledge_base", True):
         retrieval = retrieve_relevant_chunks_with_mode(
             db=db,
@@ -230,17 +314,22 @@ def prepare_rag_generation(
         )
     else:
         retrieval = {"mode": "ai_only", "chunks": []}
+    retrieval_ms = elapsed_ms(retrieval_started_at)
     retrieved_chunks = retrieval["chunks"]
 
     context_blocks = []
     for index, (chunk, document, score) in enumerate(retrieved_chunks, start=1):
         context_blocks.append(
-            f"[Source {index}: {document.filename}, score={score:.2f}]\n{chunk.text}"
+            f"[Source {index}: {document.filename}, score={score:.2f}]\n{compact_context_text(chunk.text)}"
         )
 
     context = "\n\n".join(context_blocks)
     system_prompt = config.system_prompt or "You are a helpful assistant"
+    language_instruction = chatbot_language_instruction(chatbot.language if chatbot else None)
     vars_value = variables or {}
+    history_text = format_history(history or [])
+    variables_for_prompt = prompt_variables(vars_value)
+    variables_text = str(variables_for_prompt)
     previous_answer = vars_value.get("__last_ai_answer", "")
     feedback = vars_value.get("__feedback", "")
     missing_context_instruction = (
@@ -249,22 +338,25 @@ def prepare_rag_generation(
         else "If the knowledge context is weak or missing, answer from general knowledge and clearly say that the answer is not confirmed by the uploaded documents."
     )
     response_profile = response_profile_for(rag_settings["response_length"])
-    prompt = f"""
-{system_prompt}
-
-Use the knowledge context to answer the user directly.
-{rag_settings.get("instructions") or ""}
-{response_profile["instruction"]}
-Use the conversation history and variables only as background context.
-Do not describe what you would do. Do not mention "the user expressed", "previous answer", "feedback", or "knowledge base" unless the user asks about that.
-If feedback is not_helpful, silently retry the original question with a clearer, more useful answer.
-{missing_context_instruction}
+    instructions = unique_prompt_lines([
+        system_prompt,
+        language_instruction,
+        "Use the knowledge context to answer the user directly.",
+        rag_settings.get("instructions") or "",
+        response_profile["instruction"],
+        "Use the conversation history and variables only as background context.",
+        "Do not describe what you would do.",
+        'Do not mention "the user expressed", "previous answer", "feedback", or "knowledge base" unless the user asks about that.',
+        "If feedback is not_helpful, silently retry the original question with a clearer, more useful answer.",
+        missing_context_instruction,
+    ])
+    prompt = "\n".join(instructions) + f"""
 
 Conversation history:
-{format_history(history or [])}
+{history_text}
 
 Variables:
-{vars_value}
+{variables_text}
 
 Previous AI answer:
 {previous_answer or "None"}
@@ -278,6 +370,7 @@ Knowledge context:
 User question:
 {message}
 """
+    prompt_build_ms = elapsed_ms(prompt_started_at)
     sources = [
         {
             "document_id": document.id,
@@ -290,6 +383,10 @@ User question:
         }
         for chunk, document, score in retrieved_chunks
     ] if rag_settings["show_sources"] else []
+
+    fallback_response = rag_settings.get("fallback") if not retrieved_chunks and rag_settings.get("strict_context") else ""
+    if fallback_response and chatbot:
+        fallback_response = localize_text(fallback_response, chatbot.language)
 
     return {
         "prompt": prompt,
@@ -304,7 +401,20 @@ User question:
         "variables": vars_value,
         "sources": sources,
         "mode_used": mode_used,
-        "fallback_response": rag_settings.get("fallback") if not retrieved_chunks and rag_settings.get("strict_context") else ""
+        "fallback_response": fallback_response,
+        "metrics": {
+            "retrieval_ms": retrieval_ms,
+            "prompt_build_ms": prompt_build_ms,
+            "prompt_db_query_ms": prompt_db_query_ms,
+            "top_k": rag_settings["max_chunks"],
+            "retrieved_chunks": len(retrieved_chunks),
+            "context_chars": len(context),
+            "system_prompt_tokens": estimated_token_count("\n".join(instructions)),
+            "history_tokens": estimated_token_count(history_text),
+            "rag_context_tokens": estimated_token_count(context),
+            "variables_tokens": estimated_token_count(variables_text),
+            "prompt_tokens_estimated": estimated_token_count(prompt),
+        }
     }
 
 
@@ -354,7 +464,8 @@ def build_rag_response(
         "current_node_key": None,
         "variables": generation["variables"],
         "options": [],
-        "sources": generation["sources"]
+        "sources": generation["sources"],
+        "latency": generation.get("metrics") or {}
     }
 
 
@@ -362,14 +473,23 @@ def stream_event(event_type: str, payload: dict) -> str:
     return json.dumps({"type": event_type, **payload}, ensure_ascii=False) + "\n"
 
 
+def sse_event(event_type: str, payload: dict) -> str:
+    return (
+        f"event: {event_type}\n"
+        f"data: {json.dumps({'type': event_type, **payload}, ensure_ascii=False)}\n\n"
+    )
+
+
 def stream_ai_answer(generation: dict):
     answer_parts = []
+    llm_metrics = generation.setdefault("llm_metrics", {})
     try:
         for token in stream_chat_completion(
             prompt=generation["prompt"],
             model=generation["model"],
             temperature=generation["options"]["temperature"],
-            max_tokens=generation["options"]["num_predict"]
+            max_tokens=generation["options"]["num_predict"],
+            metrics=llm_metrics,
         ):
             answer_parts.append(token)
             yield token
@@ -385,9 +505,9 @@ def start_chat_session(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
-    get_chatbot(db, data.chatbot_id)
+    chatbot = get_chatbot(db, data.chatbot_id)
     version = get_chat_version(db, data.chatbot_id, data.version_id, current_user)
-    session = create_session(db, data.chatbot_id, version.id, current_user.id)
+    session = create_session(db, data.chatbot_id, version.id, current_user.id, chatbot.language)
 
     return {
         "session_id": session.id,
@@ -404,16 +524,16 @@ def chat(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
-    get_chatbot(db, data.chatbot_id)
+    chatbot = get_chatbot(db, data.chatbot_id)
     version = get_chat_version(db, data.chatbot_id, data.version_id, current_user)
     config = db.query(LLMConfig).filter(LLMConfig.version_id == version.id).first()
 
     if not config:
         raise HTTPException(status_code=404, detail="No config")
 
-    session = get_or_create_session(db, data, version, current_user)
+    session = get_or_create_session(db, data, version, current_user, chatbot.language)
     history = session_history(db, session.id)
-    variables = session.variables or data.variables or {}
+    variables = {**(data.variables or {}), **(session.variables or {}), "__language": safe_chatbot_language(chatbot.language)}
 
     if data.message.strip():
         add_message(db, session.id, "user", data.message.strip())
@@ -426,7 +546,7 @@ def chat(
             config,
             message,
             fallback_variables or variables,
-            history=session_history(db, session.id),
+            history=session_history(db, session.id, exclude_latest_user_message=message),
             mode_used="flow_rag",
             node_config=node_config
         )
@@ -473,21 +593,43 @@ def chat_stream(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
-    get_chatbot(db, data.chatbot_id)
+    request_started_at = time.perf_counter()
+    backend_received_epoch_ms = round(time.time() * 1000)
+    latency_trace: dict = {
+        "backend_entry_ms": 0,
+        "backend_received_epoch_ms": backend_received_epoch_ms,
+        "client_send_to_backend_received_ms": (
+            round(backend_received_epoch_ms - data.client_send_at_ms)
+            if data.client_send_at_ms else None
+        ),
+        "client_dispatch_to_backend_received_ms": (
+            round(backend_received_epoch_ms - data.client_request_dispatched_at_ms)
+            if data.client_request_dispatched_at_ms else None
+        ),
+        "db_query_ms": 0,
+    }
+    db_started_at = time.perf_counter()
+    chatbot = get_chatbot(db, data.chatbot_id)
+    latency_trace["db_query_ms"] += elapsed_ms(db_started_at)
+    db_started_at = time.perf_counter()
     version = get_chat_version(db, data.chatbot_id, data.version_id, current_user)
+    latency_trace["db_query_ms"] += elapsed_ms(db_started_at)
+    db_started_at = time.perf_counter()
     config = db.query(LLMConfig).filter(LLMConfig.version_id == version.id).first()
+    latency_trace["db_query_ms"] += elapsed_ms(db_started_at)
 
     if not config:
         raise HTTPException(status_code=404, detail="No config")
 
-    session = get_or_create_session(db, data, version, current_user)
-    variables = session.variables or data.variables or {}
+    db_started_at = time.perf_counter()
+    session = get_or_create_session(db, data, version, current_user, chatbot.language)
+    latency_trace["db_query_ms"] += elapsed_ms(db_started_at)
+    variables = {**(data.variables or {}), **(session.variables or {}), "__language": safe_chatbot_language(chatbot.language)}
 
-    if data.message.strip():
-        add_message(db, session.id, "user", data.message.strip())
-        db.commit()
+    user_message = data.message.strip()
 
     generation_holder: dict = {}
+    flow_trace: dict = {}
 
     def rag_answer(message: str, fallback_variables: dict | None = None, node_config: dict | None = None):
         generation_holder["generation"] = prepare_rag_generation(
@@ -496,7 +638,7 @@ def chat_stream(
             config=config,
             message=message,
             variables=fallback_variables or variables,
-            history=session_history(db, session.id),
+            history=session_history(db, session.id, exclude_latest_user_message=message),
             mode_used="flow_rag",
             node_config=node_config
         )
@@ -513,6 +655,7 @@ def chat_stream(
             "sources": generation_holder["generation"]["sources"]
         }
 
+    flow_started_at = time.perf_counter()
     result = execute_flow(
         db=db,
         version_id=version.id,
@@ -520,14 +663,18 @@ def chat_stream(
         current_node_key=session.current_node_key,
         variables=variables,
         rag_answer=rag_answer,
-        allow_rag_fallback=False
+        allow_rag_fallback=False,
+        trace=flow_trace,
     )
+    latency_trace["flow_execution_ms"] = elapsed_ms(flow_started_at)
+    latency_trace["db_query_ms"] += int(flow_trace.get("flow_db_query_ms", 0) or 0)
 
     def event_generator():
-        yield stream_event("start", {
+        yield sse_event("start", {
             "session_id": session.id,
             "current_node_key": result.get("current_node_key"),
-            "variables": result.get("variables") or {}
+            "variables": result.get("variables") or {},
+            "latency": {**latency_trace, "total_ms": elapsed_ms(request_started_at)}
         })
 
         generation = generation_holder.get("generation")
@@ -537,6 +684,8 @@ def chat_stream(
             bot_messages = result.get("messages") or [
                 {"text": result.get("response", ""), "options": result.get("options", [])}
             ]
+            if user_message:
+                add_message(db, session.id, "user", user_message)
             for item in bot_messages:
                 add_message(
                     db,
@@ -546,12 +695,20 @@ def chat_stream(
                     options=item.get("options") or [],
                     sources=result.get("sources") or []
                 )
+            db_started_at = time.perf_counter()
             db.commit()
-            yield stream_event("final", {
+            latency_trace["db_query_ms"] += elapsed_ms(db_started_at)
+            yield sse_event("final", {
                 **result,
                 "session_id": session.id,
                 "current_node_key": session.current_node_key,
-                "variables": session.variables or {}
+                "variables": session.variables or {},
+                "latency": {
+                    **latency_trace,
+                    "flow_db_query_ms": flow_trace.get("flow_db_query_ms", 0),
+                    "flow_invocations": flow_trace.get("flow_invocations", 0),
+                    "total_ms": elapsed_ms(request_started_at),
+                }
             })
             return
 
@@ -568,22 +725,71 @@ def chat_stream(
             }
             session.current_node_key = final_result.get("current_node_key")
             session.variables = final_result.get("variables") or {}
+            if user_message:
+                add_message(db, session.id, "user", user_message)
             add_message(db, session.id, "bot", generation["fallback_response"], sources=[])
+            db_started_at = time.perf_counter()
             db.commit()
-            yield stream_event("final", {
+            latency_trace["db_query_ms"] += elapsed_ms(db_started_at)
+            yield sse_event("final", {
                 **final_result,
                 "session_id": session.id,
                 "current_node_key": session.current_node_key,
-                "variables": session.variables or {}
+                "variables": session.variables or {},
+                "latency": {
+                    **latency_trace,
+                    **(generation.get("metrics") or {}),
+                    "first_token_ms": 0,
+                    "llm_ms": 0,
+                    "flow_db_query_ms": flow_trace.get("flow_db_query_ms", 0),
+                    "flow_invocations": flow_trace.get("flow_invocations", 0),
+                    "total_ms": elapsed_ms(request_started_at)
+                }
             })
             return
 
+        llm_started_at = time.perf_counter()
+        first_token_ms = None
+        first_sse_sent_ms = None
+        first_sse_forwarding_delay_ms = None
         try:
             for token in stream_ai_answer(generation):
-                yield stream_event("token", {"text": token})
+                if first_token_ms is None:
+                    first_token_ms = elapsed_ms(request_started_at)
+                    first_sse_sent_ms = elapsed_ms(request_started_at)
+                    azure_first_chunk_epoch_ms = generation.get("llm_metrics", {}).get("azure_first_chunk_epoch_ms")
+                    if isinstance(azure_first_chunk_epoch_ms, int):
+                        first_sse_forwarding_delay_ms = max(0, round(time.time() * 1000) - azure_first_chunk_epoch_ms)
+                yield sse_event("token", {
+                    "text": token,
+                    "latency": {
+                        "first_sse_sent_ms": first_sse_sent_ms,
+                        "first_sse_forwarding_delay_ms": first_sse_forwarding_delay_ms,
+                    } if first_sse_sent_ms is not None else {}
+                })
         except HTTPException as exc:
-            yield stream_event("error", {"detail": exc.detail})
+            if user_message:
+                add_message(db, session.id, "user", user_message)
+                db_started_at = time.perf_counter()
+                db.commit()
+                latency_trace["db_query_ms"] += elapsed_ms(db_started_at)
+            yield sse_event("error", {
+                "detail": exc.detail,
+                "latency": {
+                    **latency_trace,
+                    **(generation.get("metrics") or {}),
+                    **(generation.get("llm_metrics") or {}),
+                    "first_token_ms": first_token_ms,
+                    "first_sse_sent_ms": first_sse_sent_ms,
+                    "first_sse_forwarding_delay_ms": first_sse_forwarding_delay_ms,
+                    "llm_ms": elapsed_ms(llm_started_at),
+                    "flow_db_query_ms": flow_trace.get("flow_db_query_ms", 0),
+                    "flow_invocations": flow_trace.get("flow_invocations", 0),
+                    "total_ms": elapsed_ms(request_started_at),
+                }
+            })
             return
+        llm_ms = elapsed_ms(llm_started_at)
 
         answer = generation.get("answer", "")
         messages = result.get("messages") or [{"text": "", "options": result.get("options", [])}]
@@ -606,6 +812,8 @@ def chat_stream(
 
         session.current_node_key = final_result.get("current_node_key")
         session.variables = final_variables
+        if user_message:
+            add_message(db, session.id, "user", user_message)
         for item in final_result.get("messages") or []:
             add_message(
                 db,
@@ -615,13 +823,35 @@ def chat_stream(
                 options=item.get("options") or [],
                 sources=final_result.get("sources") or []
             )
+        db_started_at = time.perf_counter()
         db.commit()
+        latency_trace["db_query_ms"] += elapsed_ms(db_started_at)
 
-        yield stream_event("final", {
+        yield sse_event("final", {
             **final_result,
             "session_id": session.id,
             "current_node_key": session.current_node_key,
-            "variables": session.variables or {}
+            "variables": session.variables or {},
+            "latency": {
+                **latency_trace,
+                **(generation.get("metrics") or {}),
+                **(generation.get("llm_metrics") or {}),
+                "first_token_ms": first_token_ms,
+                "first_sse_sent_ms": first_sse_sent_ms,
+                "first_sse_forwarding_delay_ms": first_sse_forwarding_delay_ms,
+                "llm_ms": llm_ms,
+                "flow_db_query_ms": flow_trace.get("flow_db_query_ms", 0),
+                "flow_invocations": flow_trace.get("flow_invocations", 0),
+                "total_ms": elapsed_ms(request_started_at)
+            }
         })
 
-    return StreamingResponse(event_generator(), media_type="application/x-ndjson")
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

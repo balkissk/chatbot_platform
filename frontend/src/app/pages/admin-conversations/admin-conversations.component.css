@@ -12,7 +12,7 @@
 }
 
 .eyebrow {
-  color: #36ADA3;
+  color: #1677FF;
   font-size: 12px;
   font-weight: 700;
   margin: 0 0 4px;
@@ -43,7 +43,7 @@ input {
 }
 
 button {
-  background: #36ADA3;
+  background: #1677FF;
   border: 0;
   border-radius: 6px;
   color: white;
@@ -87,7 +87,7 @@ button.secondary {
 }
 
 .session-row.selected {
-  border-color: #36ADA3;
+  border-color: #1677FF;
 }
 
 .session-row p,
@@ -97,9 +97,9 @@ button.secondary {
 }
 
 .session-row span {
-  background: #eaf8f7;
+  background: #EAF3FF;
   border-radius: 999px;
-  color: #36ADA3;
+  color: #1677FF;
   padding: 4px 8px;
 }
 
@@ -124,7 +124,7 @@ button.secondary {
 }
 
 .message span {
-  color: #36ADA3;
+  color: #1677FF;
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;

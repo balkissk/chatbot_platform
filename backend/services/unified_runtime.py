@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from models.chatbot import Chatbot
+from models.chatbot_schema import safe_chatbot_language
 from models.conversation import ConversationSession
 from models.llm_config import LLMConfig
 from models.runtime_log import RuntimeLog
@@ -141,6 +142,7 @@ def create_channel_session(
     version_id: int,
     channel: str,
     external_user_id: str | None = None,
+    language: str | None = None,
 ) -> ConversationSession:
     session = ConversationSession(
         chatbot_id=chatbot_id,
@@ -150,6 +152,7 @@ def create_channel_session(
         variables={
             "__channel": channel,
             "__external_user_id": external_user_id or "",
+            "__language": safe_chatbot_language(language),
         }
     )
     db.add(session)
@@ -165,6 +168,7 @@ def get_or_create_channel_session(
     channel: str,
     external_user_id: str | None = None,
     session_id: int | str | None = None,
+    language: str | None = None,
 ) -> ConversationSession:
     if isinstance(session_id, int):
         session = db.query(ConversationSession).filter(
@@ -175,7 +179,13 @@ def get_or_create_channel_session(
         if not session:
             raise HTTPException(status_code=404, detail="Conversation session not found")
         if session.version_id != version_id:
-            return create_channel_session(db, chatbot_id, version_id, channel, external_user_id)
+            return create_channel_session(db, chatbot_id, version_id, channel, external_user_id, language)
+        variables = session.variables or {}
+        normalized_language = safe_chatbot_language(language)
+        if variables.get("__language") != normalized_language:
+            variables["__language"] = normalized_language
+            session.variables = variables
+            db.commit()
         return session
 
     if external_user_id:
@@ -187,9 +197,14 @@ def get_or_create_channel_session(
         for session in sessions:
             variables = session.variables or {}
             if variables.get("__channel") == channel and variables.get("__external_user_id") == external_user_id:
+                normalized_language = safe_chatbot_language(language)
+                if variables.get("__language") != normalized_language:
+                    variables["__language"] = normalized_language
+                    session.variables = variables
+                    db.commit()
                 return session
 
-    return create_channel_session(db, chatbot_id, version_id, channel, external_user_id)
+    return create_channel_session(db, chatbot_id, version_id, channel, external_user_id, language)
 
 
 def run_chatbot_message(
@@ -222,12 +237,14 @@ def run_chatbot_message(
             channel=channel,
             external_user_id=external_user_id,
             session_id=session_id,
+            language=chatbot.language,
         )
         variables = {
             **(session.variables or {}),
             "__channel": channel,
             "__external_user_id": external_user_id or "",
             "__external_session_id": str(session_id or ""),
+            "__language": safe_chatbot_language(chatbot.language),
         }
 
         if message.strip():

@@ -1,0 +1,28 @@
+.analytics-page{color:var(--ds-text);display:grid;gap:12px}
+.analytics-header,.kpi-card,.panel{background:var(--ds-surface);border:1px solid var(--ds-border);border-radius:14px;box-shadow:0 12px 34px rgba(24,59,74,.055)}
+.analytics-header{align-items:center;display:flex;gap:10px;justify-content:space-between;padding:12px}
+.analytics-header h2{font-size:25px;line-height:1.05;margin:0}
+.analytics-header p{color:var(--ds-muted);font-size:13px;margin:5px 0 0;max-width:680px}
+.eyebrow{color:var(--brand-blue);font-size:11px;font-weight:900;letter-spacing:.08em;margin:0 0 3px;text-transform:uppercase}
+.actions{display:flex;gap:8px}
+button{border:0;border-radius:10px;cursor:pointer;font-weight:800;min-height:36px;padding:7px 12px}
+.secondary{background:var(--ds-surface);border:1px solid var(--ds-border);color:var(--ds-text)}
+.kpi-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+.kpi-card{display:grid;gap:5px;padding:10px}
+.kpi-card span,.kpi-card small{color:var(--ds-muted);font-size:12px}
+.kpi-card strong{font-size:21px;line-height:1.05}
+.analytics-grid{align-items:start;display:grid;gap:12px;grid-template-columns:repeat(2,minmax(0,1fr))}
+.panel{padding:12px}
+.panel-header{margin-bottom:8px}
+.panel h3{font-size:16px;margin:0}
+.channel-row,.error-row{border-top:1px solid var(--ds-border);display:grid;gap:8px;padding:10px 0}
+.channel-row{grid-template-columns:minmax(0,180px) 1fr}
+.channel-row strong,.error-row strong{display:block;font-size:13px}
+.channel-row span,.error-row small,.empty{color:var(--ds-muted);font-size:12px}
+.channel-row em{align-self:center;background:var(--surface-secondary);border-radius:999px;height:8px;overflow:hidden}
+.channel-row i{background:var(--brand-blue);border-radius:inherit;display:block;height:100%}
+.error-row{grid-template-columns:minmax(0,1fr) auto}
+.error-row p{color:var(--ds-muted);font-size:13px;margin:3px 0 0}
+.error{background:var(--danger-light);border:1px solid rgba(239,68,68,.24);border-radius:12px;color:var(--danger);padding:10px}
+.skeleton{height:86px}
+@media(max-width:780px){.analytics-header,.actions{align-items:stretch;flex-direction:column}.analytics-grid{grid-template-columns:1fr}}

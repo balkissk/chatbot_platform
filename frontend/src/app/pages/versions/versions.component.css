@@ -5,7 +5,7 @@
 .document-row {
   align-items: center;
   display: flex;
-  gap: 12px;
+  gap: 10px;
   justify-content: space-between;
 }
 
@@ -15,12 +15,12 @@
 }
 
 .page-header {
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 
 .eyebrow {
-  color: #36ADA3;
-  font-size: 12px;
+  color: #1677FF;
+  font-size: 11px;
   font-weight: 700;
   margin: 0 0 4px;
 }
@@ -33,7 +33,7 @@ h4 {
 }
 
 h2 {
-  font-size: 28px;
+  font-size: 25px;
 }
 
 p,
@@ -44,14 +44,14 @@ small,
 }
 
 button {
-  background: #36ADA3;
+  background: #1677FF;
   border: 0;
   border-radius: 6px;
   color: white;
   cursor: pointer;
   font-weight: 700;
-  min-height: 46px;
-  padding: 10px 14px;
+  min-height: 34px;
+  padding: 7px 11px;
 }
 
 button:disabled {
@@ -73,9 +73,9 @@ button.danger {
 
 .version-grid {
   display: grid;
-  gap: 14px;
-  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
-  margin-bottom: 24px;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  margin-bottom: 14px;
 }
 
 .version-card,
@@ -84,20 +84,20 @@ button.danger {
   background: #fff;
   border: 1px solid #d8e8eb;
   border-radius: 8px;
-  padding: 18px;
+  padding: 12px;
 }
 
 .version-card {
   display: grid;
-  gap: 20px;
+  gap: 12px;
 }
 
 .version-card.selected {
-  border-color: #36ADA3;
+  border-color: #1677FF;
 }
 
 .version-card.published {
-  box-shadow: inset 4px 0 0 #36ADA3;
+  box-shadow: inset 4px 0 0 #10B981;
 }
 
 .status-badge {
@@ -112,7 +112,7 @@ button.danger {
 }
 
 .status-published {
-  background: #36ADA3;
+  background: #10B981;
 }
 
 .status-archived {
@@ -126,23 +126,23 @@ button.danger {
 
 .manager-grid {
   display: grid;
-  gap: 18px;
-  grid-template-columns: minmax(320px, 420px) 1fr;
+  gap: 12px;
+  grid-template-columns: minmax(280px, 360px) 1fr;
 }
 
 .ai-panel {
   background:
     linear-gradient(#fff, #fff) padding-box,
-    linear-gradient(135deg, #36ADA3, #8b5cf6) border-box;
+    linear-gradient(135deg, #1677FF, #8b5cf6) border-box;
   border: 1px solid transparent;
-  border-radius: 16px;
+  border-radius: 12px;
   box-shadow: 0 18px 44px rgba(20, 76, 104, .08);
   grid-column: 1 / -1;
 }
 
 .settings-grid {
   display: grid;
-  gap: 14px;
+  gap: 10px;
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
@@ -163,7 +163,7 @@ button.danger {
   border: 1px solid #cfe0e5;
   border-radius: 10px;
   color: #102a3a;
-  min-height: 42px;
+  min-height: 36px;
   padding: 0 12px;
 }
 
@@ -180,7 +180,7 @@ button.danger {
   cursor: pointer;
   display: flex;
   justify-content: center;
-  padding: 18px;
+  padding: 12px;
 }
 
 .file-control input {
@@ -188,7 +188,7 @@ button.danger {
 }
 
 .file-control span {
-  color: #36ADA3;
+  color: #1677FF;
   font-weight: 700;
 }
 
@@ -198,7 +198,7 @@ button.danger {
 .mini-empty {
   border: 1px solid #e5f0f2;
   border-radius: 8px;
-  padding: 12px;
+  padding: 10px;
 }
 
 .document-row p {
@@ -210,7 +210,7 @@ textarea {
   border-radius: 10px;
   box-sizing: border-box;
   font-size: 15px;
-  padding: 12px;
+  padding: 10px;
   resize: vertical;
   width: 100%;
 }
@@ -242,15 +242,52 @@ textarea {
 }
 
 .quick-replies button {
-  background: #eaf8f7;
-  border: 1px solid #a9ded9;
-  color: #36ADA3;
+  background: #EAF3FF;
+  border: 1px solid #D5E6FF;
+  color: #1677FF;
   min-height: 34px;
   padding: 6px 10px;
 }
 
 .error {
   color: #b00020;
+}
+
+.confirm-overlay {
+  align-items: center;
+  background: rgba(11, 31, 42, .32);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 18px;
+  position: fixed;
+  z-index: 1200;
+}
+
+.confirm-modal {
+  background: #fff;
+  border: 1px solid #d8e8eb;
+  border-radius: 12px;
+  box-shadow: 0 24px 70px rgba(15, 31, 42, .18);
+  display: grid;
+  gap: 12px;
+  max-width: min(420px, 100%);
+  padding: 18px;
+}
+
+.confirm-modal h2 {
+  font-size: 20px;
+}
+
+.confirm-modal p {
+  line-height: 1.45;
+  margin: 0;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
 }
 
 @media (max-width: 1050px) {

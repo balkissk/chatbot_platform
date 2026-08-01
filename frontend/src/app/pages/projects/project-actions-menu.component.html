@@ -1,0 +1,57 @@
+<div
+  id="project-actions-menu"
+  class="project-actions-menu"
+  role="menu"
+  [style.top.px]="position.top"
+  [style.left.px]="position.left"
+  (click)="$event.stopPropagation()">
+  <button *ngIf="!archived" type="button" class="project-menu-action" role="menuitem" (click)="renameProject.emit(project)">
+    <svg lucidePencil size="15"></svg>
+    <span>Rename</span>
+  </button>
+
+  <button
+    *ngIf="!archived"
+    type="button"
+    class="project-menu-action"
+    role="menuitem"
+    (click)="duplicateProject.emit(project)"
+    [disabled]="duplicating">
+    <svg lucideCopy size="15"></svg>
+    <span>{{ duplicating ? 'Duplicating...' : 'Duplicate' }}</span>
+  </button>
+
+  <button
+    *ngIf="!archived"
+    type="button"
+    class="project-menu-action warning-link"
+    role="menuitem"
+    (click)="archiveProject.emit(project)"
+    [disabled]="archiving">
+    <svg lucideArchive size="15"></svg>
+    <span>{{ archiving ? 'Archiving...' : 'Archive' }}</span>
+  </button>
+
+  <button
+    *ngIf="archived"
+    type="button"
+    class="project-menu-action success-link"
+    role="menuitem"
+    (click)="restoreProject.emit(project)"
+    [disabled]="restoring">
+    <svg lucideArchive size="15"></svg>
+    <span>{{ restoring ? 'Restoring...' : 'Restore Project' }}</span>
+  </button>
+
+  <div class="menu-separator" aria-hidden="true"></div>
+
+  <button
+    type="button"
+    role="menuitem"
+    class="project-menu-action danger-link"
+    (click)="deleteProject.emit(project)"
+    [disabled]="deleting">
+    <svg lucideTrash2 size="15"></svg>
+    <span>{{ deleting ? 'Deleting...' : 'Delete Project' }}</span>
+  </button>
+</div>

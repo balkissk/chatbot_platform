@@ -7,7 +7,20 @@ from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 from database.db import SessionLocal
 from models.chatbot import Chatbot
-from models.chatbot_schema import ChatbotApiKeyResponse, ChatbotCreate, ChatbotStatusUpdate, ChatbotUpdate, RagSettingsUpdate
+from models.chatbot_schema import (
+    ChatbotApiKeyResponse,
+    ChatbotAiDraftRegenerate,
+    ChatbotCreate,
+    ChatbotSetupResponse,
+    ChatbotSetupUpdate,
+    ChatbotStatusUpdate,
+    ChatbotUpdate,
+    RagSettingsUpdate,
+    chatbot_language_instruction,
+    normalize_chatbot_channel,
+    normalize_chatbot_language,
+    safe_chatbot_language,
+)
 from models.chunk import Chunk
 from models.conversation import ConversationMessage, ConversationSession
 from models.document import Document
@@ -20,8 +33,9 @@ from models.version import VersionChatbot
 from services.auth import require_roles
 from services.audit import record_audit_log
 from services.flow_validation import validate_flow_version
+from services.generated_flow import ensure_generated_flow_is_valid
 from services.rag_settings import normalize_rag_settings
-from services.templates import create_starter_flow
+from services.templates import TEMPLATES, create_starter_flow, template_generated_payload
 
 router = APIRouter()
 
@@ -146,7 +160,7 @@ def serialize_chatbot(chatbot: Chatbot, stats: dict | None = None) -> dict:
         "id": chatbot.id,
         "name": chatbot.name,
         "description": chatbot.description,
-        "language": chatbot.language,
+        "language": safe_chatbot_language(chatbot.language),
         "type": chatbot.type,
         "purpose": chatbot.purpose,
         "assistant_type": chatbot.purpose,
@@ -155,6 +169,8 @@ def serialize_chatbot(chatbot: Chatbot, stats: dict | None = None) -> dict:
         "build_method": chatbot.build_method,
         "creation_mode": chatbot.build_method,
         "template_key": chatbot.template_key,
+        "source_template_key": getattr(chatbot, "source_template_key", None),
+        "source_template_version": getattr(chatbot, "source_template_version", None),
         "is_active": chatbot.is_active,
         "status": "published" if is_published else "draft",
         "published": is_published,
@@ -165,6 +181,74 @@ def serialize_chatbot(chatbot: Chatbot, stats: dict | None = None) -> dict:
         "created_at": chatbot.created_at,
         "project_id": chatbot.project_id,
         **counts
+    }
+
+
+def serialize_chatbot_setup(chatbot: Chatbot) -> dict:
+    build_method = chatbot.build_method or "scratch"
+    source_template_key = getattr(chatbot, "source_template_key", None)
+    template = TEMPLATES.get(source_template_key or "")
+    return {
+        "id": chatbot.id,
+        "name": chatbot.name,
+        "description": chatbot.description,
+        "language": safe_chatbot_language(chatbot.language),
+        "purpose": chatbot.purpose or "custom",
+        "assistant_type": chatbot.purpose or "custom",
+        "channel": chatbot.channel or "web_widget",
+        "creation_mode": build_method,
+        "build_method": build_method,
+        "template_key": chatbot.template_key,
+        "source_template_key": source_template_key,
+        "source_template_version": getattr(chatbot, "source_template_version", None),
+        "project_id": chatbot.project_id,
+        "template_name": template["name"] if template else None,
+        "template_update_available": build_method == "template" and bool(template),
+        "ai_regeneration_available": build_method == "ai",
+        "ai_assistant_goal": getattr(chatbot, "ai_assistant_goal", None),
+        "ai_business_context": getattr(chatbot, "ai_business_context", None),
+        "ai_knowledge_base_description": getattr(chatbot, "ai_knowledge_base_description", None),
+    }
+
+
+def next_version_number(db: Session, chatbot_id: int) -> int:
+    last_version = db.query(VersionChatbot).filter(
+        VersionChatbot.chatbot_id == chatbot_id
+    ).order_by(VersionChatbot.version_number.desc()).first()
+    return 1 if not last_version else last_version.version_number + 1
+
+
+def create_draft_version(db: Session, chatbot: Chatbot, current_user: User, duplicated_from_version_id: int | None = None) -> VersionChatbot:
+    version = VersionChatbot(
+        chatbot_id=chatbot.id,
+        version_number=next_version_number(db, chatbot.id),
+        status="draft",
+        created_by=current_user.id,
+        duplicated_from_version_id=duplicated_from_version_id,
+    )
+    db.add(version)
+    db.commit()
+    db.refresh(version)
+    db.add(LLMConfig(
+        version_id=version.id,
+        model="phi3",
+        temperature=0.7,
+        system_prompt=chatbot_language_instruction(chatbot.language),
+    ))
+    db.commit()
+    return version
+
+
+def serialize_setup_draft_response(version: VersionChatbot, flow: Flow) -> dict:
+    return {
+        "draft_version": {
+            "id": version.id,
+            "version_number": version.version_number,
+            "status": version.status,
+            "created_at": version.created_at,
+            "duplicated_from_version_id": version.duplicated_from_version_id,
+        },
+        "flow_id": flow.id,
     }
 
 
@@ -480,17 +564,32 @@ def create_chatbot(
     name = chatbot.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="Chatbot name is required")
+    build_method = (chatbot.creation_mode or chatbot.build_method or "scratch").strip()
+    if build_method not in {"scratch", "template", "ai", "blank"}:
+        raise HTTPException(status_code=400, detail="Unsupported assistant creation mode")
+    if build_method == "blank":
+        build_method = "scratch"
+    source_template_key = None
+    if build_method == "template" and chatbot.template_key:
+        source_template_key = chatbot.template_key.strip()
+        if source_template_key not in TEMPLATES:
+            raise HTTPException(status_code=400, detail="Unknown flow template")
 
     new_chatbot = Chatbot(
         name=name,
         description=(chatbot.description or "").strip(),
-        language=chatbot.language,
+        language=safe_chatbot_language(chatbot.language),
         type=chatbot.type,
         purpose=chatbot.assistant_type or chatbot.purpose,
         mode=chatbot.mode,
         channel=chatbot.channel,
-        build_method=chatbot.creation_mode or chatbot.build_method,
-        template_key=chatbot.template_key,
+        build_method=build_method,
+        template_key=source_template_key,
+        source_template_key=source_template_key,
+        source_template_version=None,
+        ai_assistant_goal=(chatbot.ai_assistant_goal or "").strip() or None,
+        ai_business_context=(chatbot.ai_business_context or "").strip() or None,
+        ai_knowledge_base_description=(chatbot.ai_knowledge_base_description or "").strip() or None,
         public_api_key=new_public_api_key(),
         public_api_enabled=True,
         project_id=chatbot.project_id
@@ -514,10 +613,10 @@ def create_chatbot(
         version_id=first_version.id,
         model="phi3",
         temperature=0.7,
-        system_prompt="You are a helpful assistant"
+        system_prompt=chatbot_language_instruction(new_chatbot.language)
     ))
     db.commit()
-    create_starter_flow(db, first_version.id, "blank")
+    create_starter_flow(db, first_version.id, "blank", new_chatbot.language)
 
     record_audit_log(
         db,
@@ -973,6 +1072,218 @@ def get_chatbot_details(
     return serialize_chatbot_details(db, chatbot)
 
 
+@router.get("/chatbots/{id}/setup", response_model=ChatbotSetupResponse)
+def get_chatbot_setup(
+    id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("manager"))
+):
+    chatbot = get_accessible_chatbot(db, id, current_user)
+    return serialize_chatbot_setup(chatbot)
+
+
+@router.patch("/chatbots/{id}/setup", response_model=ChatbotSetupResponse)
+def update_chatbot_setup(
+    id: int,
+    payload: ChatbotSetupUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("manager"))
+):
+    chatbot = get_accessible_chatbot(db, id, current_user)
+    updates = payload.model_dump(exclude_unset=True)
+    changed_fields: list[str] = []
+
+    if "name" in updates:
+        name = (updates["name"] or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Assistant name is required")
+        if chatbot.name != name:
+            chatbot.name = name
+            changed_fields.append("name")
+
+    if "description" in updates:
+        description = (updates["description"] or "").strip()
+        if (chatbot.description or "") != description:
+            chatbot.description = description
+            changed_fields.append("description")
+
+    if "language" in updates:
+        language = normalize_chatbot_language(updates["language"])
+        if chatbot.language != language:
+            chatbot.language = language
+            changed_fields.append("language")
+
+    if "purpose" in updates:
+        purpose = (updates["purpose"] or "").strip() or "custom"
+        if chatbot.purpose != purpose:
+            chatbot.purpose = purpose
+            changed_fields.append("purpose")
+
+    if "channel" in updates:
+        channel = normalize_chatbot_channel(updates["channel"])
+        if chatbot.channel != channel:
+            chatbot.channel = channel
+            changed_fields.append("channel")
+
+    if "ai_assistant_goal" in updates:
+        ai_assistant_goal = (updates["ai_assistant_goal"] or "").strip() or None
+        if getattr(chatbot, "ai_assistant_goal", None) != ai_assistant_goal:
+            chatbot.ai_assistant_goal = ai_assistant_goal
+            changed_fields.append("ai_assistant_goal")
+
+    if "ai_business_context" in updates:
+        ai_business_context = (updates["ai_business_context"] or "").strip() or None
+        if getattr(chatbot, "ai_business_context", None) != ai_business_context:
+            chatbot.ai_business_context = ai_business_context
+            changed_fields.append("ai_business_context")
+
+    if "ai_knowledge_base_description" in updates:
+        ai_knowledge_base_description = (updates["ai_knowledge_base_description"] or "").strip() or None
+        if getattr(chatbot, "ai_knowledge_base_description", None) != ai_knowledge_base_description:
+            chatbot.ai_knowledge_base_description = ai_knowledge_base_description
+            changed_fields.append("ai_knowledge_base_description")
+
+    if changed_fields:
+        db.commit()
+        db.refresh(chatbot)
+        record_audit_log(
+            db,
+            actor=current_user,
+            action="ASSISTANT_SETUP_UPDATED",
+            resource_type="chatbot",
+            resource_id=chatbot.id,
+            resource_name=chatbot.name,
+            metadata={
+                "project_id": chatbot.project_id,
+                "changed_fields": changed_fields,
+            },
+        )
+
+    return serialize_chatbot_setup(chatbot)
+
+
+@router.post("/chatbots/{id}/setup/template-draft")
+def reapply_template_to_new_draft(
+    id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("manager"))
+):
+    chatbot = get_accessible_chatbot(db, id, current_user)
+    source_template_key = getattr(chatbot, "source_template_key", None)
+    if chatbot.build_method != "template" or not source_template_key:
+        raise HTTPException(status_code=400, detail="This assistant does not have persisted template provenance")
+    if source_template_key not in TEMPLATES:
+        raise HTTPException(status_code=400, detail="The original template is no longer available")
+    try:
+        nodes, transitions = template_generated_payload(source_template_key, chatbot.language)
+        ensure_generated_flow_is_valid(db, chatbot.id, nodes, transitions, source_template_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    source_version_id = chatbot.active_version_id
+    version = create_draft_version(db, chatbot, current_user, source_version_id)
+    flow = create_starter_flow(db, version.id, source_template_key, chatbot.language)
+
+    record_audit_log(
+        db,
+        actor=current_user,
+        action="ASSISTANT_TEMPLATE_REAPPLIED",
+        resource_type="chatbot",
+        resource_id=chatbot.id,
+        resource_name=chatbot.name,
+        metadata={
+            "project_id": chatbot.project_id,
+            "draft_version_id": version.id,
+            "template_key": source_template_key,
+        },
+    )
+
+    return serialize_setup_draft_response(version, flow)
+
+
+@router.post("/chatbots/{id}/setup/ai-draft")
+def regenerate_ai_draft(
+    id: int,
+    payload: ChatbotAiDraftRegenerate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("manager"))
+):
+    chatbot = get_accessible_chatbot(db, id, current_user)
+    if chatbot.build_method != "ai":
+        raise HTTPException(status_code=400, detail="This assistant was not originally created with AI")
+
+    try:
+        nodes, transitions = ensure_generated_flow_is_valid(
+            db,
+            chatbot.id,
+            payload.nodes,
+            payload.transitions,
+            payload.generated_name or "AI Generated Assistant",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    source_version_id = chatbot.active_version_id
+    version = create_draft_version(db, chatbot, current_user, source_version_id)
+    flow = Flow(version_id=version.id, name=payload.generated_name or "AI Generated Assistant")
+    db.add(flow)
+    db.commit()
+    db.refresh(flow)
+
+    for node in nodes:
+        db.add(FlowNode(
+            flow_id=flow.id,
+            node_key=node.key,
+            type=node.type,
+            label=node.label,
+            config=node.config or {},
+            position_x=node.position_x,
+            position_y=node.position_y,
+        ))
+
+    for transition in transitions:
+        db.add(FlowTransition(
+            flow_id=flow.id,
+            source_node_key=transition.source_node_key,
+            target_node_key=transition.target_node_key,
+            label=transition.label,
+            condition=transition.condition,
+        ))
+
+    if payload.generated_name:
+        chatbot.name = payload.generated_name.strip() or chatbot.name
+    if payload.generated_description:
+        chatbot.description = payload.generated_description.strip()
+    chatbot.ai_assistant_goal = payload.assistant_goal.strip()
+    chatbot.ai_business_context = payload.business_context.strip()
+    chatbot.ai_knowledge_base_description = (payload.knowledge_base_description or "").strip() or None
+    db.commit()
+    db.refresh(flow)
+    db.refresh(chatbot)
+
+    record_audit_log(
+        db,
+        actor=current_user,
+        action="ASSISTANT_AI_DRAFT_REGENERATED",
+        resource_type="chatbot",
+        resource_id=chatbot.id,
+        resource_name=chatbot.name,
+        metadata={
+            "project_id": chatbot.project_id,
+            "draft_version_id": version.id,
+            "instruction_fields": [
+                key for key, value in {
+                    "assistant_goal": payload.assistant_goal,
+                    "business_context": payload.business_context,
+                    "knowledge_base_description": payload.knowledge_base_description,
+                }.items() if value
+            ],
+        },
+    )
+
+    return serialize_setup_draft_response(version, flow)
+
+
 @router.put("/chatbots/{id}/api-key/regenerate", response_model=ChatbotApiKeyResponse)
 def regenerate_chatbot_api_key(
     id: int,
@@ -1031,9 +1342,9 @@ def update_chatbot(
     chatbot.purpose = payload.purpose
     chatbot.mode = payload.mode
     chatbot.channel = payload.channel
-    if payload.creation_mode or payload.build_method:
-        chatbot.build_method = payload.creation_mode or payload.build_method
-    chatbot.template_key = payload.template_key
+    requested_build_method = payload.creation_mode or payload.build_method
+    if requested_build_method and requested_build_method != chatbot.build_method:
+        raise HTTPException(status_code=400, detail="Assistant creation mode cannot be changed after creation")
 
     db.commit()
     db.refresh(chatbot)

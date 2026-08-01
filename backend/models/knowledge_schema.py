@@ -44,6 +44,10 @@ class ChunkResponse(BaseModel):
     embedding_status: str | None = None
     embedding_model: str | None = None
     embedding_error: str | None = None
+    retry_count: int = 0
+    last_error: str | None = None
+    last_attempt_at: datetime | None = None
+    embedded_at: datetime | None = None
 
     class Config:
         from_attributes = True

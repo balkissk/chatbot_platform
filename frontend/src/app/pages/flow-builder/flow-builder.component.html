@@ -5,24 +5,137 @@
   </div>
 
   <div class="actions">
+    <button class="setup-action" type="button" (click)="openAssistantSetup()">Assistant Setup</button>
     <button class="secondary" type="button" (click)="validateCurrentFlow()">Validate</button>
     <button class="secondary" type="button" (click)="goTestFlow()">Test Flow</button>
-    <button class="secondary icon-action" type="button" (click)="loadBuilder()" [disabled]="loading()" aria-label="Refresh flow" title="Refresh flow">
-      <svg viewBox="0 0 24 24" aria-hidden="true" [class.spin]="loading()">
-        <path d="M21 12a9 9 0 0 1-15.5 6.2"></path>
-        <path d="M3 12A9 9 0 0 1 18.5 5.8"></path>
-        <path d="M18 2v4h4"></path>
-        <path d="M6 22v-4H2"></path>
-      </svg>
-    </button>
-    <button class="secondary icon-action" type="button" (click)="goBack()" aria-label="Back to Template Marketplace" title="Back to Template Marketplace">
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M19 12H5"></path>
-        <path d="M12 19l-7-7 7-7"></path>
-      </svg>
-    </button>
   </div>
 </div>
+
+<section class="modal-backdrop" *ngIf="setupOpen() && setupInitialState() && setupCurrentState() as setup">
+  <form class="setup-edit-modal" (ngSubmit)="saveAssistantSetup()">
+    <button class="close-button" type="button" (click)="closeAssistantSetup()" aria-label="Close assistant setup">x</button>
+    <div class="setup-edit-header">
+      <p class="eyebrow">Assistant setup</p>
+      <h2>Assistant Setup</h2>
+      <p class="muted">Update assistant metadata and manage the original creation method without switching modes.</p>
+    </div>
+
+    <section class="setup-section">
+      <div class="setup-section-title">
+        <p class="eyebrow">General</p>
+        <span>Common editable settings</span>
+      </div>
+
+    <div class="setup-edit-grid">
+      <label>
+        Assistant name
+        <input [ngModel]="setup.name" name="setup-name" (ngModelChange)="updateSetupField('name', $event)" required>
+      </label>
+      <label>
+        Purpose
+        <select [ngModel]="setup.assistant_type" name="setup-purpose" (ngModelChange)="updateSetupField('assistant_type', $event)">
+          <option *ngFor="let option of purposeOptions" [value]="option.value">{{ option.label }}</option>
+        </select>
+      </label>
+      <label class="wide">
+        Description
+        <textarea rows="3" [ngModel]="setup.description" name="setup-description" (ngModelChange)="updateSetupField('description', $event)"></textarea>
+      </label>
+      <label>
+        Language
+        <select [ngModel]="setup.language" name="setup-language" (ngModelChange)="updateSetupField('language', $event)">
+          <option *ngFor="let option of languageOptions" [value]="option.value">{{ option.label }}</option>
+        </select>
+      </label>
+      <label>
+        Channel
+        <select [ngModel]="setup.channel" name="setup-channel" (ngModelChange)="updateSetupField('channel', $event)">
+          <option *ngFor="let option of channelOptions" [value]="option.value">{{ option.label }}</option>
+        </select>
+      </label>
+    </div>
+    </section>
+
+    <section class="setup-section mode-section">
+      <div class="setup-section-title">
+        <p class="eyebrow">Creation Method</p>
+        <h3>{{ creationModeLabel(setup.creation_mode) }}</h3>
+      </div>
+
+      <div *ngIf="normalizeCreationMode(setup.creation_mode) === 'scratch'" class="mode-card">
+        <p>This assistant was created manually. Continue editing its workflow directly in Flow Builder.</p>
+        <button class="secondary" type="button" (click)="continueEditingFlow()">Continue editing flow</button>
+      </div>
+
+      <div *ngIf="normalizeCreationMode(setup.creation_mode) === 'template'" class="mode-card">
+        <div class="readonly-row">
+          <span>Purpose</span>
+          <strong>{{ purposeLabel(setup.assistant_type) }}</strong>
+        </div>
+        <div class="readonly-row">
+          <span>Current Template</span>
+          <strong>{{ currentTemplateLabel(setup) }}</strong>
+        </div>
+        <div class="compatibility-warning" *ngIf="hasIncompatibleTemplate(setup)">
+          <strong>Current template is not compatible with the selected purpose.</strong>
+          <p>Choose a compatible template before saving this purpose change.</p>
+        </div>
+        <p class="muted" *ngIf="!setup.template_name">Template provenance is unavailable for this assistant. Choose a template only when you want to replace the current draft flow.</p>
+        <button class="secondary" type="button" (click)="changeTemplate()">
+          {{ hasIncompatibleTemplate(setup) ? 'Choose compatible template' : (setup.template_name ? 'Change Template' : 'Choose Template') }}
+        </button>
+      </div>
+
+      <div *ngIf="normalizeCreationMode(setup.creation_mode) === 'ai'" class="mode-card">
+        <label class="wide">
+          What should this assistant do?
+          <textarea rows="4" [ngModel]="setup.assistant_goal" name="setup-ai-goal" (ngModelChange)="updateSetupField('assistant_goal', $event)"></textarea>
+        </label>
+        <label class="wide">
+          Business context
+          <textarea rows="3" [ngModel]="setup.business_context" name="setup-ai-context" (ngModelChange)="updateSetupField('business_context', $event)"></textarea>
+        </label>
+        <label class="wide">
+          Knowledge base notes
+          <textarea rows="3" [ngModel]="setup.knowledge_base_description" name="setup-ai-knowledge" (ngModelChange)="updateSetupField('knowledge_base_description', $event)"></textarea>
+        </label>
+        <button
+          class="secondary"
+          type="button"
+          (click)="requestAiDraftRegeneration()"
+          [disabled]="setupActionLoading() || !setup.assistant_goal.trim() || !setup.business_context.trim()">
+          {{ setupActionLoading() ? 'Regenerating...' : 'Regenerate Draft with AI' }}
+        </button>
+      </div>
+    </section>
+
+    <p *ngIf="setupError()" class="error">{{ setupError() }}</p>
+    <p *ngIf="setupSuccess()" class="success">{{ setupSuccess() }}</p>
+
+    <div class="setup-edit-actions">
+      <button class="secondary" type="button" (click)="closeAssistantSetup()" [disabled]="setupSaving()">Cancel</button>
+      <button class="setup-action" type="submit" [disabled]="setupSaving() || !hasSetupChanges() || !setup.name.trim() || hasIncompatibleTemplate(setup)">
+        {{ setupSaving() ? 'Saving...' : 'Save changes' }}
+      </button>
+    </div>
+  </form>
+</section>
+
+<section class="modal-backdrop" *ngIf="setupOpen() && setupLoading()">
+  <div class="setup-loading-modal">
+    <p class="eyebrow">Assistant setup</p>
+    <h3>Loading setup...</h3>
+  </div>
+</section>
+
+<section class="modal-backdrop" *ngIf="setupOpen() && !setupLoading() && setupError() && !setupInitialState()">
+  <div class="setup-loading-modal">
+    <p class="eyebrow">Assistant setup</p>
+    <h3>Could not load setup</h3>
+    <p class="error">{{ setupError() }}</p>
+    <button class="secondary" type="button" (click)="closeAssistantSetup()">Close</button>
+  </div>
+</section>
 
 <p *ngIf="error()" class="error">{{ error() }}</p>
 <p *ngIf="message()" class="success">{{ message() }}</p>
@@ -80,7 +193,6 @@
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M9 18l6-6-6-6"></path>
       </svg>
-      Blocks
     </button>
 
     <main class="canvas" #canvasViewport>
@@ -171,7 +283,9 @@
       (click)="toggleInspector()"
       aria-label="Open inspector"
       title="Open inspector">
-      Inspector
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M15 18l-6-6 6-6"></path>
+      </svg>
     </button>
 
     <aside class="inspector" *ngIf="!inspectorCollapsed()">
@@ -532,7 +646,37 @@
     </div>
     <div class="confirm-actions">
       <button class="secondary" type="button" (click)="cancelDelete()">Cancel</button>
-      <button class="danger" type="button" (click)="confirmDelete()">Delete</button>
+      <button class="danger" type="button" (click)="confirmDelete()">{{ pending.actionLabel || 'Delete' }}</button>
+    </div>
+  </aside>
+</section>
+
+<section class="confirm-overlay" *ngIf="discardSetupConfirm()" (click)="keepEditingSetup()">
+  <aside class="confirm-modal" (click)="$event.stopPropagation()">
+    <div>
+      <p class="eyebrow">Unsaved changes</p>
+      <h3>Discard changes?</h3>
+      <p>You have unsaved changes in Assistant Setup. Leaving now will discard them.</p>
+    </div>
+    <div class="confirm-actions">
+      <button class="secondary" type="button" (click)="keepEditingSetup()">Keep editing</button>
+      <button class="danger" type="button" (click)="discardAssistantSetupChanges()">Discard changes</button>
+    </div>
+  </aside>
+</section>
+
+<section class="confirm-overlay" *ngIf="aiDraftConfirm()" (click)="cancelAiDraftRegeneration()">
+  <aside class="confirm-modal" (click)="$event.stopPropagation()">
+    <div>
+      <p class="eyebrow">AI draft</p>
+      <h3>Regenerate draft flow?</h3>
+      <p>AI will generate a new draft flow using your updated instructions. Your currently published version will not be changed.</p>
+    </div>
+    <div class="confirm-actions">
+      <button class="secondary" type="button" (click)="cancelAiDraftRegeneration()" [disabled]="setupActionLoading()">Cancel</button>
+      <button class="danger" type="button" (click)="confirmAiDraftRegeneration()" [disabled]="setupActionLoading()">
+        {{ setupActionLoading() ? 'Regenerating...' : 'Regenerate Draft' }}
+      </button>
     </div>
   </aside>
 </section>

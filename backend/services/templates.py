@@ -1,15 +1,21 @@
+from copy import deepcopy
+
 from sqlalchemy.orm import Session
 
 from models.flow import Flow, FlowNode, FlowTransition
+from models.chatbot_schema import safe_chatbot_language
 
 
 TEMPLATES = {
     "blank": {
         "name": "Blank flow",
         "nodes": [
-            ("start", "message", "Starting message", {"text": "Welcome! How can I help you today?"}, 80, 120)
+            ("start", "message", "Starting message", {"text": "Welcome! How can I help you today?"}, 80, 120),
+            ("end", "end", "End", {"message": "Thanks for your visit."}, 340, 120)
         ],
-        "transitions": []
+        "transitions": [
+            ("start", "end", "next", None)
+        ]
     },
     "support_faq": {
         "name": "Customer support FAQ",
@@ -30,15 +36,18 @@ TEMPLATES = {
             ("budget", "question", "Ask budget", {"field": "budget", "prompt": "What is your estimated budget?"}, 860, 120),
             ("score", "condition", "Qualify lead", {"field": "budget", "operator": "greater_than", "value": "1000"}, 1120, 120),
             ("book", "action", "Book meeting", {"action": "calendar_link"}, 1380, 40),
-            ("nurture", "message", "Nurture lead", {"text": "Thanks. Our team will send helpful resources."}, 1380, 220)
+            ("nurture", "message", "Nurture lead", {"text": "Thanks. Our team will send helpful resources."}, 1380, 220),
+            ("end", "end", "End", {"message": "Thanks for your interest."}, 1640, 120)
         ],
         "transitions": [
             ("start", "name", "next", None),
             ("name", "email", "next", None),
             ("email", "budget", "next", None),
             ("budget", "score", "next", None),
-            ("score", "book", "qualified", "budget > 1000"),
-            ("score", "nurture", "not qualified", "budget <= 1000")
+            ("score", "book", "true", "budget > 1000"),
+            ("score", "nurture", "false", "budget <= 1000"),
+            ("book", "end", "next", None),
+            ("nurture", "end", "next", None)
         ]
     },
     "booking": {
@@ -48,7 +57,7 @@ TEMPLATES = {
             ("service", "question", "Choose service", {"field": "service", "prompt": "Which service are you interested in?"}, 360, 120),
             ("date", "question", "Preferred date", {"field": "preferred_date", "prompt": "What date works best?"}, 660, 120),
             ("contact", "question", "Contact info", {"field": "phone", "prompt": "What phone number should we use?"}, 960, 120),
-            ("confirm", "message", "Confirm request", {"text": "Thanks. We received your appointment request."}, 1240, 120)
+            ("confirm", "end", "Confirm request", {"message": "Thanks. We received your appointment request."}, 1240, 120)
         ],
         "transitions": [
             ("start", "service", "next", None),
@@ -201,7 +210,9 @@ TEMPLATES = {
             ("start", "issue", "next", None),
             ("issue", "email", "next", None),
             ("email", "priority", "next", None),
-            ("priority", "ticket", "next", None),
+            ("priority", "ticket", "Low", None),
+            ("priority", "ticket", "Normal", None),
+            ("priority", "ticket", "Urgent", None),
             ("ticket", "handoff", "next", None)
         ]
     },
@@ -226,7 +237,10 @@ TEMPLATES = {
         ],
         "transitions": [
             ("start", "category", "next", None),
-            ("category", "details", "next", None),
+            ("category", "details", "Account access", None),
+            ("category", "details", "Device", None),
+            ("category", "details", "Microsoft 365", None),
+            ("category", "details", "Security", None),
             ("details", "answer", "next", None),
             ("answer", "handoff", "next", None)
         ]
@@ -253,7 +267,10 @@ TEMPLATES = {
         "transitions": [
             ("start", "role", "next", None),
             ("role", "topic", "next", None),
-            ("topic", "answer", "next", None),
+            ("topic", "answer", "Accounts", None),
+            ("topic", "answer", "Tools", None),
+            ("topic", "answer", "Policies", None),
+            ("topic", "answer", "Training", None),
             ("answer", "end", "next", None)
         ]
     },
@@ -268,8 +285,13 @@ TEMPLATES = {
         ],
         "transitions": [
             ("start", "goal", "next", None),
-            ("goal", "level", "next", None),
-            ("level", "recommendation", "next", None),
+            ("goal", "level", "Azure", None),
+            ("goal", "level", "Microsoft 365", None),
+            ("goal", "level", "Security", None),
+            ("goal", "level", "Data & AI", None),
+            ("level", "recommendation", "Beginner", None),
+            ("level", "recommendation", "Intermediate", None),
+            ("level", "recommendation", "Advanced", None),
             ("recommendation", "end", "next", None)
         ]
     },
@@ -284,7 +306,10 @@ TEMPLATES = {
         ],
         "transitions": [
             ("start", "topic", "next", None),
-            ("topic", "background", "next", None),
+            ("topic", "background", "Fundamentals", None),
+            ("topic", "background", "Administration", None),
+            ("topic", "background", "Development", None),
+            ("topic", "background", "Architecture", None),
             ("background", "recommendation", "next", None),
             ("recommendation", "end", "next", None)
         ]
@@ -300,8 +325,13 @@ TEMPLATES = {
         ],
         "transitions": [
             ("start", "track", "next", None),
-            ("track", "level", "next", None),
-            ("level", "recommendation", "next", None),
+            ("track", "level", "Fundamentals", None),
+            ("track", "level", "Cloud Security", None),
+            ("track", "level", "SOC", None),
+            ("track", "level", "Identity", None),
+            ("level", "recommendation", "Beginner", None),
+            ("level", "recommendation", "Intermediate", None),
+            ("level", "recommendation", "Advanced", None),
             ("recommendation", "end", "next", None)
         ]
     },
@@ -417,7 +447,10 @@ TEMPLATES = {
             ("start", "name", "next", None),
             ("name", "email", "next", None),
             ("email", "cloud_area", "next", None),
-            ("cloud_area", "company_size", "next", None),
+            ("cloud_area", "company_size", "Azure", None),
+            ("cloud_area", "company_size", "Microsoft 365", None),
+            ("cloud_area", "company_size", "Security", None),
+            ("cloud_area", "company_size", "Data & AI", None),
             ("company_size", "handoff", "next", None)
         ]
     },
@@ -436,7 +469,9 @@ TEMPLATES = {
             ("name", "email", "next", None),
             ("email", "course", "next", None),
             ("course", "schedule", "next", None),
-            ("schedule", "handoff", "next", None)
+            ("schedule", "handoff", "Online", None),
+            ("schedule", "handoff", "In person", None),
+            ("schedule", "handoff", "Hybrid", None)
         ]
     },
     "internal_knowledge_qa": {
@@ -497,9 +532,12 @@ TEMPLATES = {
     "blank_starter_template": {
         "name": "Blank Starter Template",
         "nodes": [
-            ("start", "message", "Welcome", {"text": "Welcome! How can I help you today?"}, 80, 120)
+            ("start", "message", "Welcome", {"text": "Welcome! How can I help you today?"}, 80, 120),
+            ("end", "end", "End", {"message": "Thanks for your visit."}, 340, 120)
         ],
-        "transitions": []
+        "transitions": [
+            ("start", "end", "next", None)
+        ]
     },
     "blank_business_bot": {
         "name": "Blank Business Bot",
@@ -531,7 +569,10 @@ TEMPLATES = {
         ],
         "transitions": [
             ("start", "topic", "next", None),
-            ("topic", "answer", "next", None),
+            ("topic", "answer", "Services", None),
+            ("topic", "answer", "Pricing", None),
+            ("topic", "answer", "Training", None),
+            ("topic", "answer", "Contact", None),
             ("answer", "end", "next", None)
         ]
     },
@@ -558,7 +599,166 @@ def template_options() -> list[dict]:
     return [{"key": key, "name": value["name"]} for key, value in TEMPLATES.items()]
 
 
-def replace_flow_with_template(db: Session, flow: Flow, template_key: str) -> Flow:
+FRENCH_TEMPLATE_TEXT = {
+    "Welcome! How can I help you today?": "Bonjour ! Comment puis-je vous aider aujourd'hui ?",
+    "Welcome. How can I help you today?": "Bonjour. Comment puis-je vous aider aujourd'hui ?",
+    "Hi! I can help answer questions from our knowledge base. Ask me anything.": "Bonjour ! Je peux repondre aux questions a partir de notre base de connaissances. Posez-moi votre question.",
+    "I could not find this in the knowledge base.": "Je n'ai pas trouve cette information dans la base de connaissances.",
+    "Hi! I can help you find the right solution.": "Bonjour ! Je peux vous aider a trouver la bonne solution.",
+    "What is your name?": "Quel est votre nom ?",
+    "What is your work email?": "Quel est votre email professionnel ?",
+    "What is your estimated budget?": "Quel est votre budget estime ?",
+    "Thanks. Our team will send helpful resources.": "Merci. Notre equipe vous enverra des ressources utiles.",
+    "Hi! I can help you request an appointment.": "Bonjour ! Je peux vous aider a demander un rendez-vous.",
+    "Which service are you interested in?": "Quel service vous interesse ?",
+    "What date works best?": "Quelle date vous convient le mieux ?",
+    "What phone number should we use?": "Quel numero de telephone devons-nous utiliser ?",
+    "Thanks. We received your appointment request.": "Merci. Nous avons bien recu votre demande de rendez-vous.",
+    "Welcome. I can help with admissions questions.": "Bonjour. Je peux vous aider avec les questions d'admission.",
+    "What is your full name?": "Quel est votre nom complet ?",
+    "What email should admissions use?": "Quel email le service des admissions doit-il utiliser ?",
+    "Which program are you interested in?": "Quel programme vous interesse ?",
+    "Answer admissions questions clearly.": "Repondez clairement aux questions d'admission.",
+    "I could not find that admissions detail in the uploaded documents.": "Je n'ai pas trouve ce detail d'admission dans les documents televerses.",
+    "Admissions will follow up with you.": "Le service des admissions vous recontactera.",
+    "I can help with internship eligibility and next steps.": "Je peux vous aider avec l'eligibilite aux stages et les prochaines etapes.",
+    "What is your student email?": "Quel est votre email etudiant ?",
+    "What is your field of study?": "Quel est votre domaine d'etudes ?",
+    "Use the internship documents and be practical.": "Utilisez les documents de stage et donnez une reponse pratique.",
+    "I could not confirm that from the internship documents.": "Je n'ai pas pu confirmer cela avec les documents de stage.",
+    "Good luck with your internship search.": "Bonne chance dans votre recherche de stage.",
+    "Hi. I can help troubleshoot or connect you to support.": "Bonjour. Je peux vous aider a resoudre un probleme ou vous mettre en relation avec le support.",
+    "What issue are you facing?": "Quel probleme rencontrez-vous ?",
+    "Give concise support steps.": "Donnez des etapes de support concises.",
+    "I could not find a confirmed support answer.": "Je n'ai pas trouve de reponse de support confirmee.",
+    "Did this solve the issue?": "Cela a-t-il resolu le probleme ?",
+    "Support will follow up.": "Le support vous recontactera.",
+    "Glad I could help.": "Ravi d'avoir pu vous aider.",
+    "Hi. I can help route your request to the right team.": "Bonjour. Je peux orienter votre demande vers la bonne equipe.",
+    "What is your email?": "Quel est votre email ?",
+    "What phone number can we use?": "Quel numero de telephone pouvons-nous utiliser ?",
+    "Thanks. I saved your request.": "Merci. J'ai enregistre votre demande.",
+    "A specialist will contact you.": "Un specialiste vous contactera.",
+    "Hi. I can help answer support questions. Ask me anything.": "Bonjour. Je peux repondre aux questions de support. Posez-moi votre question.",
+    "Answer clearly and helpfully using general support knowledge. Do not rely on uploaded documents.": "Repondez clairement et utilement avec les connaissances generales de support. Ne vous appuyez pas sur des documents televerses.",
+    "I could not generate a helpful answer for that question.": "Je n'ai pas pu generer de reponse utile a cette question.",
+    "Hi. I can answer using your support knowledge base. Ask me anything.": "Bonjour. Je peux repondre a partir de votre base de connaissances de support. Posez-moi votre question.",
+    "Use uploaded support knowledge base documents first and give practical support steps.": "Utilisez d'abord les documents de support televerses et donnez des etapes pratiques.",
+    "I could not confirm this from the uploaded documents.": "Je n'ai pas pu confirmer cela avec les documents televerses.",
+    "Hi. I can help or connect you to support.": "Bonjour. Je peux vous aider ou vous connecter au support.",
+    "Answer with support guidance.": "Repondez avec des conseils de support.",
+    "A support teammate will follow up.": "Un membre de l'equipe support vous recontactera.",
+    "Thanks. We will take it from here.": "Merci. Nous allons prendre le relais.",
+    "Hi. I can collect the details needed to create a support ticket.": "Bonjour. Je peux collecter les details necessaires pour creer un ticket de support.",
+    "Please describe the issue you need help with.": "Veuillez decrire le probleme pour lequel vous avez besoin d'aide.",
+    "What email should support use for follow-up?": "Quel email le support doit-il utiliser pour le suivi ?",
+    "How urgent is this request?": "Quel est le niveau d'urgence de cette demande ?",
+    "I saved your ticket details.": "J'ai enregistre les details de votre ticket.",
+    "Support will review your ticket request.": "Le support examinera votre demande de ticket.",
+    "I can help with HR policies, benefits, leave, and employee procedures. Ask me anything.": "Je peux vous aider avec les politiques RH, les avantages, les conges et les procedures employes. Posez-moi votre question.",
+    "Answer from HR knowledge documents in a clear and professional way.": "Repondez a partir des documents RH de facon claire et professionnelle.",
+    "I could not find this HR information in the knowledge base.": "Je n'ai pas trouve cette information RH dans la base de connaissances.",
+    "I can help with common IT support requests.": "Je peux vous aider avec les demandes courantes de support IT.",
+    "What kind of IT issue do you have?": "Quel type de probleme IT rencontrez-vous ?",
+    "Please describe the issue.": "Veuillez decrire le probleme.",
+    "Give practical IT helpdesk guidance from the knowledge base.": "Donnez des conseils pratiques de support IT a partir de la base de connaissances.",
+    "I could not find a confirmed IT helpdesk answer.": "Je n'ai pas trouve de reponse IT confirmee.",
+    "The IT team can review this request.": "L'equipe IT peut examiner cette demande.",
+    "Ask me about company policies and internal procedures.": "Posez-moi vos questions sur les politiques de l'entreprise et les procedures internes.",
+    "Answer using company policy documents. Be concise and cite sources when available.": "Repondez avec les documents de politique de l'entreprise. Soyez concis et citez les sources si elles sont disponibles.",
+    "I could not find that policy in the knowledge base.": "Je n'ai pas trouve cette politique dans la base de connaissances.",
+    "Welcome. I can guide new employees through onboarding resources.": "Bonjour. Je peux guider les nouveaux employes dans les ressources d'integration.",
+    "What is your role or department?": "Quel est votre role ou departement ?",
+    "What do you need first?": "De quoi avez-vous besoin en premier ?",
+    "Answer with practical onboarding steps from internal documents.": "Repondez avec des etapes d'integration pratiques a partir des documents internes.",
+    "I could not find onboarding guidance for that topic.": "Je n'ai pas trouve de conseils d'integration pour ce sujet.",
+    "Welcome aboard.": "Bienvenue dans l'equipe.",
+    "Ask me a question and I will do my best to help.": "Posez-moi une question et je ferai de mon mieux pour vous aider.",
+    "Answer professionally and use knowledge base sources when available.": "Repondez professionnellement et utilisez les sources de la base de connaissances lorsqu'elles sont disponibles.",
+    "I do not have enough information to answer that yet.": "Je n'ai pas encore assez d'informations pour repondre.",
+    "Ask me anything.": "Posez-moi votre question.",
+    "Retrieve relevant knowledge base context for the user's question.": "Recuperez le contexte pertinent de la base de connaissances pour la question de l'utilisateur.",
+    "I could not find enough relevant knowledge.": "Je n'ai pas trouve assez d'informations pertinentes.",
+    "Searching knowledge.": "Recherche dans les connaissances.",
+    "Searching knowledge and preparing an answer.": "Recherche dans les connaissances et preparation d'une reponse.",
+    "Preparing an answer.": "Preparation d'une reponse.",
+}
+
+
+def localize_text(value: str, language: str | None) -> str:
+    if safe_chatbot_language(language) != "fr":
+        return value
+    return FRENCH_TEMPLATE_TEXT.get(value, value)
+
+
+def localize_config(config: dict, node_type: str, language: str | None) -> dict:
+    localized = deepcopy(config)
+    if safe_chatbot_language(language) != "fr":
+        return localized
+
+    for key in (
+        "text",
+        "prompt",
+        "fallback",
+        "message",
+        "invalid_message",
+        "invalid_email_message",
+        "invalid_phone_message",
+        "collect_email_prompt",
+        "collect_phone_prompt",
+        "error_message",
+        "success_message",
+    ):
+        if isinstance(localized.get(key), str):
+            localized[key] = localize_text(localized[key], language)
+
+    if node_type in {"rag_answer", "knowledge_search", "ai_router", "ai_classifier"}:
+        instruction = "Repondez toujours en francais."
+        current_prompt = str(localized.get("prompt") or localized.get("instructions") or "").strip()
+        if current_prompt and instruction not in current_prompt:
+            localized["prompt"] = f"{instruction} {current_prompt}"
+        elif not current_prompt:
+            localized["prompt"] = instruction
+
+    return localized
+
+
+def localized_template_nodes(template: dict, language: str | None) -> list[tuple]:
+    return [
+        (key, node_type, label, localize_config(config, node_type, language), x, y)
+        for key, node_type, label, config, x, y in template["nodes"]
+    ]
+
+
+def template_generated_payload(template_key: str, language: str | None = None) -> tuple[list[dict], list[dict]]:
+    template = TEMPLATES.get(template_key)
+    if not template:
+        raise ValueError("Unknown flow template")
+
+    nodes = [
+        {
+            "key": key,
+            "type": node_type,
+            "label": label,
+            "config": config,
+            "position_x": x,
+            "position_y": y,
+        }
+        for key, node_type, label, config, x, y in localized_template_nodes(template, language)
+    ]
+    transitions = [
+        {
+            "source_node_key": source,
+            "target_node_key": target,
+            "label": label,
+            "condition": condition,
+        }
+        for source, target, label, condition in template.get("transitions", [])
+    ]
+    return nodes, transitions
+
+
+def replace_flow_with_template(db: Session, flow: Flow, template_key: str, language: str | None = None) -> Flow:
     template = TEMPLATES.get(template_key)
     if not template:
         raise ValueError("Unknown flow template")
@@ -568,7 +768,7 @@ def replace_flow_with_template(db: Session, flow: Flow, template_key: str) -> Fl
     flow.name = template["name"]
     db.flush()
 
-    for node_key, node_type, label, config, x, y in template["nodes"]:
+    for node_key, node_type, label, config, x, y in localized_template_nodes(template, language):
         db.add(FlowNode(
             flow_id=flow.id,
             node_key=node_key,
@@ -593,14 +793,14 @@ def replace_flow_with_template(db: Session, flow: Flow, template_key: str) -> Fl
     return flow
 
 
-def create_starter_flow(db: Session, version_id: int, template_key: str | None) -> Flow:
+def create_starter_flow(db: Session, version_id: int, template_key: str | None, language: str | None = None) -> Flow:
     template = TEMPLATES.get(template_key or "blank", TEMPLATES["blank"])
     flow = Flow(version_id=version_id, name=template["name"])
     db.add(flow)
     db.commit()
     db.refresh(flow)
 
-    for node_key, node_type, label, config, x, y in template["nodes"]:
+    for node_key, node_type, label, config, x, y in localized_template_nodes(template, language):
         db.add(FlowNode(
             flow_id=flow.id,
             node_key=node_key,

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from config.settings import load_environment
 from database.db import SessionLocal
 from models.chatbot import Chatbot
+from models.chatbot_schema import safe_chatbot_language
 from models.conversation import ConversationMessage, ConversationSession
 from models.llm_config import LLMConfig
 from models.version import VersionChatbot
@@ -96,13 +97,13 @@ def request_channel(payload: PublicChatRequest | None) -> str:
     return "widget" if channel == "widget" else "web"
 
 
-def create_public_session(db: Session, chatbot_id: int, version_id: int, channel: str = "web") -> ConversationSession:
+def create_public_session(db: Session, chatbot_id: int, version_id: int, channel: str = "web", language: str | None = None) -> ConversationSession:
     session = ConversationSession(
         chatbot_id=chatbot_id,
         version_id=version_id,
         user_id=None,
         current_node_key=None,
-        variables={"__channel": channel}
+        variables={"__channel": channel, "__language": safe_chatbot_language(language)}
     )
     db.add(session)
     db.commit()
@@ -117,7 +118,8 @@ def get_or_create_public_session(
 ) -> ConversationSession:
     channel = request_channel(payload)
     if payload.session_id is None:
-        return create_public_session(db, payload.chatbot_id, version.id, channel)
+        chatbot = db.query(Chatbot).filter(Chatbot.id == payload.chatbot_id).first()
+        return create_public_session(db, payload.chatbot_id, version.id, channel, chatbot.language if chatbot else None)
 
     session = db.query(ConversationSession).filter(
         ConversationSession.id == payload.session_id,
@@ -129,13 +131,18 @@ def get_or_create_public_session(
         raise HTTPException(status_code=404, detail="Conversation session not found")
 
     if session.version_id != version.id:
-        return create_public_session(db, payload.chatbot_id, version.id, channel)
+        chatbot = db.query(Chatbot).filter(Chatbot.id == payload.chatbot_id).first()
+        return create_public_session(db, payload.chatbot_id, version.id, channel, chatbot.language if chatbot else None)
 
     variables = session.variables or {}
     if variables.get("__channel") != channel:
         variables["__channel"] = channel
-        session.variables = variables
-        db.commit()
+    chatbot = db.query(Chatbot).filter(Chatbot.id == payload.chatbot_id).first()
+    normalized_language = safe_chatbot_language(chatbot.language if chatbot else None)
+    if variables.get("__language") != normalized_language:
+        variables["__language"] = normalized_language
+    session.variables = variables
+    db.commit()
 
     return session
 
@@ -152,7 +159,7 @@ def public_chatbot(chatbot_id: int, db: Session = Depends(get_db)):
         "id": chatbot.id,
         "name": chatbot.name,
         "description": chatbot.description,
-        "language": chatbot.language,
+        "language": safe_chatbot_language(chatbot.language),
         "channel": chatbot.channel,
         "active_version_id": version.id,
         "version_number": version.version_number
@@ -166,7 +173,7 @@ def start_public_chat_session(
 ):
     chatbot = get_public_chatbot(db, data.chatbot_id)
     version = get_active_version(db, chatbot)
-    session = create_public_session(db, chatbot.id, version.id)
+    session = create_public_session(db, chatbot.id, version.id, language=chatbot.language)
     return {
         "session_id": session.id,
         "chatbot_id": session.chatbot_id,
@@ -231,6 +238,7 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
         variables = {
             **(session.variables or {}),
             "__channel": channel,
+            "__language": safe_chatbot_language(chatbot.language),
         }
 
         if data.message.strip():
@@ -450,7 +458,7 @@ def start_public_api_chat_session(
 ):
     chatbot = get_api_chatbot(db, data.chatbot_id, x_chatbot_api_key)
     version = get_active_version(db, chatbot)
-    session = create_public_session(db, chatbot.id, version.id)
+    session = create_public_session(db, chatbot.id, version.id, language=chatbot.language)
     return {
         "session_id": session.id,
         "chatbot_id": session.chatbot_id,

@@ -1,17 +1,13 @@
 <section class="setup-page">
-  <button class="change-setup" type="button" (click)="openSetupWizard()">
-    <span aria-hidden="true">←</span>
-    Change Assistant Setup
-  </button>
-
   <header class="setup-header">
     <div>
       <p class="eyebrow">Template marketplace</p>
       <h2>Choose a starter template</h2>
       <p class="muted">
-        Select a starter template for your assistant. You can change templates before applying one.
+        Select a compatible template for this assistant. Applying it replaces only the current draft flow.
       </p>
     </div>
+    <button *ngIf="isSetupMode()" class="secondary" type="button" (click)="backToAssistantSetup()">Back to Assistant Setup</button>
   </header>
 
   <article class="setup-card" *ngIf="loading()">
@@ -23,16 +19,18 @@
   </article>
 
   <div class="error-card" *ngIf="error()">
-    {{ error() }}
+    <div>
+      <strong>{{ errorTitle() || 'Template marketplace error' }}</strong>
+      <p>{{ error() }}</p>
+    </div>
+    <button *ngIf="errorTitle()" class="secondary" type="button" (click)="clearError()">Try again</button>
   </div>
 
   <ng-container *ngIf="!loading()">
     <section class="recommendation-panel">
-      <div>
-        <p class="eyebrow">Recommended for</p>
-        <h3>{{ assistantTypeLabel() }}</h3>
-        <p class="muted">{{ chatbot()?.name || 'Assistant' }}</p>
-      </div>
+      <p class="eyebrow">Recommended templates</p>
+      <h3>{{ assistantTypeLabel() }}</h3>
+      <p class="muted">{{ chatbot()?.name || 'Assistant' }}</p>
     </section>
 
     <section class="template-grid" aria-label="Recommended templates">
@@ -56,23 +54,27 @@
     <footer class="apply-bar">
       <div>
         <strong>{{ selectedTemplateName() || 'No template selected' }}</strong>
-        <p class="muted">Choose a template, compare options, then apply it when you are ready.</p>
+        <p class="muted">Choose a template, compare options, then replace the draft when you are ready.</p>
       </div>
       <button class="primary" type="button" [disabled]="!selectedTemplate() || applying()" (click)="applyTemplate()">
-        {{ applying() ? 'Applying...' : 'Apply Template' }}
+        {{ applying() ? 'Replacing...' : 'Replace Draft' }}
       </button>
     </footer>
   </ng-container>
 </section>
 
-<app-assistant-creation-wizard
-  *ngIf="setupWizardOpen()"
-  [submitting]="savingSetup()"
-  [initialState]="setupDraft()"
-  title="Change assistant setup"
-  description="Update the assistant purpose, creation method, name, description, and language before applying a template."
-  finishLabel="Save Setup"
-  submittingLabel="Saving..."
-  (closeWizard)="closeSetupWizard()"
-  (finishWizard)="saveAssistantSetup($event)">
-</app-assistant-creation-wizard>
+<section class="confirm-overlay" *ngIf="applyConfirmOpen()" (click)="cancelApplyTemplate()">
+  <aside class="confirm-modal" (click)="$event.stopPropagation()">
+    <div>
+      <p class="eyebrow">Template</p>
+      <h3>Replace draft flow?</h3>
+      <p class="muted">Applying "{{ selectedTemplateName() }}" will replace the current draft flow. Published versions will not be modified.</p>
+    </div>
+    <div class="confirm-actions">
+      <button class="secondary" type="button" (click)="cancelApplyTemplate()">Cancel</button>
+      <button class="primary" type="button" (click)="confirmApplyTemplate()" [disabled]="applying()">
+        {{ applying() ? 'Replacing...' : 'Replace Draft' }}
+      </button>
+    </div>
+  </aside>
+</section>

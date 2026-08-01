@@ -42,3 +42,4 @@ uploads/
 backend/uploads/
 tmp/
 temp/
+.tmp-chrome-layout/

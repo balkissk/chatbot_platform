@@ -29,12 +29,17 @@
       <span>{{ context()?.version?.status || 'draft' }}</span>
     </div>
 
-    <div class="messages" #messagesContainer>
+    <div class="messages" #messagesContainer [attr.aria-busy]="loading()">
       <p class="empty" *ngIf="messages().length === 0 && !loading()">No messages yet.</p>
 
-      <article *ngFor="let item of messages()" class="bubble" [class.user]="item.role === 'user'">
+      <article *ngFor="let item of messages()" class="bubble" [class.user]="item.role === 'user'" [class.failed]="item.failed" [class.streaming]="item.streaming">
         <span class="sender-label">{{ senderLabel(item) }}</span>
-        <p>{{ item.text }}</p>
+        <p *ngIf="!item.pending">{{ item.text }}</p>
+        <p *ngIf="item.pending" class="typing-dots" aria-label="Assistant is thinking">
+          <span></span>
+          <span></span>
+          <span></span>
+        </p>
         <div class="quick-replies" *ngIf="item.options?.length">
           <button type="button" *ngFor="let option of item.options" (click)="send(option)" [disabled]="loading()">
             {{ option }}
@@ -50,11 +55,14 @@
         </details>
       </article>
 
-      <article class="bubble" *ngIf="loading()">Thinking...</article>
+      <article class="bubble loading-bubble" *ngIf="loading() && !hasStreamingResponse()">
+        <span class="sender-label">Assistant</span>
+        <p>Thinking...</p>
+      </article>
     </div>
 
     <form class="composer" (ngSubmit)="send()">
-      <input #messageInput [(ngModel)]="input" name="input" placeholder="Ask a question">
+      <input #messageInput [(ngModel)]="input" name="input" placeholder="Ask a question" [disabled]="loading() || !context()">
       <button type="submit" [disabled]="loading() || !input.trim()">Send</button>
     </form>
   </section>

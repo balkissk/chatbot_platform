@@ -1,0 +1,86 @@
+.project-actions-menu {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .10);
+  display: grid;
+  gap: 4px;
+  max-height: min(320px, calc(100vh - 96px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  position: fixed;
+  width: min(224px, calc(100vw - 24px));
+  z-index: 2200;
+}
+
+.project-actions-menu .project-menu-action {
+  align-items: center;
+  background: #f1f6ff;
+  border: 1px solid #d9e8ff;
+  border-radius: 8px;
+  box-shadow: none;
+  color: #2563eb;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 8px;
+  justify-content: flex-start;
+  min-height: 34px;
+  padding: 6px 9px;
+  text-align: left;
+  text-decoration: none;
+  width: 100%;
+}
+
+.project-actions-menu .project-menu-action:hover,
+.project-actions-menu .project-menu-action:focus-visible {
+  background: #e8f2ff;
+  border-color: #bdd7ff;
+  color: #1d4ed8;
+  outline: 0;
+}
+
+.project-actions-menu .project-menu-action:active {
+  background: #dbeaff;
+}
+
+.project-actions-menu .project-menu-action:disabled {
+  cursor: not-allowed;
+  opacity: .48;
+}
+
+.project-actions-menu .project-menu-action svg {
+  color: #2563eb;
+  flex: 0 0 auto;
+}
+
+.menu-separator {
+  background: #e4eaf2;
+  height: 1px;
+  margin: 4px 2px;
+}
+
+.project-actions-menu .danger-link {
+  background: #f1f6ff;
+  border-color: #d9e8ff;
+  color: #dc2626;
+}
+
+.project-actions-menu .danger-link svg {
+  color: #ef4444;
+}
+
+.project-actions-menu .danger-link:hover,
+.project-actions-menu .danger-link:focus-visible {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+.project-actions-menu .danger-link:hover svg,
+.project-actions-menu .danger-link:focus-visible svg {
+  color: #b91c1c;
+}

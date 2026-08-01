@@ -103,6 +103,18 @@ export const routes: Routes = [
             .then(m => m.KnowledgeBaseComponent)
       },
       {
+        path: 'projects/:projectId/analytics',
+        loadComponent: () =>
+          import('./pages/project-analytics/project-analytics.component')
+            .then(m => m.ProjectAnalyticsComponent)
+      },
+      {
+        path: 'projects/:projectId/settings',
+        loadComponent: () =>
+          import('./pages/project-settings/project-settings.component')
+            .then(m => m.ProjectSettingsComponent)
+      },
+      {
         path: 'projects/:projectId',
         loadComponent: () =>
           import('./pages/project-overview/project-overview.component')

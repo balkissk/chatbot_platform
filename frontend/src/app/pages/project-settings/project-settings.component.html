@@ -1,0 +1,40 @@
+<section class="project-settings-page">
+  <header class="settings-header">
+    <div>
+      <p class="eyebrow">Project settings</p>
+      <h2>{{ project()?.name || 'Project settings' }}</h2>
+      <p>Manage workspace identity and project-level metadata.</p>
+    </div>
+    <a class="secondary" [routerLink]="['/dashboard/projects', projectId]">Open Workspace</a>
+  </header>
+
+  <p *ngIf="error()" class="error" role="alert">{{ error() }}</p>
+  <p *ngIf="message()" class="success" role="status">{{ message() }}</p>
+
+  <form class="settings-panel" (ngSubmit)="saveProject()" *ngIf="!loading(); else loadingState">
+    <label>
+      Project name
+      <input name="projectName" [(ngModel)]="name" placeholder="Project name">
+    </label>
+
+    <label>
+      Description
+      <textarea name="projectDescription" [(ngModel)]="description" rows="4" placeholder="Project description"></textarea>
+    </label>
+
+    <div class="actions">
+      <a class="secondary" [routerLink]="['/dashboard/projects']">Back to Projects</a>
+      <button class="primary" type="submit" [disabled]="saving() || !canSave()">
+        {{ saving() ? 'Saving...' : 'Save settings' }}
+      </button>
+    </div>
+  </form>
+
+  <ng-template #loadingState>
+    <div class="settings-panel skeleton" aria-hidden="true">
+      <span></span>
+      <span></span>
+      <span></span>
+    </div>
+  </ng-template>
+</section>

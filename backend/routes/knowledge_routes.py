@@ -1,3 +1,6 @@
+import hashlib
+import logging
+import time
 from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -14,11 +17,12 @@ from models.user import User
 from models.version import VersionChatbot
 from services.auth import require_roles
 from services.audit import record_audit_log
-from services.document_ingestion import DocumentExtractionError, extract_document_text
-from services.rag import chunk_document, embed_chunk, get_or_create_knowledge_base, retrieve_relevant_chunks_with_mode
+from services.document_ingestion import DocumentExtractionError, decode_content_bytes, extract_document_text
+from services.rag import chunk_document, embed_chunks, get_or_create_knowledge_base, retrieve_relevant_chunks_with_mode
 from services.rag_settings import normalize_rag_settings
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def get_db():
@@ -64,33 +68,96 @@ def ensure_document_access(db: Session, document_id: int, current_user: User) ->
     return document
 
 
-def document_response(db: Session, document: Document) -> DocumentResponse:
-    chunks_count = db.query(Chunk).filter(Chunk.document_id == document.id).count()
-    ready_embeddings_count = db.query(Chunk).filter(
-        Chunk.document_id == document.id,
+def document_content_hash(content: str, content_encoding: str | None = None) -> str:
+    return hashlib.sha256(decode_content_bytes(content or "", content_encoding)).hexdigest()
+
+
+def uses_pgvector(db: Session) -> bool:
+    bind = db.get_bind()
+    return bool(bind and bind.dialect.name == "postgresql")
+
+
+def chunk_has_searchable_embedding(db: Session, chunk: Chunk) -> bool:
+    if chunk.embedding_status != "ready":
+        return False
+    if uses_pgvector(db):
+        return bool(getattr(chunk, "embedding_vector", None))
+    return bool(chunk.embedding)
+
+
+def chunk_state_counts(db: Session, document_id: int) -> dict[str, int]:
+    chunks_count = db.query(Chunk).filter(Chunk.document_id == document_id).count()
+    ready_query = db.query(Chunk).filter(
+        Chunk.document_id == document_id,
         Chunk.embedding_status == "ready",
-        Chunk.embedding.isnot(None),
+    )
+    if uses_pgvector(db):
+        ready_query = ready_query.filter(Chunk.embedding_vector.isnot(None))
+    else:
+        ready_query = ready_query.filter(Chunk.embedding.isnot(None))
+    ready_embeddings_count = ready_query.count()
+    failed_embeddings_count = db.query(Chunk).filter(
+        Chunk.document_id == document_id,
+        Chunk.embedding_status == "failed",
     ).count()
+    pending_embeddings_count = db.query(Chunk).filter(
+        Chunk.document_id == document_id,
+        Chunk.embedding_status.in_(("pending", "processing")),
+    ).count()
+    return {
+        "total": chunks_count,
+        "ready": ready_embeddings_count,
+        "failed": failed_embeddings_count,
+        "pending": pending_embeddings_count,
+    }
+
+
+def status_from_counts(counts: dict[str, int], fallback_status: str | None = None) -> str:
+    total = counts["total"]
+    ready = counts["ready"]
+    failed = counts["failed"]
+    pending = counts["pending"]
+    if fallback_status in {"uploaded", "processing"} and total == 0:
+        return fallback_status
+    if total == 0:
+        return "failed" if fallback_status == "failed" else (fallback_status or "uploaded")
+    if ready == total:
+        return "ready"
+    if ready > 0 and failed > 0 and pending == 0:
+        return "partially_ready"
+    if ready == 0 and failed == total:
+        return "failed"
+    return "processing"
+
+
+def sync_document_status(db: Session, document: Document, commit: bool = False) -> dict[str, int]:
+    counts = chunk_state_counts(db, document.id)
+    document.chunks_count = counts["total"]
+    document.status = status_from_counts(counts, document.status)
+    if document.status in {"ready", "partially_ready", "failed"}:
+        document.processed_at = datetime.utcnow()
+    if document.status == "ready":
+        document.error_message = None
+    elif document.status == "partially_ready":
+        document.error_message = "Some chunks failed embedding generation"
+    elif document.status == "failed" and counts["failed"]:
+        document.error_message = "All chunks failed embedding generation"
+    if commit:
+        db.commit()
+        db.refresh(document)
+    return counts
+
+
+def document_response(db: Session, document: Document) -> DocumentResponse:
+    counts = sync_document_status(db, document)
+    chunks_count = counts["total"]
+    ready_embeddings_count = counts["ready"]
     failed_embeddings_count = db.query(Chunk).filter(
         Chunk.document_id == document.id,
         Chunk.embedding_status == "failed",
     ).count()
-    pending_embeddings_count = db.query(Chunk).filter(
-        Chunk.document_id == document.id,
-        Chunk.embedding_status == "pending",
-    ).count()
-    if document.chunks_count != chunks_count:
-        document.chunks_count = chunks_count
-        db.commit()
-        db.refresh(document)
-
-    response_status = document.status or "processed"
-    if chunks_count and ready_embeddings_count == chunks_count:
-        response_status = "processed"
-    elif failed_embeddings_count:
-        response_status = "embedding_failed"
-    elif chunks_count and ready_embeddings_count < chunks_count:
-        response_status = "processing"
+    pending_embeddings_count = counts["pending"]
+    response_status = status_from_counts(counts, document.status)
 
     return DocumentResponse(
         id=document.id,
@@ -119,10 +186,16 @@ def process_document_background(
     content_encoding: str | None
 ) -> None:
     db = SessionLocal()
+    started_at = time.perf_counter()
     try:
         document = db.query(Document).filter(Document.id == document_id).first()
         if not document:
             return
+        if document.status == "processing" and document.chunks_count:
+            return
+        document.status = "processing"
+        document.error_message = None
+        db.commit()
 
         try:
             extracted_text, size_bytes = extract_document_text(
@@ -149,8 +222,7 @@ def process_document_background(
         db.query(Chunk).filter(Chunk.document_id == document.id).delete()
         db.flush()
 
-        ready_chunks = 0
-        failed_chunks = 0
+        new_chunks = []
         for index, chunk_data in enumerate(chunks):
             chunk = Chunk(
                 document_id=document.id,
@@ -162,18 +234,24 @@ def process_document_background(
                 embedding_id=f"local-embedding-{document.id}-{index}",
                 embedding_status="pending"
             )
-            embed_chunk(chunk)
-            if chunk.embedding_status == "ready":
-                ready_chunks += 1
-            else:
-                failed_chunks += 1
             db.add(chunk)
+            new_chunks.append(chunk)
 
-        document.status = "embedding_failed" if failed_chunks else "processed"
-        document.error_message = "Some chunks failed embedding generation" if failed_chunks else None
-        document.processed_at = datetime.utcnow()
-        document.chunks_count = len(chunks)
+        embed_chunks(new_chunks)
+        db.flush()
+        counts = sync_document_status(db, document)
         db.commit()
+        logger.info(
+            "knowledge_ingestion document_id=%s knowledge_base_id=%s operation=process status=%s total_chunks=%s ready=%s failed=%s pending=%s latency_ms=%s",
+            document.id,
+            document.knowledge_base_id,
+            document.status,
+            counts["total"],
+            counts["ready"],
+            counts["failed"],
+            counts["pending"],
+            round((time.perf_counter() - started_at) * 1000),
+        )
     finally:
         db.close()
 
@@ -192,6 +270,20 @@ def ingest_document(
     filename = payload.filename.strip()
     if not filename:
         raise HTTPException(status_code=400, detail="Document filename is required")
+    try:
+        content_hash = document_content_hash(payload.content or "", payload.content_encoding)
+    except DocumentExtractionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    duplicate = db.query(Document).filter(
+        Document.knowledge_base_id == knowledge_base.id,
+        Document.content_hash == content_hash,
+    ).first()
+    if duplicate:
+        raise HTTPException(
+            status_code=409,
+            detail="This exact document has already been uploaded to this knowledge base.",
+        )
 
     document = Document(
         knowledge_base_id=knowledge_base.id,
@@ -199,8 +291,9 @@ def ingest_document(
         content_type=payload.content_type,
         storage_url=f"local://version-{version_id}/{filename}",
         raw_text=None,
+        content_hash=content_hash,
         size_bytes=len(payload.content or ""),
-        status="processing",
+        status="uploaded",
         error_message=None,
         processed_at=None,
         chunks_count=0
@@ -303,32 +396,35 @@ def reprocess_document_embeddings(
     current_user: User = Depends(require_roles("admin", "manager"))
 ):
     document = ensure_document_access(db, document_id, current_user)
-    chunks = db.query(Chunk).filter(
+    if document.status == "processing":
+        return {
+            "document_id": document.id,
+            "total_chunks": chunk_state_counts(db, document.id)["total"],
+            "ready_chunks": chunk_state_counts(db, document.id)["ready"],
+            "failed_chunks": chunk_state_counts(db, document.id)["failed"],
+        }
+    document.status = "processing"
+    document.error_message = None
+    db.commit()
+
+    all_chunks = db.query(Chunk).filter(
         Chunk.document_id == document.id
     ).order_by(Chunk.order.asc()).all()
+    chunks = [
+        chunk
+        for chunk in all_chunks
+        if not chunk_has_searchable_embedding(db, chunk)
+    ]
 
-    ready_chunks = 0
-    failed_chunks = 0
-    for chunk in chunks:
-        chunk.embedding_status = "pending"
-        chunk.embedding_error = None
-        embed_chunk(chunk)
-        if chunk.embedding_status == "ready":
-            ready_chunks += 1
-        else:
-            failed_chunks += 1
-
-    document.status = "processed" if failed_chunks == 0 else "embedding_failed"
-    document.error_message = None if failed_chunks == 0 else "Some chunks failed embedding generation"
-    document.processed_at = datetime.utcnow()
-    document.chunks_count = len(chunks)
+    embed_chunks(chunks)
+    counts = sync_document_status(db, document)
     db.commit()
 
     return {
         "document_id": document.id,
-        "total_chunks": len(chunks),
-        "ready_chunks": ready_chunks,
-        "failed_chunks": failed_chunks
+        "total_chunks": counts["total"],
+        "ready_chunks": counts["ready"],
+        "failed_chunks": counts["failed"]
     }
 
 
@@ -345,15 +441,20 @@ def reprocess_document_chunks(
             detail="This document was uploaded before raw text storage. Re-upload it once to enable chunk reprocessing."
         )
 
+    if document.status == "processing":
+        counts = chunk_state_counts(db, document.id)
+        return {
+            "document_id": document.id,
+            "total_chunks": counts["total"],
+            "ready_chunks": counts["ready"],
+            "failed_chunks": counts["failed"]
+        }
+
     chunks = chunk_document(document.raw_text)
     if not chunks:
         raise HTTPException(status_code=400, detail="Document has no readable text")
 
-    db.query(Chunk).filter(Chunk.document_id == document.id).delete()
-    db.flush()
-
-    ready_chunks = 0
-    failed_chunks = 0
+    replacement_chunks = []
     for index, chunk_data in enumerate(chunks):
         chunk = Chunk(
             document_id=document.id,
@@ -365,24 +466,38 @@ def reprocess_document_chunks(
             embedding_id=f"local-embedding-{document.id}-{index}",
             embedding_status="pending"
         )
-        embed_chunk(chunk)
-        if chunk.embedding_status == "ready":
-            ready_chunks += 1
-        else:
-            failed_chunks += 1
-        db.add(chunk)
+        replacement_chunks.append(chunk)
 
-    document.status = "processed" if failed_chunks == 0 else "embedding_failed"
-    document.error_message = None if failed_chunks == 0 else "Some chunks failed embedding generation"
-    document.processed_at = datetime.utcnow()
-    document.chunks_count = len(chunks)
+    embed_chunks(replacement_chunks)
+    ready_chunks = sum(1 for chunk in replacement_chunks if chunk_has_searchable_embedding(db, chunk))
+    failed_chunks = len(replacement_chunks) - ready_chunks
+
+    if failed_chunks:
+        counts = sync_document_status(db, document)
+        db.commit()
+        return {
+            "document_id": document.id,
+            "total_chunks": counts["total"],
+            "ready_chunks": counts["ready"],
+            "failed_chunks": counts["failed"]
+        }
+
+    document.status = "processing"
+    document.error_message = None
+    db.commit()
+    db.query(Chunk).filter(Chunk.document_id == document.id).delete()
+    db.flush()
+    for chunk in replacement_chunks:
+        db.add(chunk)
+    db.flush()
+    counts = sync_document_status(db, document)
     db.commit()
 
     return {
         "document_id": document.id,
-        "total_chunks": len(chunks),
-        "ready_chunks": ready_chunks,
-        "failed_chunks": failed_chunks
+        "total_chunks": counts["total"],
+        "ready_chunks": counts["ready"],
+        "failed_chunks": counts["failed"]
     }
 
 

@@ -2,7 +2,19 @@ import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { AfterViewInit, Component, ElementRef, HostListener, Inject, OnInit, PLATFORM_ID, ViewChild, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../services/api';
+import {
+  ASSISTANT_CHANNEL_OPTIONS,
+  ASSISTANT_LANGUAGE_OPTIONS,
+  ASSISTANT_PURPOSE_OPTIONS,
+  isTemplateCompatibleWithPurpose,
+  normalizeAssistantChannel,
+  normalizeAssistantLanguage,
+  normalizeAssistantPurpose,
+  purposeLabel as assistantPurposeLabel,
+  templateOption
+} from '../../shared/assistant-options';
 
 type FlowNode = {
   id: number;
@@ -42,7 +54,9 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
   sidebarCollapsed = signal(false);
   inspectorCollapsed = signal(false);
   inspectorTab = signal<'settings' | 'variables' | 'validation' | 'preview'>('settings');
-  deleteConfirm = signal<{ type: 'node' | 'transition'; item: FlowNode | FlowTransition; title: string; message: string } | null>(null);
+  deleteConfirm = signal<{ type: 'node' | 'transition' | 'document'; item: FlowNode | FlowTransition | any; title: string; message: string; actionLabel?: string } | null>(null);
+  discardSetupConfirm = signal(false);
+  aiDraftConfirm = signal(false);
   loading = signal(false);
   saving = signal(false);
   error = signal('');
@@ -106,9 +120,20 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
   previewLoading = signal(false);
   previewError = signal('');
   variableRows = computed(() => this.collectVariableRows());
+  setupOpen = signal(false);
+  setupLoading = signal(false);
+  setupSaving = signal(false);
+  setupError = signal('');
+  setupSuccess = signal('');
+  setupActionLoading = signal(false);
+  setupInitialState = signal<any | null>(null);
+  setupCurrentState = signal<any | null>(null);
+  languageOptions = ASSISTANT_LANGUAGE_OPTIONS;
+  channelOptions = ASSISTANT_CHANNEL_OPTIONS;
+  purposeOptions = ASSISTANT_PURPOSE_OPTIONS;
 
   dragging = signal<number | undefined>(undefined);
-  zoom = signal(1);
+  zoom = signal(0.65);
   private viewReady = false;
   private dragState: {
     nodeId: number;
@@ -158,6 +183,14 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
         this.selectedNode.set(null);
         this.loading.set(false);
         this.loadDocuments();
+        if (this.route.snapshot.queryParamMap.get('setup') === '1') {
+          this.openAssistantSetup();
+          this.router.navigate([], {
+            relativeTo: this.route,
+            queryParams: {},
+            replaceUrl: true
+          });
+        }
         setTimeout(() => this.fitToScreen(), 0);
       },
       error: err => {
@@ -169,6 +202,277 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
 
   versionId() {
     return this.context()?.version?.id;
+  }
+
+  openAssistantSetup() {
+    this.setupOpen.set(true);
+    this.setupLoading.set(true);
+    this.setupSaving.set(false);
+    this.setupError.set('');
+    this.setupSuccess.set('');
+    this.api.getChatbotSetup(this.chatbotId).subscribe({
+      next: setup => {
+        const state = this.restoreSetupDraft(this.toSetupState(setup));
+        this.setupInitialState.set(state);
+        this.setupCurrentState.set(state);
+        this.setupLoading.set(false);
+      },
+      error: err => {
+        this.setupError.set(err.error?.detail || 'Could not load assistant setup');
+        this.setupLoading.set(false);
+      }
+    });
+  }
+
+  updateSetupField(
+    field: 'name' | 'description' | 'language' | 'channel' | 'assistant_type' | 'assistant_goal' | 'business_context' | 'knowledge_base_description',
+    value: string
+  ) {
+    this.setupCurrentState.update(state => {
+      const next = { ...(state || this.setupInitialState() || {}) };
+      next[field] = field === 'language'
+        ? normalizeAssistantLanguage(value)
+        : field === 'channel'
+          ? normalizeAssistantChannel(value)
+          : field === 'assistant_type'
+            ? normalizeAssistantPurpose(value)
+            : value;
+      return next;
+    });
+    this.setupSuccess.set('');
+    this.setupError.set('');
+  }
+
+  closeAssistantSetup() {
+    if (this.setupSaving()) return;
+    if (this.hasSetupChanges()) {
+      this.discardSetupConfirm.set(true);
+      return;
+    }
+    this.resetAssistantSetup();
+  }
+
+  keepEditingSetup() {
+    this.discardSetupConfirm.set(false);
+  }
+
+  discardAssistantSetupChanges() {
+    this.discardSetupConfirm.set(false);
+    this.resetAssistantSetup();
+  }
+
+  private resetAssistantSetup(clearDraft = true) {
+    this.setupOpen.set(false);
+    this.setupError.set('');
+    this.setupSuccess.set('');
+    this.setupInitialState.set(null);
+    this.setupCurrentState.set(null);
+    if (clearDraft && this.isBrowser) {
+      sessionStorage.removeItem(this.setupDraftKey());
+    }
+  }
+
+  private setupDraftKey() {
+    return `assistantSetupDraft:${this.chatbotId}`;
+  }
+
+  private persistSetupDraft(setup: any) {
+    if (!this.isBrowser || !setup) return;
+    sessionStorage.setItem(this.setupDraftKey(), JSON.stringify(setup));
+  }
+
+  private restoreSetupDraft(fallback: any) {
+    if (!this.isBrowser || this.route.snapshot.queryParamMap.get('setup') !== '1') {
+      return fallback;
+    }
+    const raw = sessionStorage.getItem(this.setupDraftKey());
+    if (!raw) return fallback;
+    try {
+      return { ...fallback, ...JSON.parse(raw) };
+    } catch {
+      return fallback;
+    }
+  }
+
+  saveAssistantSetup() {
+    const state = this.setupCurrentState();
+    if (!state?.name?.trim()) {
+      this.setupError.set('Assistant name is required');
+      return;
+    }
+    if (this.hasIncompatibleTemplate(state)) {
+      this.setupError.set('Choose a compatible template before saving this purpose change.');
+      return;
+    }
+
+    const payload = {
+      name: state.name.trim(),
+      description: state.description?.trim() || '',
+      language: normalizeAssistantLanguage(state.language),
+      purpose: state.assistant_type,
+      channel: normalizeAssistantChannel(state.channel),
+      ai_assistant_goal: state.assistant_goal?.trim() || null,
+      ai_business_context: state.business_context?.trim() || null,
+      ai_knowledge_base_description: state.knowledge_base_description?.trim() || null
+    };
+
+    this.setupSaving.set(true);
+    this.setupError.set('');
+    this.setupSuccess.set('');
+    this.api.updateChatbotSetup(this.chatbotId, payload).subscribe({
+      next: setup => {
+        const nextState = this.toSetupState(setup);
+        this.setupInitialState.set(nextState);
+        this.setupCurrentState.set(nextState);
+        this.setupSaving.set(false);
+        this.setupSuccess.set('Assistant setup updated');
+        this.message.set('Assistant setup updated');
+        if (this.isBrowser) {
+          sessionStorage.removeItem(this.setupDraftKey());
+        }
+        this.context.update(context => context ? {
+          ...context,
+          chatbot: {
+            ...context.chatbot,
+            name: setup.name,
+            description: setup.description,
+            language: setup.language,
+            purpose: setup.purpose,
+            assistant_type: setup.assistant_type,
+            channel: setup.channel,
+            build_method: setup.build_method,
+            creation_mode: setup.creation_mode,
+            template_key: setup.template_key
+          }
+        } : context);
+      },
+      error: err => {
+        this.setupError.set(err.error?.detail || 'Could not update assistant setup');
+        this.setupSaving.set(false);
+      }
+    });
+  }
+
+  hasSetupChanges() {
+    const current = this.setupCurrentState();
+    const initial = this.setupInitialState();
+    return Boolean(current && initial && JSON.stringify(current) !== JSON.stringify(initial));
+  }
+
+  private toSetupState(setup: any) {
+    const mode = this.normalizeCreationMode(setup?.creation_mode || setup?.build_method || 'scratch');
+    return {
+      assistant_type: normalizeAssistantPurpose(setup?.assistant_type || setup?.purpose || 'custom'),
+      creation_mode: mode,
+      name: setup?.name || '',
+      description: setup?.description || '',
+      language: normalizeAssistantLanguage(setup?.language),
+      channel: normalizeAssistantChannel(setup?.channel),
+      template_key: setup?.source_template_key || setup?.template_key || '',
+      template_name: setup?.template_name || '',
+      template_update_available: !!setup?.template_update_available,
+      ai_regeneration_available: !!setup?.ai_regeneration_available,
+      assistant_goal: setup?.ai_assistant_goal || setup?.description || setup?.name || '',
+      business_context: setup?.ai_business_context || setup?.description || '',
+      knowledge_base_description: setup?.ai_knowledge_base_description || ''
+    };
+  }
+
+  normalizeCreationMode(value: string) {
+    const mode = String(value || '').toLowerCase();
+    if (mode === 'blank') return 'scratch';
+    if (mode === 'template' || mode === 'ai' || mode === 'scratch') return mode;
+    return 'scratch';
+  }
+
+  creationModeLabel(mode: string) {
+    const labels: Record<string, string> = {
+      scratch: 'Start From Scratch',
+      template: 'Template',
+      ai: 'Build With AI'
+    };
+    return labels[this.normalizeCreationMode(mode)] || 'Start From Scratch';
+  }
+
+  purposeLabel(value: string) {
+    return assistantPurposeLabel(value);
+  }
+
+  currentTemplateLabel(setup: any) {
+    return setup?.template_name || templateOption(setup?.template_key)?.name || (setup?.template_key ? 'Unknown' : 'Unknown');
+  }
+
+  hasIncompatibleTemplate(setup = this.setupCurrentState()) {
+    return this.normalizeCreationMode(setup?.creation_mode) === 'template'
+      && Boolean(setup?.template_key)
+      && !isTemplateCompatibleWithPurpose(setup.template_key, setup.assistant_type);
+  }
+
+  continueEditingFlow() {
+    this.resetAssistantSetup(false);
+  }
+
+  changeTemplate() {
+    const setup = this.setupCurrentState();
+    const templateKey = setup?.template_key || '';
+    this.persistSetupDraft(setup);
+    this.resetAssistantSetup();
+    this.router.navigate(
+      ['/dashboard/projects', this.projectId, 'chatbots', this.chatbotId, 'templates'],
+      {
+        queryParams: {
+          source: 'setup',
+          purpose: normalizeAssistantPurpose(setup?.assistant_type),
+          ...(templateKey ? { template: templateKey } : {})
+        }
+      }
+    );
+  }
+
+  requestAiDraftRegeneration() {
+    const setup = this.setupCurrentState();
+    if (!setup?.assistant_goal?.trim() || !setup?.business_context?.trim() || this.setupActionLoading()) return;
+    this.aiDraftConfirm.set(true);
+  }
+
+  cancelAiDraftRegeneration() {
+    if (this.setupActionLoading()) return;
+    this.aiDraftConfirm.set(false);
+  }
+
+  async confirmAiDraftRegeneration() {
+    const setup = this.setupCurrentState();
+    if (!setup?.assistant_goal?.trim() || !setup?.business_context?.trim() || this.setupActionLoading()) return;
+
+    this.setupActionLoading.set(true);
+    this.setupError.set('');
+    this.setupSuccess.set('');
+    try {
+      const generated: any = await firstValueFrom(this.api.generateAssistantWithAi({
+        assistant_goal: setup.assistant_goal.trim(),
+        business_context: setup.business_context.trim(),
+        knowledge_base_description: setup.knowledge_base_description?.trim() || '',
+        assistant_type: setup.assistant_type || 'custom',
+        language: normalizeAssistantLanguage(setup.language)
+      }));
+      await firstValueFrom(this.api.regenerateAssistantAiDraft(this.chatbotId, {
+        assistant_goal: setup.assistant_goal.trim(),
+        business_context: setup.business_context.trim(),
+        knowledge_base_description: setup.knowledge_base_description?.trim() || '',
+        generated_name: generated.assistant_name || setup.name,
+        generated_description: generated.assistant_description || setup.description,
+        nodes: generated.initial_flow_structure?.nodes || [],
+        transitions: generated.initial_flow_structure?.transitions || []
+      }));
+      this.aiDraftConfirm.set(false);
+      this.resetAssistantSetup();
+      this.message.set('AI draft regenerated');
+      this.loadBuilder();
+    } catch (err: any) {
+      this.setupError.set(err?.error?.detail || 'Could not regenerate the AI draft');
+    } finally {
+      this.setupActionLoading.set(false);
+    }
   }
 
   loadDocuments() {
@@ -232,14 +536,12 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
   }
 
   deleteDocument(document: any) {
-    if (!confirm(`Delete document "${document.filename}"?`)) return;
-
-    this.api.deleteDocument(document.id).subscribe({
-      next: () => {
-        this.documents.update(documents => documents.filter(item => item.id !== document.id));
-        this.message.set('Document deleted');
-      },
-      error: err => this.uploadError.set(err.error?.detail || 'Could not delete document')
+    this.deleteConfirm.set({
+      type: 'document',
+      item: document,
+      title: 'Delete document?',
+      message: `Are you sure you want to delete "${document.filename}"?`,
+      actionLabel: 'Delete document'
     });
   }
 
@@ -450,13 +752,13 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
     if (!nodes.length) return { minX: 0, minY: 0, width: 900, height: 520 };
     const minX = Math.min(...nodes.map(node => node.position_x));
     const minY = Math.min(...nodes.map(node => node.position_y));
-    const maxX = Math.max(...nodes.map(node => node.position_x + 260));
-    const maxY = Math.max(...nodes.map(node => node.position_y + 150));
+    const maxX = Math.max(...nodes.map(node => node.position_x + 196));
+    const maxY = Math.max(...nodes.map(node => node.position_y + 108));
     return {
       minX,
       minY,
-      width: Math.max(maxX - minX, 260),
-      height: Math.max(maxY - minY, 150)
+      width: Math.max(maxX - minX, 220),
+      height: Math.max(maxY - minY, 126)
     };
   }
 
@@ -464,11 +766,11 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
     if (!this.viewReady || !this.canvasViewport?.nativeElement || !this.nodes().length) return;
     const viewport = this.canvasViewport.nativeElement;
     const bounds = this.nodeBounds();
-    const padding = 110;
+    const padding = 72;
     const nextZoom = Math.min(
-      1,
+      0.9,
       Math.max(
-        0.6,
+        0.55,
         Math.min(
           (viewport.clientWidth - padding) / bounds.width,
           (viewport.clientHeight - padding) / bounds.height
@@ -492,8 +794,8 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
     const viewport = this.canvasViewport.nativeElement;
     const zoom = this.zoom();
     viewport.scrollTo({
-      left: Math.max(0, (node.position_x + 130) * zoom - viewport.clientWidth / 2),
-      top: Math.max(0, (node.position_y + 75) * zoom - viewport.clientHeight / 2),
+      left: Math.max(0, (node.position_x + 90) * zoom - viewport.clientWidth / 2),
+      top: Math.max(0, (node.position_y + 54) * zoom - viewport.clientHeight / 2),
       behavior: 'smooth'
     });
   }
@@ -562,8 +864,8 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
       type,
       label: `${this.blockMeta(type).label} ${index}`,
       config,
-      position_x: Math.max((previousNode?.position_x || 90) + 290, 60),
-      position_y: previousNode?.position_y || 90 + index * 130
+      position_x: Math.max((previousNode?.position_x || 90) + 250, 60),
+      position_y: previousNode?.position_y || 90 + index * 112
     }).subscribe({
       next: node => {
         this.nodes.update(nodes => [...nodes, node]);
@@ -602,12 +904,33 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
       return;
     }
 
+    if (pending.type === 'document') {
+      this.deleteDocumentNow(pending.item);
+      this.deleteConfirm.set(null);
+      return;
+    }
+
     this.deleteNodeNow(pending.item as FlowNode);
     this.deleteConfirm.set(null);
   }
 
   cancelDelete() {
     this.deleteConfirm.set(null);
+  }
+
+  @HostListener('document:keydown.escape')
+  onEscapeKey() {
+    if (this.aiDraftConfirm()) {
+      this.cancelAiDraftRegeneration();
+      return;
+    }
+    if (this.discardSetupConfirm()) {
+      this.keepEditingSetup();
+      return;
+    }
+    if (this.deleteConfirm()) {
+      this.cancelDelete();
+    }
   }
 
   private deleteNodeNow(node: FlowNode) {
@@ -675,6 +998,16 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
     });
   }
 
+  private deleteDocumentNow(document: any) {
+    this.api.deleteDocument(document.id).subscribe({
+      next: () => {
+        this.documents.update(documents => documents.filter(item => item.id !== document.id));
+        this.message.set('Document deleted');
+      },
+      error: err => this.uploadError.set(err.error?.detail || 'Could not delete document')
+    });
+  }
+
   outgoing(node: FlowNode) {
     return this.transitions().filter(transition => transition.source_node_key === node.node_key);
   }
@@ -709,10 +1042,10 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
     const target = this.nodes().find(node => node.node_key === transition.target_node_key);
     if (!source || !target) return '';
 
-    const startX = source.position_x + 210;
-    const startY = source.position_y + 52;
+    const startX = source.position_x + 180;
+    const startY = source.position_y + 42;
     const endX = target.position_x;
-    const endY = target.position_y + 52;
+    const endY = target.position_y + 42;
     const curve = Math.max(Math.abs(endX - startX) / 2, 80);
     return `M ${startX} ${startY} C ${startX + curve} ${startY}, ${endX - curve} ${endY}, ${endX} ${endY}`;
   }
@@ -1123,14 +1456,6 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
     }
 
     return Array.from(rows.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }
-
-  goBack() {
-    const selectedTemplate = this.route.snapshot.queryParamMap.get('template');
-    this.router.navigate(
-      ['/dashboard/projects', this.projectId, 'chatbots', this.chatbotId, 'templates'],
-      selectedTemplate ? { queryParams: { template: selectedTemplate } } : undefined
-    );
   }
 
   knowledgeBaseReturnUrl() {

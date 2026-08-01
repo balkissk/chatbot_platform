@@ -1,145 +1,441 @@
-<div class="projects-page">
-  <section class="projects-hero">
-    <div class="hero-glow hero-glow-one"></div>
-    <div class="hero-glow hero-glow-two"></div>
+<div class="projects-page" [attr.aria-busy]="loading() || loadingMore()">
+  <div class="workspace-shell">
+    <main class="workspace-main">
+      <section class="workspace-hero">
+        <div class="hero-content">
+          <span class="workspace-label">Workspace</span>
+          <p class="welcome">&#128075; Welcome back, {{ firstName() }}</p>
+          <h2>Manage your AI Workspaces</h2>
+          <p class="hero-subtitle">Organize projects, assistants, knowledge bases and monitor runtime health.</p>
 
-    <div class="page-header">
-      <div>
-        <p class="eyebrow">Manager workspace</p>
-        <h2>Projects</h2>
-        <p class="muted">Manage your chatbot workspaces, open dashboards, and organize assistants from one place.</p>
-        <div class="summary-chips">
-          <span>{{ totalProjects() }} Project{{ totalProjects() === 1 ? '' : 's' }}</span>
-          <span>{{ totalAssistants() }} Assistant{{ totalAssistants() === 1 ? '' : 's' }}</span>
-          <span>{{ publishedAssistants() }} Published Assistant{{ publishedAssistants() === 1 ? '' : 's' }}</span>
-          <span>{{ draftOnlyAssistants() }} Draft Only</span>
-        </div>
-      </div>
-
-      <div class="header-actions">
-        <button class="primary create-button icon-button-label" type="button" (click)="openCreateModal()">
-          <svg lucidePlus size="18"></svg>
-          <span>New Project</span>
-        </button>
-      </div>
-    </div>
-
-    <div class="hero-toolbar">
-      <div class="search-box">
-        <input
-          [(ngModel)]="search"
-          (ngModelChange)="updateSearch($event)"
-          placeholder="Search projects..."
-        >
-        <button *ngIf="search" class="clear-button" type="button" (click)="resetSearch()">Clear</button>
-        <button class="search-button" type="button" (click)="loadProjects(true)" aria-label="Search projects">
-          <svg lucideSearch size="18"></svg>
-        </button>
-      </div>
-      <strong>{{ projects().length }} shown</strong>
-    </div>
-  </section>
-
-  <p *ngIf="error()" class="error">{{ error() }}</p>
-
-  <section *ngIf="loading() && projects().length === 0" class="grid">
-    <article class="project-card skeleton-card" *ngFor="let item of [1,2,3,4,5,6]"></article>
-  </section>
-
-  <section *ngIf="!loading() && projects().length === 0" class="compact-empty">
-    <h3>No projects found</h3>
-    <p>{{ search.trim() ? 'Try a different search term.' : 'Use the + New Project button to create your first project.' }}</p>
-  </section>
-
-  <section *ngIf="projects().length > 0" class="grid" [class.refreshing]="loading()">
-    <article *ngFor="let p of projects()" class="project-card">
-      <ng-container *ngIf="editingId !== p.id; else editProject">
-        <div class="card-top">
-          <div class="project-identity">
-            <div class="project-avatar">{{ (p.name || 'P').slice(0, 1).toUpperCase() }}</div>
+          <div *ngIf="!initialLoading(); else summarySkeleton" class="hero-metrics" aria-label="Workspace summary">
+            <span><strong>{{ totalProjects() }}</strong> Projects</span>
+            <span><strong>{{ totalAssistants() }}</strong> AI Assistants</span>
+            <span><strong>{{ knowledgeBasesTotal() }}</strong> Knowledge Bases</span>
+            <span><strong>{{ versionTotal() }}</strong> Versions</span>
+            <span class="runtime-pill"><strong>{{ runtimeHealthLabel() }}</strong> Runtime</span>
           </div>
+          <ng-template #summarySkeleton>
+            <div class="hero-metrics skeleton-summary" aria-hidden="true">
+              <span></span><span></span><span></span><span></span><span></span>
+            </div>
+          </ng-template>
+        </div>
 
-          <div class="menu-wrap">
-            <button class="menu-button" type="button" (click)="toggleProjectMenu(p.id)" aria-label="Project actions">
-              <svg lucideEllipsis size="20"></svg>
+        <div class="hero-actions">
+          <button class="workspace-create-button icon-button-label" type="button" (click)="openCreateModal()">
+            <svg lucidePlus size="16"></svg>
+            <span>New Project</span>
+          </button>
+        </div>
+
+        <figure class="hero-illustration" aria-hidden="true">
+          <img src="/assets/illustrations/programming-rafiki.svg" alt="" loading="eager" decoding="async">
+        </figure>
+      </section>
+
+      <section class="project-toolbar" [class.skeleton-toolbar]="initialLoading()">
+        <div class="workspace-search-box">
+          <svg lucideSearch size="16" aria-hidden="true"></svg>
+          <input
+            [(ngModel)]="search"
+            (ngModelChange)="updateSearch($event)"
+            placeholder="Search projects, assistants, knowledge..."
+            aria-label="Search projects">
+          <button *ngIf="search" class="clear-button" type="button" (click)="resetSearch()">Clear</button>
+        </div>
+
+        <div class="toolbar-controls">
+          <button
+            class="secondary toolbar-button workspace-filter-button"
+            [class.active]="activeFilterCount() > 0"
+            type="button"
+            (click)="toggleFilters($event)"
+            [attr.aria-pressed]="filtersOpen()"
+            aria-controls="project-filter-popover"
+            title="Filter projects">
+            <svg lucideFilter size="15"></svg>
+            <span>Filters{{ activeFilterCount() ? ' (' + activeFilterCount() + ')' : '' }}</span>
+          </button>
+          <label class="sort-control">
+            <span>Sort</span>
+            <select [ngModel]="sortMode()" (ngModelChange)="setSortMode($event)" aria-label="Sort projects">
+              <option value="recent">Recent activity</option>
+              <option value="created">Created date</option>
+              <option value="name">Project name</option>
+              <option value="assistants">Assistants</option>
+            </select>
+          </label>
+          <div class="view-toggle" aria-label="View mode">
+            <button
+              class="workspace-view-toggle-button"
+              type="button"
+              [class.active]="viewMode() === 'grid'"
+              [attr.aria-pressed]="viewMode() === 'grid'"
+              (click)="setViewMode('grid')"
+              title="Grid view">
+              <svg lucideGrid2X2 size="15"></svg>
+              <span>Grid</span>
             </button>
-            <div class="dropdown" *ngIf="menuProjectId() === p.id">
-              <button type="button" (click)="startEdit(p)">
-                <svg lucideSettings size="18"></svg>
-                <span>Edit Project</span>
-              </button>
+            <button
+              class="workspace-view-toggle-button"
+              type="button"
+              [class.active]="viewMode() === 'table'"
+              [attr.aria-pressed]="viewMode() === 'table'"
+              (click)="setViewMode('table')"
+              title="Table view">
+              <svg lucideTable2 size="15"></svg>
+              <span>Table</span>
+            </button>
+          </div>
+          <strong class="shown-count">{{ displayedProjects().length }} of {{ totalResults() }} shown</strong>
+        </div>
+      </section>
+
+      <div *ngIf="refreshing()" class="refresh-indicator" role="status" aria-live="polite">
+        <svg lucideRefreshCw size="14"></svg>
+        <span>Refreshing projects...</span>
+      </div>
+
+      <p *ngIf="error() && projects().length > 0" class="error" role="alert">
+        {{ error() }}
+        <button type="button" class="secondary retry-inline" (click)="retryLoadProjects()">Retry</button>
+      </p>
+
+      <section *ngIf="error() && projects().length === 0" class="state-card error-state" role="alert">
+        <div class="state-icon">!</div>
+        <div>
+          <h3>Projects could not be loaded.</h3>
+          <p>Please try again.</p>
+        </div>
+        <button type="button" class="secondary" (click)="retryLoadProjects()">Retry</button>
+      </section>
+
+      <section *ngIf="initialLoading() && viewMode() === 'grid'" class="grid loading-grid" role="status" aria-live="polite">
+        <article class="workspace-project-card skeleton-card" aria-hidden="true" *ngFor="let item of [1,2,3,4]">
+          <div class="skeleton-card-top"></div>
+          <div class="skeleton-line wide"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-footer"></div>
+        </article>
+      </section>
+
+      <section *ngIf="noProjects()" class="state-card empty-state-projects">
+        <div class="state-icon"><svg lucideLayoutDashboard size="22"></svg></div>
+        <div>
+          <h3>No projects yet</h3>
+          <p>Create your first project to start organizing assistants, knowledge, and runtime operations.</p>
+        </div>
+        <button class="primary icon-button-label" type="button" (click)="openCreateModal()">
+          <svg lucidePlus size="15"></svg>
+          <span>Create Project</span>
+        </button>
+      </section>
+
+      <section *ngIf="noResults()" class="state-card no-results-state">
+        <div class="state-icon"><svg lucideSearch size="22"></svg></div>
+        <div>
+          <h3>No projects match your current search and filters.</h3>
+          <p>Adjust the toolbar criteria to show more projects.</p>
+        </div>
+        <div class="state-actions">
+          <button *ngIf="activeFilterCount()" class="secondary" type="button" (click)="clearFilters()">Clear filters</button>
+          <button *ngIf="search.trim()" class="secondary" type="button" (click)="clearSearchOnly()">Clear search</button>
+        </div>
+      </section>
+
+      <section *ngIf="canRenderProjects() && viewMode() === 'grid'" class="grid" [class.refreshing]="refreshing()">
+        <article *ngFor="let p of displayedProjects()" class="workspace-project-card" [class.ready-card]="projectReadiness(p) === 'Ready'" [class.setup-card]="projectReadiness(p) !== 'Ready'">
+          <ng-container *ngIf="editingId !== p.id; else editProject">
+            <div class="card-top">
+              <div class="project-heading">
+                <div class="project-avatar" aria-hidden="true">{{ (p.name || 'P').slice(0, 1).toUpperCase() }}</div>
+                <div class="project-title">
+                  <h3>{{ p.name }}</h3>
+                  <span
+                    class="project-state"
+                    [class.published]="publishedCount(p) > 0 && !isArchived(p)"
+                    [class.archived]="isArchived(p)">
+                    {{ projectStatus(p) }}
+                  </span>
+                </div>
+              </div>
+
               <button
+                class="secondary project-menu-button"
                 type="button"
-                class="danger-link"
-                (click)="deleteProject(p)"
-                [disabled]="deletingId() === p.id">
-                <svg lucideTrash2 size="18"></svg>
-                <span>{{ deletingId() === p.id ? 'Deleting...' : 'Delete' }}</span>
+                (click)="toggleProjectMenu(p, $event)"
+                [attr.aria-expanded]="menuProjectId() === p.id"
+                [attr.aria-label]="'Project actions for ' + p.name"
+                aria-controls="project-actions-menu">
+                <svg lucideEllipsis size="17"></svg>
               </button>
             </div>
+
+            <p class="project-description">{{ p.description || 'No description' }}</p>
+
+            <div class="project-metrics">
+              <span><svg lucideBot size="14"></svg><b>{{ assistantCount(p) }}</b><small>Assistants</small></span>
+              <span><svg lucideCheckCircle2 size="14"></svg><b>{{ publishedCount(p) }}</b><small>Published</small></span>
+              <span><svg lucideActivity size="14"></svg><b>{{ projectReadiness(p) }}</b><small>Health</small></span>
+              <span><svg lucideClock3 size="14"></svg><b>{{ relativeDate(lastActivity(p) || p.created_at) }}</b><small>Activity</small></span>
+            </div>
+
+            <div class="activity-list" *ngIf="projectActivity(p).length">
+              <strong class="activity-heading">Recent Activity</strong>
+              <div class="activity-row" *ngFor="let item of projectActivity(p)" [class]="item.tone">
+                <svg lucideActivity size="13" aria-hidden="true"></svg>
+                <div>
+                  <strong>{{ item.title }}</strong>
+                  <small>{{ item.detail }}</small>
+                </div>
+                <time>{{ relativeDate(item.date) }}</time>
+              </div>
+            </div>
+
+            <div class="card-footer">
+              <button
+                class="workspace-open-button icon-button-label"
+                [disabled]="!canOpenWorkspace(p)"
+                [routerLink]="canOpenWorkspace(p) ? ['/dashboard/projects', p.id] : null"
+                [title]="canOpenWorkspace(p) ? 'Open workspace' : 'Archived projects are management-only until restored'">
+                <svg lucideLayoutDashboard size="16"></svg>
+                <span>Open Workspace</span>
+              </button>
+            </div>
+          </ng-container>
+
+          <ng-template #editProject>
+            <div class="edit-form">
+              <h3>Project settings</h3>
+              <input [(ngModel)]="editName" placeholder="Project name">
+              <input [(ngModel)]="editDescription" placeholder="Description">
+            </div>
+            <div class="card-actions">
+              <button class="primary" (click)="saveProject(p)" [disabled]="savingId() === p.id || !editName.trim()">
+                {{ savingId() === p.id ? 'Saving...' : 'Save' }}
+              </button>
+              <button class="secondary" (click)="cancelEdit()">Cancel</button>
+            </div>
+          </ng-template>
+        </article>
+      </section>
+
+      <section *ngIf="initialLoading() && viewMode() === 'table'" class="projects-table-shell loading-table" role="status" aria-live="polite">
+        <table class="projects-table" aria-hidden="true">
+          <thead>
+            <tr>
+              <th>Project</th>
+              <th class="number-cell">Assistants</th>
+              <th class="number-cell">Published</th>
+              <th class="number-cell">Draft</th>
+              <th>Last activity</th>
+              <th>Created</th>
+              <th>Status</th>
+              <th class="actions-cell">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let item of [1,2,3,4,5]">
+              <td><span class="table-skeleton wide"></span></td>
+              <td><span class="table-skeleton tiny"></span></td>
+              <td><span class="table-skeleton tiny"></span></td>
+              <td><span class="table-skeleton tiny"></span></td>
+              <td><span class="table-skeleton"></span></td>
+              <td><span class="table-skeleton"></span></td>
+              <td><span class="table-skeleton short"></span></td>
+              <td><span class="table-skeleton short"></span></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section *ngIf="canRenderProjects() && viewMode() === 'table'" class="projects-table-shell" [class.refreshing]="refreshing()">
+        <table class="projects-table">
+          <thead>
+            <tr>
+              <th>Project</th>
+              <th class="number-cell">Assistants</th>
+              <th class="number-cell">Published</th>
+              <th class="number-cell">Draft</th>
+              <th>Last activity</th>
+              <th>Created</th>
+              <th>Status</th>
+              <th class="actions-cell">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let p of displayedProjects()">
+              <td>
+                <div class="table-project">
+                  <div class="project-avatar small" aria-hidden="true">{{ (p.name || 'P').slice(0, 1).toUpperCase() }}</div>
+                  <div>
+                    <strong>{{ p.name }}</strong>
+                    <span>{{ p.description || 'No description' }}</span>
+                  </div>
+                </div>
+              </td>
+              <td class="number-cell">{{ assistantCount(p) }}</td>
+              <td class="number-cell">{{ publishedCount(p) }}</td>
+              <td class="number-cell">{{ draftCount(p) }}</td>
+              <td>{{ lastActivity(p) ? (lastActivity(p) | date:'mediumDate') : 'Never' }}</td>
+              <td>{{ p.created_at | date:'mediumDate' }}</td>
+              <td>
+                <span class="project-state" [class.published]="publishedCount(p) > 0 && !isArchived(p)" [class.archived]="isArchived(p)">
+                  {{ projectStatus(p) }}
+                </span>
+              </td>
+              <td class="actions-cell">
+                <button
+                  class="workspace-table-open-button"
+                  [disabled]="!canOpenWorkspace(p)"
+                  [routerLink]="canOpenWorkspace(p) ? ['/dashboard/projects', p.id] : null">
+                  Open
+                </button>
+                <button
+                  class="secondary project-menu-button"
+                  type="button"
+                  (click)="toggleProjectMenu(p, $event)"
+                  [attr.aria-expanded]="menuProjectId() === p.id"
+                  [attr.aria-label]="'Project actions for ' + p.name"
+                  aria-controls="project-actions-menu">
+                  <svg lucideEllipsis size="17"></svg>
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <button
+        *ngIf="projects().length > 0 && hasMore()"
+        class="secondary load-more"
+        (click)="loadMore()"
+        [disabled]="loadingMore()">
+        {{ loadingMore() ? 'Loading more...' : 'Load more projects' }}
+      </button>
+    </main>
+
+    <aside class="workspace-aside" aria-label="Workspace insights">
+      <section class="workspace-health-card">
+        <div class="side-title">
+          <span class="title-icon blue"><svg lucideShieldCheck size="16"></svg></span>
+          <h3>Workspace Health</h3>
+        </div>
+        <div class="health-body">
+          <div class="health-ring" [style.--health-score]="workspaceHealthScore()">
+            <span>{{ workspaceHealthScore() }}%</span>
+          </div>
+          <div class="health-copy">
+            <strong>{{ workspaceHealthState() === 'Healthy' ? 'Excellent' : workspaceHealthState() }}</strong>
+            <p>{{ healthExplanation() }}</p>
+            <small>{{ workspaceHealthState() === 'Healthy' ? 'No critical issues' : 'Attention needed' }}</small>
           </div>
         </div>
+        <a class="side-link visual-only-link">View detailed health <svg lucideArrowRight size="13"></svg></a>
+      </section>
 
-        <div class="project-body">
-          <h3>{{ p.name }}</h3>
-          <p>{{ p.description || 'No description' }}</p>
+      <section class="recent-activity-card">
+        <div class="side-title">
+          <span class="title-icon purple"><svg lucideClock3 size="16"></svg></span>
+          <h3>Recent Activity</h3>
+          <a class="side-action visual-only-link">View all</a>
         </div>
-
-        <div class="project-meta">
-          <div class="meta-row">
-            <span class="meta-icon"><svg lucideBot size="16"></svg></span>
-            <span>{{ (p.assistant_count ?? p.chatbot_count ?? 0) > 0 ? ((p.assistant_count ?? p.chatbot_count ?? 0) + ' assistant' + ((p.assistant_count ?? p.chatbot_count ?? 0) === 1 ? '' : 's')) : 'No assistants yet' }}</span>
-          </div>
-          <div class="meta-row">
-            <span class="meta-icon"><svg lucideGitBranch size="16"></svg></span>
-            <span>{{ (p.published_assistant_count || 0) }} published, {{ (p.draft_only_assistant_count || 0) }} draft only</span>
-          </div>
-          <div class="meta-row">
-            <span class="meta-icon"><svg lucideCalendar size="16"></svg></span>
-            <span>Last activity {{ lastActivity(p) ? (lastActivity(p) | date:'mediumDate') : 'Never' }}</span>
-          </div>
-          <div class="meta-row">
-            <span class="meta-icon"><svg lucideCalendar size="16"></svg></span>
-            <span>Created {{ p.created_at | date:'mediumDate' }}</span>
+        <div class="timeline" *ngIf="recentActivities().length; else noWorkspaceActivity">
+          <div class="timeline-row" *ngFor="let item of recentActivities()" [class]="item.tone">
+            <span class="activity-dot" aria-hidden="true"></span>
+            <div>
+              <strong>{{ item.title }}</strong>
+              <small>{{ item.project?.name || item.detail }}</small>
+            </div>
+            <time>{{ relativeDate(item.date) }}</time>
           </div>
         </div>
+        <ng-template #noWorkspaceActivity>
+          <p class="side-empty">No recent project activity yet.</p>
+        </ng-template>
+      </section>
 
-        <div class="card-footer">
-          <small>{{ projectStatus(p) }}</small>
-          <button class="primary icon-button-label" [routerLink]="['/dashboard/projects', p.id]">
-            <svg lucideLayoutDashboard size="18"></svg>
-            <span>Open Workspace</span>
-            <svg lucideArrowRight size="18"></svg>
-          </button>
+      <section class="ai-insights-card">
+        <div class="side-title">
+          <span class="title-icon indigo"><svg lucideSparkles size="16"></svg></span>
+          <h3>AI Workspace Insights</h3>
+          <a class="side-action visual-only-link">View all</a>
         </div>
-      </ng-container>
+        <div class="insights" *ngIf="workspaceInsights().length; else noWorkspaceInsights">
+          <a
+            class="insight-row"
+            *ngFor="let insight of workspaceInsights()"
+            [class.warning]="insight.tone === 'warning'"
+            [class.danger]="insight.tone === 'danger'"
+            [class.blue]="insight.tone === 'info'"
+            [class.green]="insight.tone === 'muted'"
+            [routerLink]="insight.link || null">
+            <svg *ngIf="insight.tone === 'warning' || insight.tone === 'danger'" lucideTriangleAlert size="15"></svg>
+            <svg *ngIf="insight.tone === 'info'" lucideInfo size="15"></svg>
+            <svg *ngIf="insight.tone === 'muted'" lucideRocket size="15"></svg>
+            <span><strong>{{ insight.title }}</strong><small>{{ insight.description }}</small></span>
+            <em *ngIf="insight.link">{{ insightActionLabel(insight) }}</em>
+          </a>
+        </div>
+        <ng-template #noWorkspaceInsights>
+          <p class="side-empty">No grounded workspace recommendations yet.</p>
+        </ng-template>
+      </section>
+    </aside>
+  </div>
 
-      <ng-template #editProject>
-        <div class="edit-form">
-          <h3>Project settings</h3>
-          <input [(ngModel)]="editName" placeholder="Project name">
-          <input [(ngModel)]="editDescription" placeholder="Description">
-        </div>
-        <div class="card-actions">
-          <button
-            class="primary"
-            (click)="saveProject(p)"
-            [disabled]="savingId() === p.id || !editName.trim()">
-            {{ savingId() === p.id ? 'Saving...' : 'Save' }}
-          </button>
-          <button class="secondary" (click)="cancelEdit()">Cancel</button>
-        </div>
-      </ng-template>
-    </article>
-  </section>
+  <div
+    *ngIf="filtersOpen()"
+    id="project-filter-popover"
+    class="filter-popover"
+    [style.top.px]="filterPosition().top"
+    [style.left.px]="filterPosition().left"
+    (click)="$event.stopPropagation()">
+    <div class="filter-section">
+      <strong>Status</strong>
+      <label><input type="radio" name="statusFilter" value="all" [(ngModel)]="filterStatus"> All</label>
+      <label><input type="radio" name="statusFilter" value="active" [(ngModel)]="filterStatus"> Active</label>
+      <label><input type="radio" name="statusFilter" value="draft" [(ngModel)]="filterStatus"> Draft</label>
+      <label><input type="radio" name="statusFilter" value="archived" [(ngModel)]="filterStatus"> Archived</label>
+    </div>
+    <div class="filter-section">
+      <strong>Activity</strong>
+      <label><input type="radio" name="activityFilter" value="any" [(ngModel)]="filterActivity"> Any time</label>
+      <label><input type="radio" name="activityFilter" value="7" [(ngModel)]="filterActivity"> Last 7 days</label>
+      <label><input type="radio" name="activityFilter" value="30" [(ngModel)]="filterActivity"> Last 30 days</label>
+      <label><input type="radio" name="activityFilter" value="90" [(ngModel)]="filterActivity"> Last 90 days</label>
+    </div>
+    <div class="filter-section">
+      <strong>Assistant count</strong>
+      <label><input type="radio" name="assistantFilter" value="any" [(ngModel)]="filterAssistants"> Any</label>
+      <label><input type="radio" name="assistantFilter" value="none" [(ngModel)]="filterAssistants"> No assistants</label>
+      <label><input type="radio" name="assistantFilter" value="1-5" [(ngModel)]="filterAssistants"> 1-5 assistants</label>
+      <label><input type="radio" name="assistantFilter" value="6-10" [(ngModel)]="filterAssistants"> 6-10 assistants</label>
+      <label><input type="radio" name="assistantFilter" value="10+" [(ngModel)]="filterAssistants"> More than 10</label>
+    </div>
+    <div class="filter-actions">
+      <button type="button" class="secondary" (click)="clearFilters()">Clear all</button>
+      <button type="button" class="primary" (click)="applyFilters()">Apply filters</button>
+    </div>
+  </div>
 
-  <button
-    *ngIf="projects().length > 0 && hasMore()"
-    class="secondary load-more"
-    (click)="loadMore()"
-    [disabled]="loadingMore()">
-    {{ loadingMore() ? 'Loading more...' : 'Load more projects' }}
-  </button>
+  <app-project-actions-menu
+    *ngIf="menuProject() as p"
+    [project]="p"
+    [position]="projectMenuPosition()"
+    [deleting]="deletingId() === p.id"
+    [duplicating]="duplicatingId() === p.id"
+    [archiving]="archivingId() === p.id"
+    [restoring]="restoringId() === p.id"
+    [archived]="isArchived(p)"
+    (closeMenu)="closeProjectMenu()"
+    (renameProject)="openRenameDialog($event)"
+    (duplicateProject)="duplicateProject($event)"
+    (archiveProject)="openArchiveDialog($event)"
+    (restoreProject)="restoreProject($event)"
+    (deleteProject)="openDeleteDialog($event)">
+  </app-project-actions-menu>
 
   <section class="modal-backdrop" *ngIf="createModalOpen()">
     <form class="create-modal" (ngSubmit)="createProject()">
@@ -148,22 +444,55 @@
         <h3>Create project</h3>
         <p>Give this project a clear name and short description.</p>
       </div>
-
-      <label>
-        Project Name
-        <input name="projectName" [(ngModel)]="newProjectName" placeholder="Example: Admissions Assistant" autofocus>
-      </label>
-
-      <label>
-        Description
-        <textarea name="projectDescription" [(ngModel)]="newProjectDescription" placeholder="What is this project for?" rows="4"></textarea>
-      </label>
-
+      <label>Project Name <input name="projectName" [(ngModel)]="newProjectName" placeholder="Example: Admissions Assistant" autofocus></label>
+      <label>Description <textarea name="projectDescription" [(ngModel)]="newProjectDescription" placeholder="What is this project for?" rows="4"></textarea></label>
       <div class="modal-actions">
         <button type="button" class="secondary" (click)="closeCreateModal()">Cancel</button>
-        <button type="submit" class="primary" [disabled]="creating() || !newProjectName.trim()">
-          {{ creating() ? 'Creating...' : 'Create Project' }}
-        </button>
+        <button type="submit" class="primary" [disabled]="creating() || !newProjectName.trim()">{{ creating() ? 'Creating...' : 'Create Project' }}</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="modal-backdrop" *ngIf="renameDialogProject() as project">
+    <form class="project-dialog" (ngSubmit)="confirmRename()">
+      <div>
+        <p class="eyebrow">Project action</p>
+        <h3>Rename project</h3>
+        <p>Update the workspace name and description.</p>
+      </div>
+      <label>Project Name <input name="renameProjectName" [(ngModel)]="renameName" placeholder="Project name" autofocus></label>
+      <label>Description <textarea name="renameProjectDescription" [(ngModel)]="renameDescription" placeholder="Description" rows="3"></textarea></label>
+      <div class="modal-actions">
+        <button type="button" class="secondary" (click)="closeRenameDialog()">Cancel</button>
+        <button type="submit" class="primary" [disabled]="savingId() === project.id || !canSaveRename()">{{ savingId() === project.id ? 'Saving...' : 'Save changes' }}</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="modal-backdrop" *ngIf="deleteDialogProject() as project">
+    <form class="project-dialog danger-dialog" (ngSubmit)="confirmDeleteProject()">
+      <div>
+        <p class="eyebrow">Destructive action</p>
+        <h3>Delete project?</h3>
+        <p>Are you sure you want to delete "{{ project.name }}"? This action cannot be undone.</p>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="secondary" (click)="closeDeleteDialog()">Cancel</button>
+        <button type="submit" class="danger-button" [disabled]="deletingId() === project.id">{{ deletingId() === project.id ? 'Deleting...' : 'Delete project' }}</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="modal-backdrop" *ngIf="archiveDialogProject() as project">
+    <form class="project-dialog" (ngSubmit)="confirmArchiveProject()">
+      <div>
+        <p class="eyebrow">Project lifecycle</p>
+        <h3>Archive project</h3>
+        <p>Archive "{{ project.name }}" without deleting assistants, conversations, versions, or knowledge data.</p>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="secondary" (click)="closeArchiveDialog()">Cancel</button>
+        <button type="submit" class="primary" [disabled]="archivingId() === project.id">{{ archivingId() === project.id ? 'Archiving...' : 'Archive project' }}</button>
       </div>
     </form>
   </section>

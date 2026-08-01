@@ -1,3 +1,4 @@
+import json
 import os
 
 from fastapi import FastAPI
@@ -19,6 +20,8 @@ from routes.health_routes import router as health_router
 from routes.channel_routes import router as channel_router
 from routes.legal_routes import router as legal_router
 from routes.platform_settings_routes import router as platform_settings_router
+from services.ai_provider import AIProviderError, azure_openai_configuration_warnings, validate_ai_configuration, warm_ai_client
+from services.embeddings import EmbeddingError, validate_embedding_configuration
 
 
 DEFAULT_ALLOWED_ORIGINS = [
@@ -43,12 +46,34 @@ openapi_tags = [
 ]
 
 
+def parse_allowed_origins(value: str) -> list[str]:
+    value = value.strip()
+    if not value:
+        return []
+
+    if value.startswith("["):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError("ALLOWED_ORIGINS must be a JSON array or comma-separated list.") from exc
+
+        if not isinstance(parsed, list) or not all(isinstance(origin, str) for origin in parsed):
+            raise ValueError("ALLOWED_ORIGINS JSON value must be a list of strings.")
+        raw_origins = parsed
+    else:
+        raw_origins = value.split(",")
+
+    origins = [origin.strip().rstrip("/") for origin in raw_origins if origin.strip()]
+    if "*" in origins:
+        raise ValueError("Wildcard CORS origins are not allowed when credentials are enabled.")
+    return origins
+
+
 def allowed_origins() -> list[str]:
     configured_origins = []
 
-    for env_name in ("ALLOWED_ORIGINS", "FRONTEND_URL"):
-        value = os.getenv(env_name, "")
-        configured_origins.extend(origin.strip().rstrip("/") for origin in value.split(",") if origin.strip())
+    for env_name in ("ALLOWED_ORIGINS", "FRONTEND_URL", "FRONTEND_BASE_URL"):
+        configured_origins.extend(parse_allowed_origins(os.getenv(env_name, "")))
 
     origins = configured_origins or DEFAULT_ALLOWED_ORIGINS
     return list(dict.fromkeys(origins))
@@ -92,3 +117,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+def validate_external_ai_configuration() -> None:
+    try:
+        validate_ai_configuration()
+        validate_embedding_configuration()
+        warm_ai_client()
+    except (AIProviderError, EmbeddingError) as exc:
+        raise RuntimeError(f"External AI configuration error: {exc}") from exc
+
+    for warning in azure_openai_configuration_warnings():
+        print(f"External AI configuration warning: {warning}")

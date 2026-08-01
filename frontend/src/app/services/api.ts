@@ -17,13 +17,14 @@ export class ApiService {
 
   constructor(private http: HttpClient) {}
 
-  getProjects(search = '', force = false, limit = 50, offset = 0) {
+  getProjects(search = '', force = false, limit = 50, offset = 0, status = '') {
     this.ensureCacheScope();
     const params: any = {};
     if (search.trim()) params.search = search.trim();
+    if (status.trim()) params.status = status.trim();
     params.limit = limit;
     params.offset = offset;
-    const key = `${this.cacheToken}|${search.trim()}|${limit}|${offset}`;
+    const key = `${this.cacheToken}|${search.trim()}|${limit}|${offset}|${status.trim()}`;
     if (force || !this.projectsCache.has(key)) {
       this.projectsCache.set(
         key,
@@ -36,6 +37,27 @@ export class ApiService {
       );
     }
     return this.projectsCache.get(key)!;
+  }
+
+  getProjectsPage(options: any = {}) {
+    this.ensureCacheScope();
+    const params: any = {
+      page: options.page || 1,
+      page_size: options.page_size || 50,
+      sort: options.sort || 'recent_activity'
+    };
+    if (options.search?.trim()) params.search = options.search.trim();
+    if (options.status?.trim()) params.status = options.status.trim();
+    if (options.assistant_range?.trim()) params.assistant_range = options.assistant_range.trim();
+    if (options.created_from) params.created_from = options.created_from;
+    if (options.created_to) params.created_to = options.created_to;
+    if (options.last_activity_from) params.last_activity_from = options.last_activity_from;
+    if (options.last_activity_to) params.last_activity_to = options.last_activity_to;
+    return this.http.get<any>(`${this.baseUrl}/projects/query`, { params }).pipe(
+      tap(response => (response?.items || []).forEach((project: any) => {
+        this.projectCache.set(project.id, of(project).pipe(shareReplay(1)));
+      }))
+    );
   }
 
   getProjectsSummary() {
@@ -54,6 +76,16 @@ export class ApiService {
     return this.projectCache.get(projectId)!;
   }
 
+  getProjectWorkspaceDashboard(projectId: number) {
+    this.ensureCacheScope();
+    return this.http.get<any>(`${this.baseUrl}/projects/${projectId}/workspace-dashboard`);
+  }
+
+  getProjectAnalytics(projectId: number) {
+    this.ensureCacheScope();
+    return this.http.get<any>(`${this.baseUrl}/projects/${projectId}/analytics`);
+  }
+
   createProject(data: any) {
     this.ensureCacheScope();
     return this.http.post(`${this.baseUrl}/projects`, data).pipe(
@@ -68,6 +100,27 @@ export class ApiService {
         this.clearProjectCaches(projectId);
         this.projectCache.set(projectId, of(project).pipe(shareReplay(1)));
       })
+    );
+  }
+
+  duplicateProject(projectId: number) {
+    this.ensureCacheScope();
+    return this.http.post(`${this.baseUrl}/projects/${projectId}/duplicate`, {}).pipe(
+      tap(() => this.clearProjectCaches())
+    );
+  }
+
+  archiveProject(projectId: number) {
+    this.ensureCacheScope();
+    return this.http.put(`${this.baseUrl}/projects/${projectId}/archive`, {}).pipe(
+      tap(() => this.clearProjectCaches(projectId))
+    );
+  }
+
+  restoreProject(projectId: number) {
+    this.ensureCacheScope();
+    return this.http.put(`${this.baseUrl}/projects/${projectId}/restore`, {}).pipe(
+      tap(() => this.clearProjectCaches(projectId))
     );
   }
 
@@ -110,6 +163,10 @@ export class ApiService {
     return this.http.get<any>(`${this.baseUrl}/chatbots/${chatbotId}`);
   }
 
+  getChatbotSetup(chatbotId: number) {
+    return this.http.get<any>(`${this.baseUrl}/chatbots/${chatbotId}/setup`);
+  }
+
   getChatbotAnalytics(chatbotId: number) {
     return this.http.get<any>(`${this.baseUrl}/chatbots/${chatbotId}/analytics`);
   }
@@ -143,6 +200,24 @@ export class ApiService {
 
   updateChatbot(chatbotId: number, data: any) {
     return this.http.put<any>(`${this.baseUrl}/chatbots/${chatbotId}`, data).pipe(
+      tap(() => this.clearChatbotCaches())
+    );
+  }
+
+  updateChatbotSetup(chatbotId: number, data: any) {
+    return this.http.patch<any>(`${this.baseUrl}/chatbots/${chatbotId}/setup`, data).pipe(
+      tap(() => this.clearChatbotCaches())
+    );
+  }
+
+  reapplyAssistantTemplateDraft(chatbotId: number) {
+    return this.http.post<any>(`${this.baseUrl}/chatbots/${chatbotId}/setup/template-draft`, {}).pipe(
+      tap(() => this.clearChatbotCaches())
+    );
+  }
+
+  regenerateAssistantAiDraft(chatbotId: number, data: any) {
+    return this.http.post<any>(`${this.baseUrl}/chatbots/${chatbotId}/setup/ai-draft`, data).pipe(
       tap(() => this.clearChatbotCaches())
     );
   }
@@ -253,8 +328,13 @@ export class ApiService {
     return this.http.get<any[]>(`${this.baseUrl}/flow-templates`);
   }
 
-  applyFlowTemplate(flowId: number, templateKey: string) {
-    return this.http.post<any>(`${this.baseUrl}/flows/${flowId}/template`, { template_key: templateKey });
+  applyFlowTemplate(flowId: number, templateKey: string, purpose?: string) {
+    return this.http.post<any>(`${this.baseUrl}/flows/${flowId}/template`, {
+      template_key: templateKey,
+      ...(purpose ? { purpose } : {})
+    }).pipe(
+      tap(() => this.clearChatbotCaches())
+    );
   }
 
   generateAssistantWithAi(data: any) {
@@ -339,6 +419,85 @@ export class ApiService {
       `${this.baseUrl}/chat`,
       data
     );
+  }
+
+  async chatStream(data: any, onEvent: (event: any) => void) {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (typeof localStorage !== 'undefined') {
+      const token = localStorage.getItem('chatbot_factory_token');
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+    }
+
+    const requestDispatchedAt = Date.now();
+    const response = await fetch(`${this.baseUrl}/chat/stream`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        ...data,
+        client_request_dispatched_at_ms: requestDispatchedAt
+      })
+    });
+
+    if (!response.ok || !response.body) {
+      let detail = 'Chat failed';
+      try {
+        const body = await response.json();
+        detail = body.detail || detail;
+      } catch {}
+      throw new Error(detail);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      buffer = this.consumeStreamingEvents(buffer, onEvent);
+    }
+
+    if (buffer.trim()) {
+      this.consumeStreamingEvents(`${buffer}\n\n`, onEvent);
+    }
+  }
+
+  private consumeStreamingEvents(buffer: string, onEvent: (event: any) => void) {
+    if (buffer.includes('data:')) {
+      const events = buffer.split('\n\n');
+      const remainder = events.pop() || '';
+      for (const rawEvent of events) {
+        const dataLines = rawEvent
+          .split('\n')
+          .filter(line => line.startsWith('data:'))
+          .map(line => line.slice(5).trimStart());
+        if (!dataLines.length) continue;
+        onEvent({
+          ...JSON.parse(dataLines.join('\n')),
+          __frontend_chunk_received_at_ms: this.nowMs()
+        });
+      }
+      return remainder;
+    }
+
+    const lines = buffer.split('\n');
+    const remainder = lines.pop() || '';
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      onEvent({
+        ...JSON.parse(line),
+        __frontend_chunk_received_at_ms: this.nowMs()
+      });
+    }
+    return remainder;
+  }
+
+  private nowMs() {
+    return typeof performance !== 'undefined' ? performance.now() : Date.now();
   }
 
   startChatSession(data: any) {

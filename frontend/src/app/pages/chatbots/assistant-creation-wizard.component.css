@@ -1,12 +1,140 @@
-.wizard-modal{background:linear-gradient(145deg,rgba(255,255,255,.98),rgba(255,255,255,.86));border:1px solid #ddeeee;border-radius:24px;box-shadow:0 24px 80px rgba(24,59,74,.18);max-height:92vh;overflow:auto;padding:24px;position:relative;width:min(900px,96vw)}
+.wizard-modal{background:linear-gradient(145deg,rgba(255,255,255,.98),rgba(255,255,255,.86));border:1px solid #ddeeee;border-radius:18px;box-shadow:0 24px 80px rgba(24,59,74,.18);max-height:92vh;overflow:auto;padding:8px;position:relative;width:min(900px,96vw)}
 .close-button{background:#fff;border:1px solid #ddeeee;border-radius:999px;color:#183b4a;height:38px;min-height:38px;padding:0;position:absolute;right:18px;top:18px;width:38px}
-.wizard-header,.wizard-step{display:grid;gap:16px}.eyebrow{color:#4f7dff;font-size:12px;font-weight:800;letter-spacing:.09em;margin:0 0 7px;text-transform:uppercase}
-h2,h3,p{margin:0}h2{color:#102a3a;font-size:34px;letter-spacing:-.04em;line-height:1}h3{color:#183b4a;font-size:18px;letter-spacing:-.02em}.muted,small{color:#5e7486;line-height:1.55}
+.wizard-header,.wizard-step{display:grid;gap:12px}.eyebrow{color:#4f7dff;font-size:12px;font-weight:800;letter-spacing:.09em;margin:0 0 7px;text-transform:uppercase}
+h2,h3,p{margin:0}h2{color:#102a3a;font-size:28px;letter-spacing:-.04em;line-height:1}h3{color:#183b4a;font-size:18px;letter-spacing:-.02em}.muted,small{color:#5e7486;line-height:1.55}
 .stepper{background:#f8fbfb;border:1px solid #ddeeee;border-radius:18px;display:grid;gap:8px;grid-template-columns:repeat(3,1fr);margin:18px 0;padding:8px}
-.stepper span{border-radius:13px;color:#5e7486;font-size:12px;font-weight:800;padding:10px;text-align:center}.stepper span.active,.stepper span.done{background:#fff;box-shadow:0 8px 18px rgba(24,59,74,.06);color:#0f3d3e}
-.option-grid{display:grid;gap:14px;grid-template-columns:repeat(2,minmax(0,1fr))}.option-card{align-items:flex-start;background:#fff;border:1px solid #ddeeee;border-radius:20px;box-shadow:0 10px 24px rgba(24,59,74,.05);color:#183b4a;display:grid;gap:8px;justify-items:start;min-height:136px;padding:18px;text-align:left;transition:border-color .2s ease,box-shadow .2s ease,transform .2s ease}
-.option-card:hover{transform:translateY(-2px)}.option-card span{align-items:center;background:#eefafa;border-radius:14px;color:#0f3d3e;display:flex;font-size:12px;font-weight:900;height:38px;justify-content:center;width:44px}.option-card.selected{border-color:#76cdcd;box-shadow:0 16px 32px rgba(118,205,205,.16)}
-.form-grid{display:grid;gap:12px;grid-template-columns:repeat(2,minmax(0,1fr))}label{color:#183b4a;display:grid;font-size:13px;font-weight:800;gap:7px}input,select{background:#fff;border:1px solid #ddeeee;border-radius:14px;color:#183b4a;font:inherit;min-width:0;padding:11px 13px}
-.wizard-footer{align-items:center;border-top:1px solid #ddeeee;display:flex;gap:12px;justify-content:flex-end;margin-top:22px;padding-top:16px}button{border:0;border-radius:14px;cursor:pointer;font-weight:800;min-height:40px;padding:10px 14px;transition:box-shadow .2s ease,transform .2s ease}button:hover:not(:disabled){transform:translateY(-1px)}button:disabled{cursor:not-allowed;opacity:.55}
-.primary{background:linear-gradient(135deg,#76cdcd,#8de3e3);border:1px solid rgba(255,255,255,.45);border-radius:18px;box-shadow:0 10px 26px rgba(118,205,205,.28),inset 0 1px 0 rgba(255,255,255,.46);color:#0f3d3e;padding:12px 20px}.secondary{background:rgba(255,255,255,.9);border:1px solid #ddeeee;box-shadow:0 8px 18px rgba(24,59,74,.045);color:#183b4a}
+.stepper span{border-radius:13px;color:#5e7486;font-size:12px;font-weight:800;padding:8px;text-align:center}.stepper span.active,.stepper span.done{background:#fff;box-shadow:0 8px 18px rgba(24,59,74,.06);color:#102a43}
+.option-grid{display:grid;gap:10px;grid-template-columns:repeat(2,minmax(0,1fr))}.option-card{align-items:flex-start;background:#fff;border:1px solid #ddeeee;border-radius:16px;box-shadow:0 10px 24px rgba(24,59,74,.05);color:#183b4a;display:grid;gap:8px;justify-items:start;min-height:104px;padding:8px;text-align:left;transition:border-color .2s ease,box-shadow .2s ease,transform .2s ease}
+.option-card:hover{transform:translateY(-2px)}.option-card span{align-items:center;background:#eaf3ff;border-radius:14px;color:#102a43;display:flex;font-size:12px;font-weight:900;height:38px;justify-content:center;width:44px}.option-card.selected{border-color:#1677FF;box-shadow:0 16px 32px rgba(22,119,255,.14)}
+.option-card:disabled{cursor:not-allowed;opacity:.72;transform:none}.readonly-note{background:#f8fbfb;border:1px solid #ddeeee;border-radius:12px;color:#5e7486;font-size:13px;padding:8px 12px}
+.mode-summary,.mode-workflow{background:#fff;border:1px solid #ddeeee;border-radius:18px;display:grid;gap:10px;padding:8px}.mode-summary span{color:#5e7486;display:block;font-size:12px;font-weight:900;text-transform:uppercase}.mode-summary strong{color:#102a3a;display:block;font-size:22px;margin:5px 0}.mode-workflow .primary{justify-self:start;margin-top:4px}
+.form-grid{display:grid;gap:12px;grid-template-columns:repeat(2,minmax(0,1fr))}label{color:#183b4a;display:grid;font-size:13px;font-weight:800;gap:7px}input,select{background:#fff;border:1px solid #ddeeee;border-radius:14px;color:#183b4a;font:inherit;min-width:0;padding:8px 13px}
+.wizard-footer{align-items:center;border-top:1px solid #ddeeee;display:flex;gap:12px;justify-content:flex-end;margin-top:14px;padding-top:16px}button{border:0;border-radius:14px;cursor:pointer;font-weight:800;min-height:40px;padding:8px 14px;transition:box-shadow .2s ease,transform .2s ease}button:hover:not(:disabled){transform:translateY(-1px)}button:disabled{cursor:not-allowed;opacity:.55}
+.primary{background:linear-gradient(135deg,#1677FF,#0B6BFF);border:1px solid rgba(255,255,255,.45);border-radius:18px;box-shadow:0 10px 26px rgba(22,119,255,.22),inset 0 1px 0 rgba(255,255,255,.46);color:#fff;padding:8px 20px}.secondary{background:rgba(255,255,255,.9);border:1px solid #ddeeee;box-shadow:0 8px 18px rgba(24,59,74,.045);color:#183b4a}.error,.success{border-radius:12px;font-size:13px;font-weight:800;margin:14px 0 0;padding:8px 12px}.error{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c}.success{background:#ecfdf5;border:1px solid #bbf7d0;color:#15803d}
 @media(max-width:900px){.stepper,.option-grid,.form-grid{grid-template-columns:1fr}}@media(max-width:560px){.wizard-footer{align-items:stretch;flex-direction:column}.wizard-footer button{width:100%}}
+
+/* Compact SaaS density overrides */
+.modal-backdrop {
+  align-items: flex-start !important;
+  padding: 72px 16px 24px !important;
+}
+
+.wizard-modal {
+  border-radius: 14px !important;
+  max-height: calc(100vh - 104px) !important;
+  padding: 12px !important;
+  width: min(620px, 90vw) !important;
+}
+
+.close-button {
+  height: 32px;
+  min-height: 32px;
+  right: 14px;
+  top: 14px;
+  width: 32px;
+}
+
+.wizard-header,
+.wizard-step {
+  gap: 8px;
+}
+
+h2 {
+  font-size: clamp(19px, 1.35vw, 22px);
+  letter-spacing: 0;
+  line-height: 1.15;
+}
+
+h3 {
+  font-size: 15px;
+  letter-spacing: 0;
+}
+
+.muted,
+small {
+  font-size: 13px;
+  line-height: 1.42;
+}
+
+.stepper {
+  border-radius: 12px;
+  gap: 4px;
+  margin: 6px 0;
+  padding: 4px;
+}
+
+.stepper span {
+  border-radius: 9px;
+  font-size: 11px;
+  min-height: 28px;
+  padding: 6px;
+}
+
+.option-grid {
+  gap: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.option-card {
+  border-radius: 10px;
+  gap: 4px;
+  min-height: 54px;
+  padding: 7px 9px;
+}
+
+.option-card span {
+  border-radius: 8px;
+  font-size: 11px;
+  height: 26px;
+  width: 30px;
+}
+
+.option-card strong {
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.option-card small {
+  font-size: 10px;
+  line-height: 1.22;
+}
+
+.mode-summary,
+.mode-workflow {
+  border-radius: 12px;
+  gap: 8px;
+  padding: 10px;
+}
+
+.mode-summary strong {
+  font-size: 18px;
+}
+
+.form-grid {
+  gap: 8px;
+}
+
+label {
+  font-size: 12px;
+  gap: 5px;
+}
+
+input,
+select {
+  min-height: 36px;
+  padding: 7px 10px;
+}
+
+.wizard-footer {
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+button,
+.primary,
+.secondary {
+  font-size: 13px;
+  min-height: 32px;
+  padding: 6px 10px;
+}

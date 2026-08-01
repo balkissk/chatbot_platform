@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../services/api';
+import { normalizeAssistantChannel, normalizeAssistantLanguage } from '../../shared/assistant-options';
 
 @Component({
   selector: 'app-ai-generator',
@@ -49,21 +50,22 @@ export class AiGeneratorComponent {
       const chatbot = await firstValueFrom(this.api.getChatbot(this.chatbotId));
       const generated = await firstValueFrom(this.api.generateAssistantWithAi({
         ...this.form,
-        assistant_type: chatbot?.assistant_type || chatbot?.purpose || 'custom'
+        assistant_type: chatbot?.assistant_type || chatbot?.purpose || 'custom',
+        language: normalizeAssistantLanguage(chatbot?.language || 'en')
       }));
       this.generated.set(generated);
 
       const updatePayload = {
         name: this.textValue(generated.assistant_name, chatbot?.name || 'AI Assistant'),
         description: this.textValue(generated.assistant_description, chatbot?.description || ''),
-        language: this.textValue(chatbot?.language, 'en'),
+        language: normalizeAssistantLanguage(chatbot?.language || 'en'),
         type: this.textValue(chatbot?.type, 'builder'),
         purpose: this.textValue(chatbot?.purpose || chatbot?.assistant_type, 'custom'),
         mode: this.textValue(chatbot?.mode, 'builder'),
-        channel: this.textValue(chatbot?.channel, 'web_widget'),
+        channel: normalizeAssistantChannel(chatbot?.channel),
         build_method: 'ai',
         creation_mode: 'ai',
-        template_key: this.textValue(generated.recommended_template, chatbot?.template_key || '')
+        template_key: null
       };
       console.log('Update chatbot payload:', updatePayload);
 

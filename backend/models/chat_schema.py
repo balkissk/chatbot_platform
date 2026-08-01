@@ -7,6 +7,8 @@ class ChatRequest(BaseModel):
     session_id: int | None = None
     current_node_key: str | None = None
     variables: dict | None = None
+    client_send_at_ms: float | None = None
+    client_request_dispatched_at_ms: float | None = None
 
 
 class ChatSessionCreate(BaseModel):

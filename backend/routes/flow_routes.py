@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -8,21 +9,31 @@ from sqlalchemy.orm import Session
 from database.db import SessionLocal
 from models.flow import Flow, FlowNode, FlowTransition
 from models.chatbot import Chatbot
+from models.chatbot_schema import safe_chatbot_language
 from models.flow_schema import BuilderContextResponse, FlowNodeCreate, FlowNodeResponse, FlowNodeUpdate, FlowResponse, FlowTransitionCreate, FlowTransitionResponse, FlowTransitionUpdate
 from models.project import Project
 from models.user import User
 from models.version import VersionChatbot
 from services.auth import require_roles
 from services.ai_provider import AIProviderError, generate_chat_completion
+from services.flow_limits import (
+    MAX_FLOW_NODES,
+    MAX_FLOW_TRANSITIONS,
+    is_valid_canvas_position,
+    normalize_transition_output_key,
+)
 from services.flow_validation import validate_flow_version
-from services.templates import create_starter_flow, replace_flow_with_template, template_options
+from services.generated_flow import ensure_generated_flow_is_valid
+from services.templates import create_starter_flow, replace_flow_with_template, template_generated_payload, template_options
 import uuid
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class FlowTemplateApply(BaseModel):
     template_key: str
+    purpose: str | None = None
 
 
 class AiGenerateRequest(BaseModel):
@@ -30,6 +41,7 @@ class AiGenerateRequest(BaseModel):
     business_context: str
     knowledge_base_description: str | None = None
     assistant_type: str | None = None
+    language: str | None = None
 
 
 class AiGeneratedNode(BaseModel):
@@ -162,8 +174,89 @@ def _has_any(text: str, terms: set[str]) -> bool:
     return False
 
 
+def _extract_safe_http_url(*values: str) -> str:
+    text = " ".join(value or "" for value in values)
+    match = re.search(r"https?://[^\s\"'<>),]+", text)
+    if not match:
+        return ""
+    return match.group(0).rstrip(".,;")
+
+
+def _ensure_canvas_position(position_x: int, position_y: int) -> None:
+    if not is_valid_canvas_position(position_x) or not is_valid_canvas_position(position_y):
+        raise HTTPException(status_code=400, detail="Node position is outside the supported canvas bounds")
+
+
+def _item_value(item, key: str):
+    if isinstance(item, dict):
+        return item.get(key)
+    return getattr(item, key)
+
+
+def _ensure_flow_size(nodes_count: int, transitions_count: int) -> None:
+    if nodes_count > MAX_FLOW_NODES:
+        raise HTTPException(status_code=400, detail=f"Flow cannot exceed {MAX_FLOW_NODES} nodes")
+    if transitions_count > MAX_FLOW_TRANSITIONS:
+        raise HTTPException(status_code=400, detail=f"Flow cannot exceed {MAX_FLOW_TRANSITIONS} transitions")
+
+
+def _ensure_transition_nodes_exist(db: Session, flow_id: int, source_key: str, target_key: str) -> None:
+    source = db.query(FlowNode).filter(
+        FlowNode.flow_id == flow_id,
+        FlowNode.node_key == source_key
+    ).first()
+    target = db.query(FlowNode).filter(
+        FlowNode.flow_id == flow_id,
+        FlowNode.node_key == target_key
+    ).first()
+    if not source or not target:
+        raise HTTPException(status_code=400, detail="Source and target nodes must exist")
+
+
+def _ensure_unique_transition(
+    db: Session,
+    flow_id: int,
+    source_key: str,
+    target_key: str,
+    label: str | None,
+    condition: str | None,
+    transition_id: int | None = None,
+) -> None:
+    output_key = normalize_transition_output_key(label, condition)
+    transitions = db.query(FlowTransition).filter(FlowTransition.flow_id == flow_id).all()
+    for transition in transitions:
+        if transition_id is not None and transition.id == transition_id:
+            continue
+        if (
+            transition.source_node_key == source_key
+            and transition.target_node_key == target_key
+            and normalize_transition_output_key(transition.label, transition.condition) == output_key
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Duplicate transition with the same source, target, and output key",
+            )
+
+
+def _ensure_generated_transition_uniqueness(transitions: list) -> None:
+    seen: set[tuple[str, str, str]] = set()
+    for transition in transitions:
+        key = (
+            _item_value(transition, "source_node_key"),
+            _item_value(transition, "target_node_key"),
+            normalize_transition_output_key(_item_value(transition, "label"), _item_value(transition, "condition")),
+        )
+        if key in seen:
+            raise HTTPException(
+                status_code=400,
+                detail="Duplicate transition with the same source, target, and output key",
+            )
+        seen.add(key)
+
+
 def _analyze_generation_context(goal: str, context: str, knowledge: str) -> dict:
     text = f"{goal} {context} {knowledge}".lower()
+    api_url = _extract_safe_http_url(goal, context, knowledge)
     domain_terms = {
         "education": {"education", "school", "university", "student", "course", "training", "certification", "learning"},
         "healthcare": {"health", "clinic", "patient", "doctor", "medical", "appointment", "care"},
@@ -187,7 +280,8 @@ def _analyze_generation_context(goal: str, context: str, knowledge: str) -> dict
     needs_handoff = _has_any(text, {"handoff", "human", "agent", "escalate", "complex", "support team", "advisor"})
     needs_routing = _has_any(text, {"multiple", "topics", "route", "routing", "department", "category", "intent"})
     needs_booking = _has_any(text, {"appointment", "booking", "schedule", "meeting", "reservation", "consultation"})
-    needs_api = _has_any(text, {"api", "webhook", "external", "ticket", "crm", "create request", "system"})
+    needs_api = bool(api_url) and _has_any(text, {"api", "webhook", "external", "ticket", "crm", "create request", "system"})
+    suggests_api = bool(api_url) or _has_any(text, {"api", "webhook", "external", "ticket", "crm", "create request", "system"})
     needs_condition = needs_lead or _has_any(text, {"if", "score", "eligibility", "qualify", "decision"})
 
     intents = ["answer questions"]
@@ -199,7 +293,7 @@ def _analyze_generation_context(goal: str, context: str, knowledge: str) -> dict
         intents.append("schedule meetings")
     if needs_handoff:
         intents.append("escalate to a human")
-    if needs_api:
+    if suggests_api:
         intents.append("trigger external actions")
 
     variables = ["user_question"]
@@ -223,7 +317,7 @@ def _analyze_generation_context(goal: str, context: str, knowledge: str) -> dict
         blocks.extend(["Confidence Check", "Lead Score"])
     if needs_booking:
         blocks.append("Meeting Scheduler")
-    if needs_api:
+    if suggests_api:
         blocks.append("API Call")
     if needs_handoff:
         blocks.append("Human Handoff")
@@ -255,6 +349,8 @@ def _analyze_generation_context(goal: str, context: str, knowledge: str) -> dict
         "needs_routing": needs_routing,
         "needs_booking": needs_booking,
         "needs_api": needs_api,
+        "suggests_api": suggests_api,
+        "api_url": api_url,
         "needs_condition": needs_condition,
         "suggested_variables": list(dict.fromkeys(variables)),
         "suggested_kb_categories": [
@@ -293,7 +389,11 @@ def _edge(source: str, target: str, label: str = "next", condition: str | None =
     }
 
 
-def _build_generated_flow(welcome_message: str, rag_prompt: str, analysis: dict) -> tuple[list[dict], list[dict]]:
+def _localized_ai_text(language: str, english: str, french: str) -> str:
+    return french if language == "fr" else english
+
+
+def _build_generated_flow(welcome_message: str, rag_prompt: str, analysis: dict, language: str = "en") -> tuple[list[dict], list[dict]]:
     needs_rag = bool(analysis.get("needs_rag"))
     nodes = [_node("start", "message", "Welcome", {"text": welcome_message}, 80, 120)]
     edges = []
@@ -309,24 +409,24 @@ def _build_generated_flow(welcome_message: str, rag_prompt: str, analysis: dict)
 
     if analysis.get("needs_routing"):
         add("router", "ai_router", "AI Router", {
-            "instructions": "Classify the user's intent and route the conversation to the best next step.",
+            "instructions": _localized_ai_text(language, "Classify the user's intent and route the conversation to the best next step.", "Classez l'intention de l'utilisateur et orientez la conversation vers la meilleure prochaine etape."),
             "output_variable": "detected_intent",
             "routes": analysis.get("detected_intents", []),
-            "message": "Let me route your request."
+            "message": _localized_ai_text(language, "Let me route your request.", "Je vais orienter votre demande.")
         })
 
     if analysis.get("needs_lead") or analysis.get("needs_booking") or analysis.get("needs_handoff"):
-        add("collect_name", "collect_name", "Collect Name", {"prompt": "What is your name?", "field": "user_name"})
-        add("collect_email", "collect_email", "Collect Email", {"prompt": "What email should we use?", "field": "user_email"})
+        add("collect_name", "collect_name", "Collect Name", {"prompt": _localized_ai_text(language, "What is your name?", "Quel est votre nom ?"), "field": "user_name"})
+        add("collect_email", "collect_email", "Collect Email", {"prompt": _localized_ai_text(language, "What email should we use?", "Quel email devons-nous utiliser ?"), "field": "user_email"})
 
     if analysis.get("needs_lead") or analysis.get("needs_booking"):
-        add("collect_phone", "collect_phone", "Collect Phone", {"prompt": "What phone number can we use?", "field": "user_phone"})
+        add("collect_phone", "collect_phone", "Collect Phone", {"prompt": _localized_ai_text(language, "What phone number can we use?", "Quel numero de telephone pouvons-nous utiliser ?"), "field": "user_phone"})
 
     if analysis.get("needs_condition"):
         add("lead_score", "lead_score", "Lead Score", {
             "input_variables": ["user_question", "user_email"],
             "score_variable": "lead_score",
-            "message": "I am qualifying this request."
+            "message": _localized_ai_text(language, "I am qualifying this request.", "J'evalue cette demande.")
         })
         add("confidence", "confidence_check", "Confidence Check", {
             "threshold": 0.65,
@@ -344,7 +444,7 @@ def _build_generated_flow(welcome_message: str, rag_prompt: str, analysis: dict)
     if analysis.get("needs_api"):
         add("api", "api_request", "API Call", {
             "method": "POST",
-            "url": "",
+            "url": _compact(analysis.get("api_url")),
             "headers": {},
             "body": {},
             "response_field": "api_response",
@@ -353,7 +453,7 @@ def _build_generated_flow(welcome_message: str, rag_prompt: str, analysis: dict)
         })
 
     add("question", "question", "User Question", {
-        "prompt": "Ask me anything.",
+        "prompt": _localized_ai_text(language, "Ask me anything.", "Posez-moi votre question."),
         "field": "user_question",
         "silent": True,
         "hide_prompt": True
@@ -361,22 +461,22 @@ def _build_generated_flow(welcome_message: str, rag_prompt: str, analysis: dict)
 
     if needs_rag:
         add("knowledge_search", "knowledge_search", "Knowledge Search", {
-            "prompt": "Retrieve relevant knowledge base context for the user's question.",
-            "fallback": "I could not find enough relevant knowledge.",
+            "prompt": _localized_ai_text(language, "Retrieve relevant knowledge base context for the user's question.", "Recuperez le contexte pertinent de la base de connaissances pour la question de l'utilisateur."),
+            "fallback": _localized_ai_text(language, "I could not find enough relevant knowledge.", "Je n'ai pas trouve assez d'informations pertinentes."),
             "use_knowledge_base": True,
             "show_sources": True,
             "continue_rag": False,
             "retrieval_only": True,
-            "message": "Searching knowledge."
+            "message": _localized_ai_text(language, "Searching knowledge.", "Recherche dans les connaissances.")
         })
 
     add("answer", "rag_answer", "AI Answer", {
         "prompt": rag_prompt,
-        "fallback": "I do not have enough information to answer that yet.",
+        "fallback": _localized_ai_text(language, "I do not have enough information to answer that yet.", "Je n'ai pas encore assez d'informations pour repondre."),
         "use_knowledge_base": needs_rag,
         "show_sources": needs_rag,
         "continue_rag": False,
-        "message": "Searching knowledge and preparing an answer." if needs_rag else "Preparing an answer."
+        "message": _localized_ai_text(language, "Searching knowledge and preparing an answer.", "Recherche dans les connaissances et preparation d'une reponse.") if needs_rag else _localized_ai_text(language, "Preparing an answer.", "Preparation d'une reponse.")
     })
 
     edges.append(_edge("answer", "question"))
@@ -395,6 +495,7 @@ def _build_generated_flow(welcome_message: str, rag_prompt: str, analysis: dict)
 
 
 def _fallback_ai_generation(payload: AiGenerateRequest) -> dict:
+    language = safe_chatbot_language(payload.language)
     goal = _compact(payload.assistant_goal, "Help users get accurate answers")
     context = _compact(payload.business_context, "the organization")
     knowledge = _compact(payload.knowledge_base_description)
@@ -403,14 +504,24 @@ def _fallback_ai_generation(payload: AiGenerateRequest) -> dict:
 
     return {
         "assistant_name": assistant_name,
-        "assistant_description": f"Assistant designed to {goal.lower()} for {context}.",
-        "welcome_message": f"Hi. I can help with {analysis['domain_label']} questions and requests. How can I help?",
+        "assistant_description": _localized_ai_text(
+            language,
+            f"Assistant designed to {goal.lower()} for {context}.",
+            f"Assistant concu pour {goal.lower()} pour {context}."
+        ),
+        "welcome_message": _localized_ai_text(
+            language,
+            f"Hi. I can help with {analysis['domain_label']} questions and requests. How can I help?",
+            f"Bonjour. Je peux vous aider avec les questions et demandes liees a {analysis['domain_label']}. Comment puis-je vous aider ?"
+        ),
         "recommended_template": analysis["recommended_flow_type"],
         "rag_prompt": (
-            f"Use the available knowledge base to answer questions about {context}. "
+            ("Always answer in French. " if language == "fr" else "")
+            + f"Use the available knowledge base to answer questions about {context}. "
             f"Assistant goal: {goal}. Be clear, professional, and practical."
         ) if analysis["needs_rag"] else (
-            f"Answer questions for {context}. Assistant goal: {goal}. "
+            ("Always answer in French. " if language == "fr" else "")
+            + f"Answer questions for {context}. Assistant goal: {goal}. "
             "Be clear, professional, and practical."
         ),
         "use_knowledge_base": analysis["needs_rag"],
@@ -420,15 +531,27 @@ def _fallback_ai_generation(payload: AiGenerateRequest) -> dict:
 
 def _normalize_ai_generation(raw: dict, payload: AiGenerateRequest) -> AiGenerateResponse:
     fallback = _fallback_ai_generation(payload)
+    language = safe_chatbot_language(payload.language)
     assistant_name = _compact(raw.get("assistant_name"), fallback["assistant_name"])[:120]
     assistant_description = _compact(raw.get("assistant_description"), fallback["assistant_description"])[:500]
     welcome_message = _compact(raw.get("welcome_message"), fallback["welcome_message"])[:300]
     recommended_template = _compact(raw.get("recommended_template"), fallback["recommended_template"])[:80]
     rag_prompt = _compact(raw.get("rag_prompt"), fallback["rag_prompt"])[:700]
     analysis = {**fallback, **raw}
+    api_url = _extract_safe_http_url(
+        _compact(raw.get("api_url")),
+        payload.assistant_goal,
+        payload.business_context,
+        payload.knowledge_base_description or "",
+    )
+    analysis["api_url"] = api_url
+    analysis["needs_api"] = bool(api_url) and bool(analysis.get("needs_api"))
+    analysis["suggests_api"] = bool(analysis.get("suggests_api") or analysis.get("needs_api") or "API Call" in (analysis.get("suggested_advanced_blocks") or []))
     use_knowledge_base = bool(analysis.get("use_knowledge_base", fallback["use_knowledge_base"]))
     analysis["needs_rag"] = use_knowledge_base
-    nodes, transitions = _build_generated_flow(welcome_message, rag_prompt, analysis)
+    if language == "fr" and "Always answer in French." not in rag_prompt:
+        rag_prompt = f"Always answer in French. {rag_prompt}"
+    nodes, transitions = _build_generated_flow(welcome_message, rag_prompt, analysis, language)
     detected_domain = _string_list(analysis.get("detected_domain") or analysis.get("domain_label") or fallback["domain_label"])[0]
     detected_intents = _string_list(analysis.get("detected_intents") or fallback["detected_intents"])
     suggested_variables = _string_list(analysis.get("suggested_variables") or fallback["suggested_variables"])
@@ -474,6 +597,7 @@ def generate_assistant_with_ai(
 
     prompt = f"""
 Generate a chatbot assistant plan for an enterprise manager.
+Assistant language: {safe_chatbot_language(payload.language)}. Generate all user-facing content in {"French" if safe_chatbot_language(payload.language) == "fr" else "English"}.
 
 Return only valid JSON with these keys:
 - assistant_name
@@ -529,11 +653,12 @@ def get_flow(
     db: Session = Depends(get_db),
     current_user=Depends(require_roles("admin", "manager"))
 ):
-    ensure_version_access(db, version_id, current_user)
+    version = ensure_version_access(db, version_id, current_user)
 
     flow = db.query(Flow).filter(Flow.version_id == version_id).first()
     if not flow:
-        flow = create_starter_flow(db, version_id, "blank")
+        chatbot = db.query(Chatbot).filter(Chatbot.id == version.chatbot_id).first()
+        flow = create_starter_flow(db, version_id, "blank", chatbot.language if chatbot else None)
 
     return flow
 
@@ -565,11 +690,42 @@ def apply_flow_template(
     current_user=Depends(require_roles("admin", "manager"))
 ):
     flow = ensure_flow_access(db, flow_id, current_user)
+    version = db.query(VersionChatbot).filter(VersionChatbot.id == flow.version_id).first()
+    chatbot = db.query(Chatbot).filter(Chatbot.id == version.chatbot_id).first() if version else None
+    language = chatbot.language if chatbot else None
 
     try:
-        return replace_flow_with_template(db, flow, payload.template_key)
+        nodes, transitions = template_generated_payload(payload.template_key, language)
+        _ensure_flow_size(len(nodes), len(transitions))
+        for node in nodes:
+            _ensure_canvas_position(_item_value(node, "position_x"), _item_value(node, "position_y"))
+        _ensure_generated_transition_uniqueness(transitions)
+        ensure_generated_flow_is_valid(
+            db,
+            version.chatbot_id if version else 0,
+            nodes,
+            transitions,
+            payload.template_key,
+        )
+        saved_flow = replace_flow_with_template(db, flow, payload.template_key, language)
+        if version:
+            if chatbot and chatbot.build_method == "template":
+                chatbot.template_key = payload.template_key
+                chatbot.source_template_key = payload.template_key
+                chatbot.source_template_version = None
+                if payload.purpose:
+                    chatbot.purpose = payload.purpose
+                db.commit()
+                db.refresh(saved_flow)
+        return saved_flow
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        logger.warning(
+            "Template apply failed for flow_id=%s template_key=%s: %s",
+            flow_id,
+            payload.template_key,
+            exc,
+        )
+        raise HTTPException(status_code=400, detail="Template could not be applied")
 
 
 @router.post("/flows/{flow_id}/generated", response_model=FlowResponse)
@@ -580,21 +736,28 @@ def apply_generated_flow(
     current_user=Depends(require_roles("admin", "manager"))
 ):
     flow = ensure_flow_access(db, flow_id, current_user)
-
-    node_keys = {node.key for node in payload.nodes}
-    if "start" not in node_keys:
-        raise HTTPException(status_code=400, detail="Generated flow must include a start node")
-
-    for transition in payload.transitions:
-        if transition.source_node_key not in node_keys or transition.target_node_key not in node_keys:
-            raise HTTPException(status_code=400, detail="Generated transitions must reference generated nodes")
+    version = db.query(VersionChatbot).filter(VersionChatbot.id == flow.version_id).first()
+    _ensure_flow_size(len(payload.nodes), len(payload.transitions))
+    for node in payload.nodes:
+        _ensure_canvas_position(node.position_x, node.position_y)
+    _ensure_generated_transition_uniqueness(payload.transitions)
+    try:
+        nodes, transitions = ensure_generated_flow_is_valid(
+            db,
+            version.chatbot_id if version else 0,
+            payload.nodes,
+            payload.transitions,
+            payload.name or "AI Generated Assistant",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
     db.query(FlowTransition).filter(FlowTransition.flow_id == flow.id).delete()
     db.query(FlowNode).filter(FlowNode.flow_id == flow.id).delete()
     flow.name = payload.name or "AI Generated Assistant"
     db.flush()
 
-    for node in payload.nodes:
+    for node in nodes:
         db.add(FlowNode(
             flow_id=flow.id,
             node_key=node.key,
@@ -605,7 +768,7 @@ def apply_generated_flow(
             position_y=node.position_y,
         ))
 
-    for transition in payload.transitions:
+    for transition in transitions:
         db.add(FlowTransition(
             flow_id=flow.id,
             source_node_key=transition.source_node_key,
@@ -642,13 +805,14 @@ def get_chatbot_builder(
 
     flow = db.query(Flow).filter(Flow.version_id == version.id).first()
     if not flow:
-        flow = create_starter_flow(db, version.id, "blank")
+        flow = create_starter_flow(db, version.id, "blank", chatbot.language)
 
     return {
         "chatbot": {
             "id": chatbot.id,
             "name": chatbot.name,
             "description": chatbot.description,
+            "language": safe_chatbot_language(chatbot.language),
             "purpose": chatbot.purpose,
             "mode": chatbot.mode,
             "channel": chatbot.channel
@@ -670,6 +834,10 @@ def create_node(
     current_user=Depends(require_roles("admin", "manager"))
 ):
     flow = ensure_flow_access(db, flow_id, current_user)
+    node_count = db.query(FlowNode).filter(FlowNode.flow_id == flow.id).count()
+    if node_count >= MAX_FLOW_NODES:
+        raise HTTPException(status_code=400, detail=f"Flow cannot exceed {MAX_FLOW_NODES} nodes")
+    _ensure_canvas_position(payload.position_x, payload.position_y)
 
     node = FlowNode(
         flow_id=flow_id,
@@ -696,6 +864,9 @@ def update_node(
     current_user=Depends(require_roles("admin", "manager"))
 ):
     node = ensure_node_access(db, node_id, current_user)
+    position_x = payload.position_x if payload.position_x is not None else node.position_x
+    position_y = payload.position_y if payload.position_y is not None else node.position_y
+    _ensure_canvas_position(position_x, position_y)
 
     if payload.label is not None:
         node.label = payload.label
@@ -741,17 +912,19 @@ def create_transition(
     current_user=Depends(require_roles("admin", "manager"))
 ):
     flow = ensure_flow_access(db, flow_id, current_user)
+    transition_count = db.query(FlowTransition).filter(FlowTransition.flow_id == flow.id).count()
+    if transition_count >= MAX_FLOW_TRANSITIONS:
+        raise HTTPException(status_code=400, detail=f"Flow cannot exceed {MAX_FLOW_TRANSITIONS} transitions")
 
-    source = db.query(FlowNode).filter(
-        FlowNode.flow_id == flow_id,
-        FlowNode.node_key == payload.source_node_key
-    ).first()
-    target = db.query(FlowNode).filter(
-        FlowNode.flow_id == flow_id,
-        FlowNode.node_key == payload.target_node_key
-    ).first()
-    if not source or not target:
-        raise HTTPException(status_code=400, detail="Source and target nodes must exist")
+    _ensure_transition_nodes_exist(db, flow_id, payload.source_node_key, payload.target_node_key)
+    _ensure_unique_transition(
+        db,
+        flow_id,
+        payload.source_node_key,
+        payload.target_node_key,
+        payload.label,
+        payload.condition,
+    )
 
     transition = FlowTransition(
         flow_id=flow_id,
@@ -775,6 +948,20 @@ def update_transition(
     current_user=Depends(require_roles("admin", "manager"))
 ):
     transition = ensure_transition_access(db, transition_id, current_user)
+    source_key = payload.source_node_key if payload.source_node_key is not None else transition.source_node_key
+    target_key = payload.target_node_key if payload.target_node_key is not None else transition.target_node_key
+    label = payload.label if payload.label is not None else transition.label
+    condition = payload.condition if payload.condition is not None else transition.condition
+    _ensure_transition_nodes_exist(db, transition.flow_id, source_key, target_key)
+    _ensure_unique_transition(
+        db,
+        transition.flow_id,
+        source_key,
+        target_key,
+        label,
+        condition,
+        transition_id=transition.id,
+    )
 
     if payload.source_node_key is not None:
         transition.source_node_key = payload.source_node_key

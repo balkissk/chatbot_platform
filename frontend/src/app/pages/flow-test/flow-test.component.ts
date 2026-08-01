@@ -20,7 +20,7 @@ export class FlowTestComponent implements OnInit {
 
   context = signal<any | null>(null);
   sessionId = signal<number | undefined>(undefined);
-  messages = signal<{ role: 'user' | 'bot'; text: string; options?: string[]; mode?: string; retrievalMode?: string; sources?: any[] }[]>([]);
+  messages = signal<{ role: 'user' | 'bot'; text: string; options?: string[]; mode?: string; retrievalMode?: string; sources?: any[]; failed?: boolean; streaming?: boolean; pending?: boolean }[]>([]);
   input = '';
   loading = signal(false);
   error = signal('');
@@ -87,37 +87,123 @@ export class FlowTestComponent implements OnInit {
     });
   }
 
-  send(option?: string) {
+  async send(option?: string) {
+    if (this.loading()) return;
+
     const text = option || this.input.trim();
     if (!text) return;
 
-    if (text !== '__start__') {
-      this.messages.update(messages => [...messages, { role: 'user', text }]);
-      this.queueChatUiUpdate();
-    }
+    const requestStartedAt = this.nowMs();
+    const clientSendEpochMs = Date.now();
+    const shouldShowUserMessage = text !== '__start__';
+    this.messages.update(messages => [
+      ...messages,
+      ...(shouldShowUserMessage ? [{ role: 'user' as const, text }] : []),
+      { role: 'bot' as const, text: '', streaming: true, pending: true }
+    ]);
+    this.queueChatUiUpdate();
     this.input = '';
     this.loading.set(true);
     this.error.set('');
     this.errorInfo.set(null);
 
-    this.api.chat({
-      chatbot_id: this.chatbotId,
-      version_id: this.context()?.version?.id,
-      session_id: this.sessionId(),
-      message: text === '__start__' ? '' : text
-    }).subscribe({
-      next: result => {
-        this.sessionId.set(result.session_id);
-        this.messages.update(messages => [...messages, ...this.toBotMessages(result)]);
+    let requestPreparedMs = 0;
+    let firstFrontendChunkReceivedMs: number | null = null;
+    let firstTokenRenderedMs: number | null = null;
+    const streamingIndex = this.messages().length - 1;
+
+    try {
+      const payload = {
+        chatbot_id: this.chatbotId,
+        version_id: this.context()?.version?.id,
+        session_id: this.sessionId(),
+        message: text === '__start__' ? '' : text,
+        client_send_at_ms: clientSendEpochMs
+      };
+      requestPreparedMs = this.nowMs() - requestStartedAt;
+      await this.api.chatStream(payload, event => {
+        if (event.type === 'start') {
+          this.sessionId.set(event.session_id);
+          return;
+        }
+
+        if (event.type === 'token') {
+          if (firstFrontendChunkReceivedMs === null) {
+            firstFrontendChunkReceivedMs = (event.__frontend_chunk_received_at_ms || this.nowMs()) - requestStartedAt;
+          }
+          this.messages.update(messages => messages.map((item, index) => (
+            index === streamingIndex
+              ? { ...item, text: `${item.text}${event.text || ''}`, pending: false }
+              : item
+          )));
+          if (firstTokenRenderedMs === null) {
+            requestAnimationFrame(() => {
+              if (firstTokenRenderedMs === null) {
+                firstTokenRenderedMs = this.nowMs() - requestStartedAt;
+              }
+            });
+          }
+          this.queueChatUiUpdate();
+          return;
+        }
+
+        if (event.type === 'final') {
+          this.sessionId.set(event.session_id);
+          const botMessages = this.toBotMessages(event);
+          this.messages.update(messages => {
+            return [
+              ...messages.slice(0, streamingIndex),
+              ...botMessages,
+              ...messages.slice(streamingIndex + 1)
+            ];
+          });
+          if (firstTokenRenderedMs === null && firstFrontendChunkReceivedMs !== null) {
+            firstTokenRenderedMs = this.nowMs() - requestStartedAt;
+          }
+          this.logLatency('final', {
+            frontend_request_preparation_ms: Math.round(requestPreparedMs),
+            frontend_first_chunk_received_ms: firstFrontendChunkReceivedMs === null ? null : Math.round(firstFrontendChunkReceivedMs),
+            frontend_first_token_render_ms: firstTokenRenderedMs === null ? null : Math.round(firstTokenRenderedMs),
+            frontend_total_ms: Math.round(this.nowMs() - requestStartedAt),
+            backend: event.latency || {}
+          });
+          this.loading.set(false);
+          this.queueChatUiUpdate();
+          return;
+        }
+
+        if (event.type === 'error') {
+          throw new Error(event.detail || 'Flow test failed.');
+        }
+      });
+      if (this.loading()) {
         this.loading.set(false);
-        this.queueChatUiUpdate();
-      },
-      error: err => {
-        this.setFriendlyError(err, '', 'Flow test failed.');
-        this.loading.set(false);
-        this.queueChatUiUpdate();
       }
-    });
+    } catch (err: any) {
+      this.setFriendlyError(err, '', 'Flow test failed.');
+      const issue = this.errorInfo();
+      if (text !== '__start__' && issue) {
+        this.messages.update(messages => {
+          const next = messages.filter((_, index) => index !== streamingIndex);
+          return [
+            ...next,
+            {
+              role: 'bot',
+              text: issue.message,
+              failed: true
+            }
+          ];
+        });
+      }
+      this.logLatency('error', {
+        frontend_request_preparation_ms: Math.round(requestPreparedMs),
+        frontend_first_chunk_received_ms: firstFrontendChunkReceivedMs === null ? null : Math.round(firstFrontendChunkReceivedMs),
+        frontend_first_token_render_ms: firstTokenRenderedMs === null ? null : Math.round(firstTokenRenderedMs),
+        frontend_total_ms: Math.round(this.nowMs() - requestStartedAt)
+      });
+      this.loading.set(false);
+      this.queueChatUiUpdate();
+    }
   }
 
   private toBotMessages(result: any) {
@@ -160,6 +246,10 @@ export class FlowTestComponent implements OnInit {
     return this.context()?.chatbot?.rag_settings?.show_sources !== false;
   }
 
+  hasStreamingResponse() {
+    return this.messages().some(item => item.streaming);
+  }
+
   senderLabel(item: { role: 'user' | 'bot' }) {
     return item.role === 'user' ? 'User' : 'Assistant';
   }
@@ -174,6 +264,17 @@ export class FlowTestComponent implements OnInit {
       }
       this.messageInput?.nativeElement?.focus();
     });
+  }
+
+  private nowMs() {
+    return this.isBrowser && typeof performance !== 'undefined'
+      ? performance.now()
+      : Date.now();
+  }
+
+  private logLatency(status: string, metrics: any) {
+    if (!this.isBrowser) return;
+    console.info('ChatBot Factory Test Flow latency', { status, ...metrics });
   }
 
   private setFriendlyError(err: any, preferredTitle: string, fallback: string) {

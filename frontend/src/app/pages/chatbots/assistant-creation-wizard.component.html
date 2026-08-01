@@ -72,7 +72,7 @@
       </div>
     </section>
 
-    <section *ngIf="currentStep() === 2" class="wizard-step">
+    <section *ngIf="currentStep() === 2 && !editMode" class="wizard-step">
       <div>
         <p class="eyebrow">Step 2</p>
         <h3>How do you want to start?</h3>
@@ -83,6 +83,7 @@
           class="option-card"
           type="button"
           [class.selected]="state.creation_mode === 'scratch'"
+          [disabled]="creationModeReadonly"
           (click)="selectCreationMode('scratch')">
           <span>ST</span>
           <strong>Start From Scratch</strong>
@@ -92,6 +93,7 @@
           class="option-card"
           type="button"
           [class.selected]="state.creation_mode === 'template'"
+          [disabled]="creationModeReadonly"
           (click)="selectCreationMode('template')">
           <span>TP</span>
           <strong>Use Template</strong>
@@ -101,11 +103,67 @@
           class="option-card"
           type="button"
             [class.selected]="state.creation_mode === 'ai'"
+            [disabled]="creationModeReadonly"
             (click)="selectCreationMode('ai')">
             <span>AI</span>
             <strong>Build With AI</strong>
             <small>Describe your goal and generate a ready-to-edit assistant flow.</small>
           </button>
+      </div>
+    </section>
+
+    <section *ngIf="currentStep() === 2 && editMode" class="wizard-step">
+      <div>
+        <p class="eyebrow">Step 2</p>
+        <h3>Original creation mode</h3>
+        <div class="mode-summary">
+          <div>
+            <span>Original creation mode</span>
+            <strong>{{ creationModeLabel() }}</strong>
+            <p>Creation mode is fixed after assistant creation.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="mode-workflow" *ngIf="state.creation_mode === 'scratch'">
+        <p class="eyebrow">Update workflow</p>
+        <h3>Manual flow editing</h3>
+        <p class="muted">Continue editing the existing flow manually in Flow Builder. This does not replace or reset the flow.</p>
+        <button class="primary" type="button" (click)="requestOpenFlowBuilder()">Open Flow Builder</button>
+      </div>
+
+      <div class="mode-workflow" *ngIf="state.creation_mode === 'template'">
+        <p class="eyebrow">Template</p>
+        <h3>{{ templateStatusTitle() }}</h3>
+        <p class="muted" *ngIf="templateUpdateAvailable">Create a new draft version from the original template. Published versions, conversations, runtime logs, and Knowledge Base documents are preserved.</p>
+        <p class="muted" *ngIf="!templateUpdateAvailable && sourceTemplateKey">The original template key is recorded, but the template no longer exists in the catalog.</p>
+        <p class="muted" *ngIf="!templateUpdateAvailable && !sourceTemplateKey">The original template key was not persisted, so template reapplication is disabled for this legacy assistant.</p>
+        <button class="primary" type="button" (click)="requestTemplateDraft()" [disabled]="!templateUpdateAvailable || submitting">
+          Update from Template
+        </button>
+      </div>
+
+      <div class="mode-workflow" *ngIf="state.creation_mode === 'ai'">
+        <p class="eyebrow">Update workflow</p>
+        <h3>Regenerate Draft with AI</h3>
+        <p class="muted">Generate a new draft flow for review. The published version and previous versions are preserved.</p>
+        <div class="form-grid">
+          <label>
+            Assistant instructions
+            <input [ngModel]="state.assistant_goal" (ngModelChange)="updateField('assistant_goal', $event)" placeholder="Describe what this assistant should accomplish">
+          </label>
+          <label>
+            Business context
+            <input [ngModel]="state.business_context" (ngModelChange)="updateField('business_context', $event)" placeholder="Describe the business, users, and process">
+          </label>
+          <label>
+            Knowledge Base context
+            <input [ngModel]="state.knowledge_base_description" (ngModelChange)="updateField('knowledge_base_description', $event)" placeholder="Optional: describe uploaded knowledge or expected sources">
+          </label>
+        </div>
+        <button class="primary" type="button" (click)="requestAiDraft()" [disabled]="!canRegenerateAi()">
+          Regenerate Draft with AI
+        </button>
       </div>
     </section>
 
@@ -118,28 +176,36 @@
       <div class="form-grid">
         <label>
           Assistant Name
-          <input [(ngModel)]="state.name" placeholder="Support assistant" required>
+          <input [ngModel]="state.name" (ngModelChange)="updateField('name', $event)" placeholder="Support assistant" required>
         </label>
         <label>
           Description
-          <input [(ngModel)]="state.description" placeholder="Helps users with common questions">
+          <input [ngModel]="state.description" (ngModelChange)="updateField('description', $event)" placeholder="Helps users with common questions">
         </label>
         <label>
           Language
-          <select [(ngModel)]="state.language" required>
-            <option value="fr">French</option>
-            <option value="en">English</option>
-            <option value="ar">Arabic</option>
+          <select [ngModel]="state.language" (ngModelChange)="updateField('language', $event)" required>
+            <option *ngFor="let option of languageOptions" [value]="option.value">{{ option.label }}</option>
           </select>
+        </label>
+        <label>
+          Channel
+          <select [ngModel]="state.channel" (ngModelChange)="updateField('channel', $event)" required>
+            <option *ngFor="let option of channelOptions" [value]="option.value">{{ option.label }}</option>
+          </select>
+          <small>{{ selectedChannelDescription() }}</small>
         </label>
       </div>
     </section>
+
+    <p *ngIf="errorMessage" class="error">{{ errorMessage }}</p>
+    <p *ngIf="successMessage" class="success">{{ successMessage }}</p>
 
     <div class="wizard-footer">
       <button class="secondary" type="button" (click)="goBack()" [disabled]="currentStep() === 1 || submitting">Back</button>
       <button class="secondary" type="button" (click)="close()" [disabled]="submitting">Cancel</button>
       <button *ngIf="currentStep() < 3" class="primary" type="button" (click)="goNext()" [disabled]="!canContinue() || submitting">Next</button>
-      <button *ngIf="currentStep() === 3" class="primary" type="button" (click)="finish()" [disabled]="!canContinue() || submitting">
+      <button *ngIf="currentStep() === 3" class="primary" type="button" (click)="finish()" [disabled]="!canFinish() || submitting">
         {{ submitting ? submittingLabel : finishLabel }}
       </button>
     </div>

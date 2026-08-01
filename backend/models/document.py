@@ -15,6 +15,7 @@ class Document(Base):
     content_type = Column(String)
     storage_url = Column(String)
     raw_text = Column(Text, nullable=True)
+    content_hash = Column(String, nullable=True, index=True)
     size_bytes = Column(Integer, default=0)
     status = Column(String, default="processed")
     error_message = Column(Text, nullable=True)

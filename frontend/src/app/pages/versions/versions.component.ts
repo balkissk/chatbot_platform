@@ -1,5 +1,5 @@
 import { CommonModule, isPlatformBrowser } from '@angular/common';
-import { Component, Inject, OnInit, PLATFORM_ID, signal } from '@angular/core';
+import { Component, HostListener, Inject, OnInit, PLATFORM_ID, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { ApiService } from '../../services/api';
@@ -35,6 +35,13 @@ export class VersionsComponent implements OnInit {
   creating = signal(false);
   actionId = signal<number | undefined>(undefined);
   error = signal('');
+  pendingConfirm = signal<{
+    type: 'version' | 'document';
+    item: any;
+    title: string;
+    message: string;
+    actionLabel: string;
+  } | null>(null);
   private isBrowser: boolean;
   aiInstructions = {
     model: 'llama3',
@@ -168,12 +175,21 @@ export class VersionsComponent implements OnInit {
   }
 
   deleteVersion(version: any) {
-    if (!confirm(`Delete version ${version.version_number}?`)) return;
+    this.pendingConfirm.set({
+      type: 'version',
+      item: version,
+      title: 'Delete version?',
+      message: `Are you sure you want to delete version ${version.version_number}? This action cannot be undone.`,
+      actionLabel: 'Delete version'
+    });
+  }
 
+  private deleteVersionNow(version: any) {
     this.actionId.set(version.id);
     this.api.deleteVersion(version.id).subscribe({
       next: () => {
         this.actionId.set(undefined);
+        this.pendingConfirm.set(null);
         this.loadVersions();
       },
       error: err => {
@@ -280,10 +296,19 @@ export class VersionsComponent implements OnInit {
   }
 
   deleteDocument(document: any) {
-    if (!confirm(`Delete document "${document.filename}"?`)) return;
+    this.pendingConfirm.set({
+      type: 'document',
+      item: document,
+      title: 'Delete document?',
+      message: `Are you sure you want to delete "${document.filename}"? This action cannot be undone.`,
+      actionLabel: 'Delete document'
+    });
+  }
 
+  private deleteDocumentNow(document: any) {
     this.api.deleteDocument(document.id).subscribe({
       next: () => {
+        this.pendingConfirm.set(null);
         const selectedVersionId = this.selectedVersionId();
         if (selectedVersionId) this.loadDocuments(selectedVersionId);
       },
@@ -291,6 +316,28 @@ export class VersionsComponent implements OnInit {
         this.uploadError.set(err.error?.detail || 'Could not delete document');
       }
     });
+  }
+
+  cancelPendingConfirm() {
+    const pending = this.pendingConfirm();
+    if (!pending) return;
+    if (pending.type === 'version' && this.actionId() === pending.item.id) return;
+    this.pendingConfirm.set(null);
+  }
+
+  confirmPendingAction() {
+    const pending = this.pendingConfirm();
+    if (!pending) return;
+    if (pending.type === 'version') {
+      this.deleteVersionNow(pending.item);
+      return;
+    }
+    this.deleteDocumentNow(pending.item);
+  }
+
+  @HostListener('document:keydown.escape')
+  onEscape() {
+    this.cancelPendingConfirm();
   }
 
   onFileSelected(event: Event) {

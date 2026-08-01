@@ -15,7 +15,7 @@
 }
 
 .eyebrow {
-  color: #36ADA3;
+  color: #1677FF;
   font-size: 12px;
   font-weight: 700;
   margin: 0 0 4px;
@@ -39,7 +39,7 @@ small {
 }
 
 button {
-  background: #36ADA3;
+  background: #1677FF;
   border: 0;
   border-radius: 6px;
   color: white;
@@ -94,7 +94,7 @@ select {
 .knowledge-stats article {
   background:
     linear-gradient(#fff, #fff) padding-box,
-    linear-gradient(135deg, rgba(54, 173, 163, .85), rgba(139, 92, 246, .65)) border-box;
+    linear-gradient(135deg, rgba(22, 119, 255, .85), rgba(139, 92, 246, .65)) border-box;
   border: 1px solid transparent;
   border-radius: 14px;
   box-shadow: 0 14px 34px rgba(20, 76, 104, .07);
@@ -129,7 +129,7 @@ select {
 }
 
 .file-control span {
-  color: #36ADA3;
+  color: #1677FF;
   font-weight: 700;
 }
 
@@ -179,7 +179,7 @@ select {
 }
 
 .document-row.selected {
-  border-color: #36ADA3;
+  border-color: #1677FF;
 }
 
 .document-main {
@@ -203,10 +203,10 @@ select {
 
 .status-pill,
 .score-pill {
-  background: #eaf8f7;
-  border: 1px solid #a9ded9;
+  background: #EAF3FF;
+  border: 1px solid #D5E6FF;
   border-radius: 999px;
-  color: #207c75;
+  color: #1677FF;
   display: inline-flex;
   font-size: 12px;
   font-weight: 800;
@@ -245,9 +245,9 @@ select {
 }
 
 .mode-pill {
-  background: #eaf8f7;
+  background: #EAF3FF;
   border-radius: 999px;
-  color: #36ADA3;
+  color: #1677FF;
   display: inline-block;
   font-weight: 700;
   margin: 0;
@@ -264,7 +264,7 @@ select {
 }
 
 .success {
-  color: #36ADA3;
+  color: #15803d;
 }
 
 @media (max-width: 980px) {
