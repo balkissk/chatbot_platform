@@ -22,7 +22,9 @@ from routes.legal_routes import router as legal_router
 from routes.platform_settings_routes import router as platform_settings_router
 from services.ai_provider import AIProviderError, azure_openai_configuration_warnings, validate_ai_configuration, warm_ai_client
 from services.embeddings import EmbeddingError, validate_embedding_configuration
+from config.settings import load_environment
 
+load_environment()
 
 DEFAULT_ALLOWED_ORIGINS = [
     "http://localhost:4200",
