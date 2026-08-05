@@ -25,7 +25,7 @@
 
       <div class="option-grid purpose-grid">
         <button
-          class="option-card"
+          class="option-card secondary"
           type="button"
           [class.selected]="state.assistant_type === 'customer_support'"
           (click)="selectAssistantType('customer_support')">
@@ -34,7 +34,7 @@
           <small>Answer customer questions and escalate complex issues.</small>
         </button>
         <button
-          class="option-card"
+          class="option-card secondary"
           type="button"
           [class.selected]="state.assistant_type === 'employee_knowledge'"
           (click)="selectAssistantType('employee_knowledge')">
@@ -43,7 +43,7 @@
           <small>Help employees search internal company knowledge.</small>
         </button>
         <button
-          class="option-card"
+          class="option-card secondary"
           type="button"
           [class.selected]="state.assistant_type === 'training_certification'"
           (click)="selectAssistantType('training_certification')">
@@ -52,7 +52,7 @@
           <small>Recommend courses and Microsoft certification programs.</small>
         </button>
         <button
-          class="option-card"
+          class="option-card secondary"
           type="button"
           [class.selected]="state.assistant_type === 'lead_generation'"
           (click)="selectAssistantType('lead_generation')">
@@ -61,7 +61,7 @@
           <small>Capture leads and qualify potential customers.</small>
         </button>
         <button
-          class="option-card"
+          class="option-card secondary"
           type="button"
           [class.selected]="state.assistant_type === 'custom'"
           (click)="selectAssistantType('custom')">
@@ -80,7 +80,7 @@
 
       <div class="option-grid">
         <button
-          class="option-card"
+          class="option-card secondary"
           type="button"
           [class.selected]="state.creation_mode === 'scratch'"
           [disabled]="creationModeReadonly"
@@ -90,7 +90,7 @@
           <small>Open an empty Flow Builder and design the assistant manually.</small>
         </button>
         <button
-          class="option-card"
+          class="option-card secondary"
           type="button"
           [class.selected]="state.creation_mode === 'template'"
           [disabled]="creationModeReadonly"
@@ -100,7 +100,7 @@
           <small>Start from a future curated template for this assistant purpose.</small>
         </button>
         <button
-          class="option-card"
+          class="option-card secondary"
           type="button"
             [class.selected]="state.creation_mode === 'ai'"
             [disabled]="creationModeReadonly"

@@ -21,10 +21,10 @@ from models.user import User
 from models.version import VersionChatbot
 from routes.chat_routes import prepare_rag_generation
 from routes.chatbot_routes import create_chatbot, get_chatbot_setup, regenerate_ai_draft, reapply_template_to_new_draft, update_chatbot, update_chatbot_setup
-from routes.flow_routes import AiGenerateRequest, FlowTemplateApply, GeneratedFlowApply, _normalize_ai_generation, apply_flow_template, apply_generated_flow
+from routes.flow_routes import AiGenerateRequest, FlowTemplateApply, FlowTemplateCreate, FlowTemplateRevisionCreate, FlowTemplateTestRun, FlowTemplateUpdate, GeneratedFlowApply, _normalize_ai_generation, apply_flow_template, apply_generated_flow, create_flow_template_from_flow, create_flow_template_revision_from_flow, get_flow_template_detail, list_flow_templates, run_flow_template_test, update_flow_template
 from services.auth import require_roles
 from services.generated_flow import ensure_generated_flow_is_valid, normalize_generated_flow
-from services.templates import TEMPLATES, template_generated_payload
+from services.templates import TEMPLATES, template_generated_payload, template_metadata, template_options
 
 
 class ChatbotSetupTest(unittest.TestCase):
@@ -396,9 +396,9 @@ class ChatbotSetupTest(unittest.TestCase):
 
         node_types = [node["type"] for node in generated.initial_flow_structure["nodes"]]
         self.assertNotIn("api_request", node_types)
-        self.assertIn("API Call", generated.suggested_advanced_blocks)
+        self.assertNotIn("API Call", generated.suggested_advanced_blocks)
 
-    def test_ai_generation_creates_api_block_when_url_is_provided(self):
+    def test_ai_generation_does_not_create_api_block_when_url_is_provided(self):
         generated = _normalize_ai_generation(
             {},
             AiGenerateRequest(
@@ -410,12 +410,9 @@ class ChatbotSetupTest(unittest.TestCase):
             ),
         )
 
-        api_node = next(
-            node
-            for node in generated.initial_flow_structure["nodes"]
-            if node["type"] == "api_request"
-        )
-        self.assertEqual(api_node["config"]["url"], "https://example.com/webhook")
+        node_types = [node["type"] for node in generated.initial_flow_structure["nodes"]]
+        self.assertNotIn("api_request", node_types)
+        self.assertNotIn("API Call", generated.suggested_advanced_blocks)
 
     def test_runtime_rag_prompt_enforces_french_language(self):
         config = LLMConfig(
@@ -443,6 +440,35 @@ class ChatbotSetupTest(unittest.TestCase):
 
         self.assertIn("Always respond in French", generation["prompt"])
         self.assertIn("Je n'ai pas encore assez", generation["fallback_response"])
+
+    def test_ai_only_answer_node_does_not_short_circuit_to_fallback(self):
+        config = LLMConfig(
+            version_id=self.version.id,
+            model="phi3",
+            temperature=0.7,
+            system_prompt="You are a helpful assistant",
+        )
+        self.db.add(config)
+        self.chatbot.rag_settings = {"strict_context": True}
+        self.db.commit()
+
+        generation = prepare_rag_generation(
+            db=self.db,
+            version=self.version,
+            config=config,
+            message="Bonjour",
+            variables={"__language": "fr"},
+            history=[],
+            node_config={
+                "use_knowledge_base": False,
+                "show_sources": False,
+                "fallback": "I could not generate a helpful answer for that question.",
+            },
+        )
+
+        self.assertEqual(generation["retrieval_mode"], "ai_only")
+        self.assertEqual(generation["fallback_response"], "")
+        self.assertEqual(generation["sources"], [])
 
     def test_noop_update_does_not_create_audit_log(self):
         update_chatbot_setup(
@@ -860,6 +886,158 @@ class ChatbotSetupTest(unittest.TestCase):
         self.assertEqual(result["draft_version"]["status"], "draft")
         draft_nodes = self.db.query(FlowNode).filter(FlowNode.flow_id == result["flow_id"]).all()
         self.assertEqual([node.node_key for node in draft_nodes].count("start"), 1)
+
+    def test_template_catalog_filters_creation_exposure_by_purpose(self):
+        lead_templates = template_options(purpose="lead_generation", exposed_only=True)
+        lead_keys = {template["key"] for template in lead_templates}
+
+        self.assertIn("simple_lead_capture", lead_keys)
+        self.assertIn("sales_starter", lead_keys)
+        self.assertNotIn("lead_capture", lead_keys)
+        self.assertTrue(all(template["exposed"] for template in lead_templates))
+        self.assertEqual(template_metadata("lead_capture")["primary_purpose"], "internal")
+
+    def test_manager_can_create_private_template_and_share_it(self):
+        self.db.add(FlowNode(flow_id=self.flow.id, node_key="end", type="end", label="End", config={"message": "Done"}))
+        self.db.commit()
+        created = create_flow_template_from_flow(
+            self.flow.id,
+            FlowTemplateCreate(
+                name="Reusable Support Intake",
+                description="Tested support flow.",
+                purpose="customer_support",
+                is_exposed=False,
+                is_shared=False,
+            ),
+            db=self.db,
+            current_user=self.manager_a,
+        )
+
+        self.assertEqual(created["source"], "custom")
+        self.assertTrue(created["can_edit"])
+        self.assertFalse(created["exposed"])
+        private_keys_for_owner = {item["key"] for item in list_flow_templates(db=self.db, current_user=self.manager_a)}
+        private_keys_for_other = {item["key"] for item in list_flow_templates(db=self.db, current_user=self.manager_b)}
+        self.assertIn(created["key"], private_keys_for_owner)
+        self.assertNotIn(created["key"], private_keys_for_other)
+
+        updated = update_flow_template(
+            created["key"],
+            FlowTemplateUpdate(is_shared=True, is_exposed=True),
+            db=self.db,
+            current_user=self.manager_a,
+        )
+        self.assertTrue(updated["shared"])
+        self.assertTrue(updated["exposed"])
+        shared_keys_for_other = {
+            item["key"]
+            for item in list_flow_templates(
+                purpose="customer_support",
+                exposed_only=True,
+                db=self.db,
+                current_user=self.manager_b,
+            )
+        }
+        self.assertIn(created["key"], shared_keys_for_other)
+
+    def test_manager_cannot_edit_another_manager_template(self):
+        self.db.add(FlowNode(flow_id=self.flow.id, node_key="end", type="end", label="End", config={"message": "Done"}))
+        self.db.commit()
+        created = create_flow_template_from_flow(
+            self.flow.id,
+            FlowTemplateCreate(name="Private Template", purpose="custom"),
+            db=self.db,
+            current_user=self.manager_a,
+        )
+
+        with self.assertRaises(HTTPException) as not_found:
+            get_flow_template_detail(created["key"], db=self.db, current_user=self.manager_b)
+        self.assertEqual(not_found.exception.status_code, 404)
+
+        update_flow_template(
+            created["key"],
+            FlowTemplateUpdate(is_shared=True),
+            db=self.db,
+            current_user=self.manager_a,
+        )
+        with self.assertRaises(HTTPException) as forbidden:
+            update_flow_template(
+                created["key"],
+                FlowTemplateUpdate(name="Changed"),
+                db=self.db,
+                current_user=self.manager_b,
+            )
+        self.assertEqual(forbidden.exception.status_code, 403)
+
+    def test_template_runner_auto_drives_custom_template(self):
+        self.db.add(FlowNode(flow_id=self.flow.id, node_key="end", type="end", label="End", config={"message": "Done"}))
+        self.db.commit()
+        created = create_flow_template_from_flow(
+            self.flow.id,
+            FlowTemplateCreate(name="Runnable Template", purpose="custom"),
+            db=self.db,
+            current_user=self.manager_a,
+        )
+
+        result = run_flow_template_test(created["key"], None, db=self.db, current_user=self.manager_a)
+
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(result["scenario_count"], 1)
+        self.assertTrue(result["results"][0]["transcript"])
+
+    def test_template_runner_reports_expectation_failures(self):
+        result = run_flow_template_test(
+            "customer_support_basic",
+            FlowTemplateTestRun(
+                name="Expectation failure",
+                messages=["hello"],
+                expected_variables={"missing": "value"},
+            ),
+            db=self.db,
+            current_user=self.manager_a,
+        )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("Expected variable", result["results"][0]["errors"][0])
+
+    def test_custom_template_revisions_are_immutable_and_apply_records_revision(self):
+        self.db.add(FlowNode(flow_id=self.flow.id, node_key="end", type="end", label="End", config={"message": "Done"}))
+        self.db.commit()
+        created = create_flow_template_from_flow(
+            self.flow.id,
+            FlowTemplateCreate(name="Versioned Template", purpose="customer_support"),
+            db=self.db,
+            current_user=self.manager_a,
+        )
+        self.assertEqual(created["current_revision_number"], 1)
+
+        start = self.db.query(FlowNode).filter(FlowNode.flow_id == self.flow.id, FlowNode.node_key == "start").first()
+        start.config = {"text": "Changed welcome"}
+        self.db.commit()
+        revision_payload = create_flow_template_revision_from_flow(
+            self.flow.id,
+            created["key"],
+            FlowTemplateRevisionCreate(change_note="Changed welcome copy"),
+            db=self.db,
+            current_user=self.manager_a,
+        )
+
+        self.assertEqual(revision_payload["revision"]["revision_number"], 2)
+        revision_one = get_flow_template_detail(created["key"], revision=1, db=self.db, current_user=self.manager_a)
+        revision_two = get_flow_template_detail(created["key"], revision=2, db=self.db, current_user=self.manager_a)
+        self.assertEqual(revision_one["nodes"][0]["config"]["text"], "Hello")
+        self.assertEqual(revision_two["nodes"][0]["config"]["text"], "Changed welcome")
+
+        self.chatbot.build_method = "template"
+        self.db.commit()
+        apply_flow_template(
+            self.flow.id,
+            FlowTemplateApply(template_key=created["key"], template_revision=2),
+            db=self.db,
+            current_user=self.manager_a,
+        )
+        self.assertEqual(self.chatbot.source_template_key, created["key"])
+        self.assertEqual(self.chatbot.source_template_version, "2")
 
 
 if __name__ == "__main__":

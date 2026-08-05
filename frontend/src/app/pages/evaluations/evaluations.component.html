@@ -1,0 +1,371 @@
+<section class="evaluation-page">
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">Evaluation Center</p>
+      <h1>Assistant quality laboratory</h1>
+      <p>Measure expected answers, sources, flow path, latency and version regressions before publication.</p>
+    </div>
+    <button class="primary" type="button" (click)="runDataset()" [disabled]="running() || !selectedDataset() || !selectedVersionId">
+      {{ running() ? 'Running...' : 'Run evaluation' }}
+    </button>
+  </header>
+
+  <p class="alert error" *ngIf="error()">{{ error() }}</p>
+  <p class="alert ok" *ngIf="message()">{{ message() }}</p>
+
+  <section class="summary-band" *ngIf="latestRun() as run">
+    <div>
+      <span>Latest score</span>
+      <strong>{{ run.overall_score ?? 0 }}%</strong>
+    </div>
+    <div>
+      <span>Pass rate</span>
+      <strong>{{ passedRate(run) }}</strong>
+    </div>
+    <div>
+      <span>Critical failures</span>
+      <strong>{{ run.critical_failures || 0 }}</strong>
+    </div>
+    <div>
+      <span>Last version</span>
+      <strong class="mono">v{{ run.version_id }}</strong>
+    </div>
+  </section>
+
+  <section class="empty-state" *ngIf="!loading() && !datasets().length">
+    <h2>Create your first evaluation dataset</h2>
+    <p>Add representative questions and expected behavior to verify each assistant version before publication.</p>
+    <div class="inline-form">
+      <input type="text" [(ngModel)]="newDataset.name" placeholder="Dataset name">
+      <input type="text" [(ngModel)]="newDataset.description" placeholder="Description">
+      <button class="primary" type="button" (click)="createDataset()" [disabled]="saving()">Create dataset</button>
+    </div>
+  </section>
+
+  <div class="evaluation-grid" *ngIf="datasets().length">
+    <aside class="dataset-panel">
+      <div class="panel-heading">
+        <h2>Datasets</h2>
+        <span>{{ datasets().length }}</span>
+      </div>
+      <button
+        class="dataset-row"
+        type="button"
+        *ngFor="let dataset of datasets()"
+        [class.active]="selectedDataset()?.id === dataset.id"
+        (click)="openDataset(dataset.id)">
+        <strong>{{ dataset.name }}</strong>
+        <span>{{ dataset.status }}</span>
+      </button>
+      <div class="new-dataset">
+        <input type="text" [(ngModel)]="newDataset.name" placeholder="New dataset">
+        <input type="text" [(ngModel)]="newDataset.description" placeholder="Description">
+        <button type="button" (click)="createDataset()" [disabled]="saving()">Create</button>
+      </div>
+    </aside>
+
+    <main class="workspace" *ngIf="selectedDataset() as dataset">
+      <section class="panel dataset-header">
+        <div>
+          <p class="eyebrow">Dataset</p>
+          <h2>{{ dataset.name }}</h2>
+          <p>{{ dataset.description || 'No description configured.' }}</p>
+        </div>
+        <div class="run-controls">
+          <label>
+            Version
+            <select [(ngModel)]="selectedVersionId" (ngModelChange)="onVersionChange()">
+              <option *ngFor="let version of versions()" [ngValue]="version.id">v{{ version.version_number }} · {{ version.status }}</option>
+            </select>
+          </label>
+          <button class="primary" type="button" (click)="runDataset()" [disabled]="running() || !selectedVersionId">
+            {{ running() ? 'Running...' : 'Run dataset' }}
+          </button>
+        </div>
+      </section>
+
+      <section class="panel flow-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>Flow coverage map</h2>
+            <p class="muted">Blocks selected by evaluation cases are marked as covered. Open a run result to see the actual runtime path.</p>
+          </div>
+          <span class="mono" *ngIf="selectedVersionId">v{{ selectedVersionId }}</span>
+        </div>
+        <div class="flow-empty" *ngIf="flowLoading()">Loading flow...</div>
+        <div class="flow-map" *ngIf="!flowLoading() && flowNodes().length" [style.width.px]="flowBounds().width" [style.height.px]="flowBounds().height">
+          <svg class="flow-lines" [attr.width]="flowBounds().width" [attr.height]="flowBounds().height" aria-hidden="true">
+            <path
+              *ngFor="let transition of flowTransitions()"
+              [attr.d]="transitionPath(transition)"
+              [ngClass]="transitionClass(transition)"
+              fill="none" />
+          </svg>
+          <button
+            class="flow-node"
+            type="button"
+            *ngFor="let node of flowNodes()"
+            [ngStyle]="nodeStyle(node)"
+            [class.covered]="nodeCoverage(node).total > 0">
+            <span>{{ node.type }}</span>
+            <strong>{{ node.label || node.node_key }}</strong>
+            <small class="mono">{{ node.node_key }}</small>
+            <em *ngIf="nodeCoverage(node).total">{{ nodeCoverage(node).total }} case{{ nodeCoverage(node).total === 1 ? '' : 's' }}</em>
+          </button>
+        </div>
+        <div class="flow-empty" *ngIf="!flowLoading() && !flowNodes().length">No flow blocks available for this version.</div>
+      </section>
+
+      <section class="panel suggestions-panel" *ngIf="suggestedCases().length">
+        <div class="panel-heading">
+          <div>
+            <h2>Suggested flow edge cases</h2>
+            <p class="muted">Generated from the selected version's blocks, buttons and collection steps.</p>
+          </div>
+          <button type="button" class="primary" (click)="createSelectedSuggestedCases()" [disabled]="saving() || !selectedSuggestionIds().size">
+            Add selected
+          </button>
+        </div>
+        <div class="suggestion-list">
+          <article
+            class="suggestion-card"
+            *ngFor="let item of suggestedCases()"
+            [class.selected]="selectedSuggestionIds().has(item.id)">
+            <label class="check">
+              <input
+                type="checkbox"
+                [checked]="selectedSuggestionIds().has(item.id)"
+                (change)="toggleSuggestedCase(item.id)">
+              <span>{{ item.type }}</span>
+            </label>
+            <h3>{{ item.name }}</h3>
+            <p>{{ item.description }}</p>
+            <div class="turn-preview">
+              <span *ngFor="let turn of item.turns; let index = index">
+                {{ index + 1 }}. {{ turn.message || 'start' }}
+              </span>
+            </div>
+            <div class="path-preview">
+              <span *ngFor="let nodeKey of item.expected_flow_node_ids">{{ nodeKey }}</span>
+              <strong *ngIf="item.expected_final_node_id">final: {{ item.expected_final_node_id }}</strong>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-heading">
+          <h2>Cases</h2>
+          <span>{{ dataset.cases?.length || 0 }} total</span>
+        </div>
+        <div class="case-table" *ngIf="dataset.cases?.length; else noCases">
+          <div class="case-row header">
+            <span>Name</span>
+            <span>Type</span>
+            <span>Critical</span>
+            <span>Status</span>
+            <span>Actions</span>
+          </div>
+          <div class="case-row" *ngFor="let item of dataset.cases">
+            <div>
+              <strong>{{ item.name }}</strong>
+              <small>{{ item.input_message }}</small>
+              <small *ngIf="item.turns?.length" class="mono">{{ item.turns.length }} turns</small>
+            </div>
+            <span class="pill">{{ item.expected_source_patterns?.length || item.expected_source_document_ids?.length ? 'RAG' : item.expected_flow_node_ids?.length ? 'Flow' : 'Answer' }}</span>
+            <span>{{ item.critical ? 'Critical' : 'Standard' }}</span>
+            <span [class.muted]="!item.enabled">{{ item.enabled ? 'Enabled' : 'Disabled' }}</span>
+            <div class="actions">
+              <button type="button" (click)="toggleCase(item)">{{ item.enabled ? 'Disable' : 'Enable' }}</button>
+              <button type="button" (click)="duplicateCase(item.id)">Duplicate</button>
+            </div>
+          </div>
+        </div>
+        <ng-template #noCases>
+          <p class="muted">No cases yet.</p>
+        </ng-template>
+      </section>
+
+      <section class="panel case-editor">
+        <h2>New evaluation case</h2>
+        <div class="editor-grid">
+          <label>Case name<input type="text" [(ngModel)]="caseForm.name"></label>
+          <label>User message<input type="text" [(ngModel)]="caseForm.input_message"></label>
+          <label class="wide">Description<input type="text" [(ngModel)]="caseForm.description"></label>
+          <label>Tags<input type="text" [(ngModel)]="caseForm.tags_text" placeholder="billing|release|critical"></label>
+          <label class="check"><input type="checkbox" [(ngModel)]="caseForm.enabled"> Enabled</label>
+          <label class="check"><input type="checkbox" [(ngModel)]="caseForm.critical"> Critical</label>
+        </div>
+        <details open>
+          <summary>Expected answer</summary>
+          <div class="editor-grid">
+            <label>Required keywords<input type="text" [(ngModel)]="caseForm.expected_keywords_text" placeholder="30 days|policy"></label>
+            <label>Forbidden keywords<input type="text" [(ngModel)]="caseForm.forbidden_keywords_text"></label>
+          </div>
+        </details>
+        <details>
+          <summary>Knowledge and source expectations</summary>
+          <div class="editor-grid">
+            <label>Source patterns<input type="text" [(ngModel)]="caseForm.expected_source_patterns_text" placeholder="return-policy|delivery"></label>
+            <label>Minimum source count<input type="number" [(ngModel)]="caseForm.minimum_source_count"></label>
+            <label>Minimum retrieval score<input type="number" step="0.01" [(ngModel)]="caseForm.minimum_retrieval_score"></label>
+          </div>
+        </details>
+        <details>
+          <summary>Flow expectations</summary>
+          <p class="muted">Click blocks to mark the expected path. Double-use the final block button to set the expected final block.</p>
+          <div class="flow-map picker" *ngIf="flowNodes().length" [style.width.px]="flowBounds().width" [style.height.px]="flowBounds().height">
+            <svg class="flow-lines" [attr.width]="flowBounds().width" [attr.height]="flowBounds().height" aria-hidden="true">
+              <path *ngFor="let transition of flowTransitions()" [attr.d]="transitionPath(transition)" fill="none" />
+            </svg>
+            <button
+              class="flow-node"
+              type="button"
+              *ngFor="let node of flowNodes()"
+              [ngStyle]="nodeStyle(node)"
+              [class.expected]="list(caseForm.expected_flow_node_ids_text).includes(node.node_key)"
+              [class.final]="caseForm.expected_final_node_id === node.node_key"
+              (click)="toggleExpectedNode(node)"
+              (dblclick)="setExpectedFinalNode(node)">
+              <span>{{ node.type }}</span>
+              <strong>{{ node.label || node.node_key }}</strong>
+              <small class="mono">{{ node.node_key }}</small>
+            </button>
+          </div>
+          <div class="editor-grid">
+            <label>Expected visited blocks<input type="text" [(ngModel)]="caseForm.expected_flow_node_ids_text" placeholder="start|handoff"></label>
+            <label>Forbidden blocks<input type="text" [(ngModel)]="caseForm.forbidden_flow_node_ids_text"></label>
+            <label>Expected final block<input type="text" [(ngModel)]="caseForm.expected_final_node_id"></label>
+          </div>
+        </details>
+        <details>
+          <summary>Runtime expectations</summary>
+          <div class="editor-grid">
+            <label>Maximum latency ms<input type="number" [(ngModel)]="caseForm.maximum_latency_ms"></label>
+            <label>Expected fallback<select [(ngModel)]="caseForm.expected_fallback"><option [ngValue]="null">Any</option><option [ngValue]="true">Yes</option><option [ngValue]="false">No</option></select></label>
+            <label>Expected handoff<select [(ngModel)]="caseForm.expected_handoff"><option [ngValue]="null">Any</option><option [ngValue]="true">Yes</option><option [ngValue]="false">No</option></select></label>
+          </div>
+        </details>
+        <details>
+          <summary>Advanced judge settings</summary>
+          <p class="muted">LLM-as-judge is available in the data model but disabled by default in this MVP. Deterministic assertions remain the source of publish gating.</p>
+        </details>
+        <button class="primary" type="button" (click)="saveCase()" [disabled]="saving()">Add case</button>
+      </section>
+
+      <section class="panel">
+        <div class="panel-heading">
+          <h2>Run history</h2>
+          <span>{{ runs().length }} runs</span>
+        </div>
+        <div class="run-list">
+          <button class="run-row" type="button" *ngFor="let run of runs()" (click)="openRun(run.id)">
+            <span class="status" [class.passed]="run.failed_cases === 0 && run.critical_failures === 0" [class.failed]="run.failed_cases > 0">{{ run.status }}</span>
+            <strong class="mono">run-{{ run.id }}</strong>
+            <span>score {{ run.overall_score ?? 0 }}%</span>
+            <span>{{ passedRate(run) }} passed</span>
+            <span>v{{ run.version_id }}</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="panel results" *ngIf="selectedRun() as run">
+        <div class="panel-heading">
+          <h2>Run {{ run.id }}</h2>
+          <span>{{ run.overall_score ?? 0 }}%</span>
+        </div>
+        <div class="result-row" *ngFor="let result of run.results">
+          <div>
+            <span class="status" [class.passed]="result.status === 'passed'" [class.warning]="result.status === 'warning'" [class.failed]="result.status === 'failed' || result.status === 'error'">{{ result.status }}</span>
+            <strong>{{ result.case_snapshot?.name }}</strong>
+            <p>{{ result.actual_response }}</p>
+            <small class="mono">{{ result.runtime_execution_id }} · {{ result.latency_ms }} ms</small>
+            <button type="button" (click)="selectResult(result)">Show flow trace</button>
+          </div>
+          <div class="assertions">
+            <strong *ngIf="failedAssertions(result).length">{{ failedAssertions(result).length }} failed assertions</strong>
+            <span *ngFor="let assertion of failedAssertions(result)">{{ assertion.label }}: {{ assertion.message }}</span>
+          </div>
+        </div>
+        <div class="trace-view" *ngIf="selectedResult() as result">
+          <div class="panel-heading">
+            <div>
+              <h3>{{ result.case_snapshot?.name }} trace</h3>
+              <p class="muted">Teal blocks were visited. Amber outlines are expected. Red blocks were expected but not visited or forbidden but hit.</p>
+            </div>
+            <span class="status" [class.passed]="result.status === 'passed'" [class.warning]="result.status === 'warning'" [class.failed]="result.status === 'failed' || result.status === 'error'">{{ result.status }}</span>
+          </div>
+          <div class="flow-map trace" *ngIf="flowNodes().length" [style.width.px]="flowBounds().width" [style.height.px]="flowBounds().height">
+            <svg class="flow-lines" [attr.width]="flowBounds().width" [attr.height]="flowBounds().height" aria-hidden="true">
+              <path
+                *ngFor="let transition of flowTransitions()"
+                [attr.d]="transitionPath(transition)"
+                [ngClass]="transitionClass(transition, result)"
+                fill="none" />
+            </svg>
+            <button
+              class="flow-node"
+              type="button"
+              *ngFor="let node of flowNodes()"
+              [ngStyle]="nodeStyle(node)"
+              [ngClass]="nodeClass(node, result)">
+              <span>{{ node.type }}</span>
+              <strong>{{ node.label || node.node_key }}</strong>
+              <small class="mono">{{ node.node_key }}</small>
+              <em *ngIf="isActualNode(node, result)">visited</em>
+              <em *ngIf="isMissingNode(node, result)">missing</em>
+              <em *ngIf="isForbiddenHit(node, result)">forbidden hit</em>
+            </button>
+          </div>
+          <div class="trace-meta">
+            <div>
+              <span>Expected path</span>
+              <strong class="mono">{{ expectedPathText(result) }}</strong>
+            </div>
+            <div>
+              <span>Actual path</span>
+              <strong class="mono">{{ actualPathText(result) }}</strong>
+            </div>
+            <div>
+              <span>Missing expected</span>
+              <strong class="mono">{{ missingExpectedText(result) }}</strong>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel comparison">
+        <h2>Version comparison</h2>
+        <div class="compare-controls">
+          <select [(ngModel)]="baselineRunId"><option [ngValue]="null">Baseline run</option><option *ngFor="let run of runs()" [ngValue]="run.id">run-{{ run.id }} · v{{ run.version_id }}</option></select>
+          <select [(ngModel)]="candidateRunId"><option [ngValue]="null">Candidate run</option><option *ngFor="let run of runs()" [ngValue]="run.id">run-{{ run.id }} · v{{ run.version_id }}</option></select>
+          <button type="button" (click)="compareRuns()">Compare</button>
+        </div>
+        <div *ngIf="comparison() as cmp" class="comparison-result">
+          <strong>Score change {{ cmp.overall_score_delta }}</strong>
+          <span>Regressions {{ cmp.regressions }}</span>
+          <span>Fixed {{ cmp.fixed_cases }}</span>
+          <span>Improved {{ cmp.improved_cases }}</span>
+          <div class="case-change" *ngFor="let item of cmp.cases">
+            <span class="pill">{{ item.state }}</span>
+            <strong>{{ item.case_name }}</strong>
+            <small>{{ item.reason }}</small>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel policy" *ngIf="policy() as gate">
+        <h2>Publish evaluation policy</h2>
+        <label class="check"><input type="checkbox" [(ngModel)]="gate.required_before_publish"> Evaluation required before publish</label>
+        <div class="editor-grid">
+          <label>Required dataset<select [(ngModel)]="gate.required_dataset_id"><option [ngValue]="null">Any completed dataset</option><option *ngFor="let item of datasets()" [ngValue]="item.id">{{ item.name }}</option></select></label>
+          <label>Minimum score<input type="number" [(ngModel)]="gate.minimum_score"></label>
+          <label>Maximum failed cases<input type="number" [(ngModel)]="gate.maximum_failed_cases"></label>
+          <label>Critical failures allowed<input type="number" [(ngModel)]="gate.critical_failures_allowed"></label>
+          <label>Maximum age hours<input type="number" [(ngModel)]="gate.maximum_evaluation_age_hours"></label>
+        </div>
+        <button type="button" (click)="savePolicy()" [disabled]="saving()">Save policy</button>
+      </section>
+    </main>
+  </div>
+</section>

@@ -1,0 +1,147 @@
+<div class="collected-page">
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">Assistant {{ chatbotId }}</p>
+      <h2>Collected data</h2>
+      <p>Review contact details, meeting preferences, selections and custom answers captured by this assistant.</p>
+    </div>
+    <div class="actions">
+      <button class="secondary" type="button" (click)="load()" [disabled]="loading()">
+        {{ loading() ? 'Refreshing...' : 'Refresh' }}
+      </button>
+      <button class="secondary" type="button" (click)="exportCsv()" [disabled]="items().length === 0">Export CSV</button>
+    </div>
+  </header>
+
+  <section class="summary-strip" aria-label="Collected data summary">
+    <article>
+      <span>Contacts</span>
+      <strong>{{ summary().contacts || 0 }}</strong>
+    </article>
+    <article>
+      <span>Meeting preferences</span>
+      <strong>{{ summary().meeting_preferences || 0 }}</strong>
+    </article>
+    <article>
+      <span>Selections</span>
+      <strong>{{ summary().selections || 0 }}</strong>
+    </article>
+    <article>
+      <span>Custom fields</span>
+      <strong>{{ summary().custom_fields || 0 }}</strong>
+    </article>
+  </section>
+
+  <section class="filters-panel">
+    <label class="wide">
+      Search
+      <input [(ngModel)]="search" placeholder="Search value, field or session ID">
+    </label>
+    <label>
+      Type
+      <select [(ngModel)]="fieldType">
+        <option value="">All data</option>
+        <option value="name">Names</option>
+        <option value="email">Emails</option>
+        <option value="phone">Phones</option>
+        <option value="meeting">Meeting preferences</option>
+        <option value="selection">Selections</option>
+        <option value="custom">Custom fields</option>
+      </select>
+    </label>
+    <div class="filter-actions">
+      <button type="button" (click)="load()" [disabled]="loading()">Apply</button>
+      <button class="secondary" type="button" (click)="clearFilters()">Clear</button>
+    </div>
+  </section>
+
+  <p *ngIf="error()" class="error">{{ error() }}</p>
+  <p *ngIf="message()" class="success">{{ message() }}</p>
+
+  <section class="data-panel">
+    <div class="panel-header">
+      <div>
+        <p class="eyebrow">Captured fields</p>
+        <h3>{{ total() }} saved values</h3>
+      </div>
+      <span class="soft-badge">Session variables</span>
+    </div>
+
+    <div *ngIf="loading()" class="empty-state">Loading collected data...</div>
+
+    <div *ngIf="!loading() && items().length === 0" class="empty-state">
+      <strong>No collected data yet</strong>
+      <p>Add Question, Buttons, Contact Capture or Meeting Preference blocks to start collecting usable manager data.</p>
+    </div>
+
+    <div *ngIf="!loading() && records().length" class="records-grid">
+      <article class="record-card" *ngFor="let record of records(); trackBy: trackRecord">
+        <header class="record-header">
+          <div>
+            <p class="eyebrow">Session #{{ record.sessionId }}</p>
+            <h3>{{ record.title }}</h3>
+            <p>{{ channelLabel(record.channel) }} · {{ record.messageCount }} messages · {{ record.updatedAt | date:'medium' }}</p>
+          </div>
+          <span class="status-badge" [ngClass]="'status-' + (statusDrafts[record.sessionId] || record.status)">
+            {{ statusLabel(statusDrafts[record.sessionId] || record.status) }}
+          </span>
+        </header>
+
+        <section class="contact-grid">
+          <div>
+            <span>Name</span>
+            <strong>{{ record.name || 'Not captured' }}</strong>
+          </div>
+          <div>
+            <span>Email</span>
+            <strong>{{ record.email || 'Not captured' }}</strong>
+            <button *ngIf="record.email" class="text-action" type="button" (click)="copyValue(record.email)">Copy</button>
+          </div>
+          <div>
+            <span>Phone</span>
+            <strong>{{ record.phone || 'Not captured' }}</strong>
+            <button *ngIf="record.phone" class="text-action" type="button" (click)="copyValue(record.phone)">Copy</button>
+          </div>
+          <div>
+            <span>Meeting preference</span>
+            <strong>{{ record.meeting || 'Not captured' }}</strong>
+          </div>
+        </section>
+
+        <section class="field-list" *ngIf="record.otherFields.length">
+          <div *ngFor="let item of record.otherFields; trackBy: trackField">
+            <span class="type-badge" [ngClass]="typeClass(item.type)">{{ typeLabel(item.type) }}</span>
+            <strong>{{ item.label }}</strong>
+            <p>{{ item.value }}</p>
+          </div>
+        </section>
+
+        <p class="last-message" *ngIf="record.lastUserMessage">{{ record.lastUserMessage }}</p>
+
+        <footer class="follow-up">
+          <label>
+            Follow-up status
+            <select [(ngModel)]="statusDrafts[record.sessionId]">
+              <option value="new">New</option>
+              <option value="followed_up">Followed up</option>
+              <option value="scheduled">Scheduled</option>
+              <option value="closed">Closed</option>
+            </select>
+          </label>
+          <label class="note-field">
+            Manager note
+            <textarea rows="2" [(ngModel)]="noteDrafts[record.sessionId]" placeholder="Add follow-up context, owner, or next action."></textarea>
+          </label>
+          <div class="record-actions">
+            <a class="secondary link-button" [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId, 'conversations']" [queryParams]="{ sessionId: record.sessionId }">
+              Open conversation
+            </a>
+            <button type="button" (click)="saveFollowUp(record)" [disabled]="savingSession() === record.sessionId">
+              {{ savingSession() === record.sessionId ? 'Saving...' : 'Save' }}
+            </button>
+          </div>
+        </footer>
+      </article>
+    </div>
+  </section>
+</div>

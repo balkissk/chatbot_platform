@@ -49,7 +49,7 @@ export const ASSISTANT_TEMPLATE_OPTIONS: Readonly<Record<AssistantPurposeCode, R
   lead_generation: [
     { key: 'simple_lead_capture', name: 'Contact Capture', description: 'Collect contact details and route the request to the team.' },
     { key: 'sales_starter', name: 'Qualification Bot', description: 'Capture business needs and qualify requests for sales follow-up.' },
-    { key: 'consultation_booking', name: 'Meeting Scheduler', description: 'Capture consultation needs, preferred date, and contact details.' },
+    { key: 'consultation_booking', name: 'Meeting Preference', description: 'Capture consultation needs, preferred time, and contact details.' },
     { key: 'cloud_assessment_lead_form', name: 'Cloud Assessment Lead Form', description: 'Qualify Azure and Microsoft Cloud assessment requests.' },
     { key: 'training_registration_bot', name: 'Training Registration Bot', description: 'Collect training interest and registration contact details.' }
   ],

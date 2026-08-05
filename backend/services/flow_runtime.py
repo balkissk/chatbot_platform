@@ -274,6 +274,11 @@ def _execute_api_request(node: FlowNode, variables: dict) -> tuple[str, bool]:
     method = str(config.get("method") or "GET").upper()
     url = str(config.get("url") or "").strip()
     response_field = str(config.get("response_field") or "").strip()
+    try:
+        timeout = float(config.get("timeout") or 8)
+    except (TypeError, ValueError):
+        timeout = 8
+    timeout = min(max(timeout, 1), 30)
 
     if method not in {"GET", "POST"}:
         variables["__last_api_error"] = "Unsupported API method"
@@ -293,7 +298,7 @@ def _execute_api_request(node: FlowNode, variables: dict) -> tuple[str, bool]:
             url,
             headers=rendered_headers,
             json=rendered_body if method == "POST" else None,
-            timeout=8,
+            timeout=timeout,
         )
         variables["__last_api_status"] = response.status_code
         try:
@@ -446,6 +451,13 @@ def execute_flow(
 
     if _runtime_steps >= MAX_RUNTIME_STEPS:
         return _runtime_error_state(node, state)
+
+    if trace is not None:
+        trace.setdefault("visited_nodes", []).append({
+            "node_key": node.node_key,
+            "type": node.type,
+            "label": node.label,
+        })
 
     # Start/message nodes display text first, then wait at the next step.
     if node.type == "message":
@@ -742,17 +754,43 @@ def execute_flow(
             return result
         return _serialize_state("RAG is not configured for this chatbot.", node.node_key, state)
 
-    if node.type in {"ai_router", "ai_classifier", "confidence_check", "lead_score", "meeting_scheduler"}:
+    if node.type == "meeting_scheduler":
+        config = node.config or {}
+        field = config.get("field") or "preferred_time"
+        clean_message = message.strip()
+        if clean_message:
+            state[field] = clean_message
+            state["__last_input"] = clean_message
+            transition = _first_transition(transitions, node.node_key)
+            next_key = transition.target_node_key if transition else None
+            if next_key:
+                return execute_flow(
+                    db,
+                    version_id,
+                    "",
+                    next_key,
+                    state,
+                    rag_answer=rag_answer,
+                    allow_rag_fallback=allow_rag_fallback,
+                    trace=trace,
+                    _runtime_graph=_runtime_graph,
+                    _runtime_steps=_runtime_steps + 1,
+                )
+            return _serialize_state(
+                config.get("success_message") or "Meeting preference saved.",
+                node.node_key,
+                state
+            )
+
+        return _serialize_state(_node_text(node), node.node_key, state)
+
+    if node.type in {"ai_router", "ai_classifier", "confidence_check", "lead_score"}:
         config = node.config or {}
         if node.type in {"ai_router", "ai_classifier"}:
             output_variable = config.get("output_variable") or "detected_intent"
             state[output_variable] = state.get("__last_input") or "general"
         if node.type == "lead_score":
             state[config.get("score_variable") or "lead_score"] = config.get("default_score", 50)
-        if node.type == "meeting_scheduler":
-            field = config.get("field") or "preferred_time"
-            if message.strip():
-                state[field] = message.strip()
         transition = _first_transition(transitions, node.node_key)
         next_key = transition.target_node_key if transition else None
         if next_key:

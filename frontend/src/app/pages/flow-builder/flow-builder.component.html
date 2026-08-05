@@ -5,11 +5,83 @@
   </div>
 
   <div class="actions">
-    <button class="setup-action" type="button" (click)="openAssistantSetup()">Assistant Setup</button>
-    <button class="secondary" type="button" (click)="validateCurrentFlow()">Validate</button>
+    <button class="secondary setup-action" type="button" (click)="openAssistantSetup()">Assistant Setup</button>
+    <button class="secondary" type="button" (click)="openSaveTemplate()">Save as Template</button>
+    <button class="primary validate-action" type="button" (click)="validateCurrentFlow()">Validate</button>
+    <button class="secondary qa-action" type="button" [class.active]="qaMode()" (click)="toggleQaMode()">
+      {{ qaMode() ? 'QA mode on' : 'QA mode' }}
+    </button>
     <button class="secondary" type="button" (click)="goTestFlow()">Test Flow</button>
   </div>
 </div>
+
+<section class="modal-backdrop" *ngIf="saveTemplateOpen()" (click)="closeSaveTemplate()">
+  <form class="save-template-modal" (ngSubmit)="createTemplateFromCurrentFlow()" (click)="$event.stopPropagation()">
+    <button class="close-button" type="button" (click)="closeSaveTemplate()" aria-label="Close save template">x</button>
+    <div class="setup-edit-header">
+      <p class="eyebrow">Template library</p>
+      <h2>Save current flow as template</h2>
+      <p class="muted">Create a reusable starter or publish this draft as a new revision of an existing manager template.</p>
+    </div>
+
+    <div class="template-mode-switch">
+      <button type="button" [class.active]="saveTemplateForm.mode === 'new'" (click)="saveTemplateForm.mode = 'new'">New template</button>
+      <button type="button" [class.active]="saveTemplateForm.mode === 'revision'" (click)="saveTemplateForm.mode = 'revision'">New revision</button>
+    </div>
+
+    <div class="setup-edit-grid">
+      <label *ngIf="saveTemplateForm.mode === 'revision'" class="wide">
+        Existing template
+        <select [(ngModel)]="saveTemplateForm.template_key" name="template-key">
+          <option value="">Choose a custom template</option>
+          <option *ngFor="let template of customTemplates()" [value]="template.key">{{ template.name }} · v{{ template.current_revision_number || 1 }}</option>
+        </select>
+      </label>
+      <label *ngIf="saveTemplateForm.mode === 'new'">
+        Template name
+        <input [(ngModel)]="saveTemplateForm.name" name="template-name" required>
+      </label>
+      <label *ngIf="saveTemplateForm.mode === 'new'">
+        Purpose
+        <select [(ngModel)]="saveTemplateForm.purpose" name="template-purpose">
+          <option *ngFor="let option of purposeOptions" [value]="option.value">{{ option.label }}</option>
+        </select>
+      </label>
+      <label class="wide" *ngIf="saveTemplateForm.mode === 'new'">
+        Description
+        <textarea rows="3" [(ngModel)]="saveTemplateForm.description" name="template-description" placeholder="What should managers use this template for?"></textarea>
+      </label>
+      <label class="wide">
+        Change note
+        <textarea rows="2" [(ngModel)]="saveTemplateForm.change_note" name="template-change-note" placeholder="What changed in this version?"></textarea>
+      </label>
+      <label class="toggle-row wide" *ngIf="saveTemplateForm.mode === 'new'">
+        <input type="checkbox" [(ngModel)]="saveTemplateForm.is_exposed" name="template-exposed">
+        <span>
+          <strong>Show in assistant creation</strong>
+          <small>Managers who can see this template can pick it when creating assistant flows.</small>
+        </span>
+      </label>
+      <label class="toggle-row wide" *ngIf="saveTemplateForm.mode === 'new'">
+        <input type="checkbox" [(ngModel)]="saveTemplateForm.is_shared" name="template-shared">
+        <span>
+          <strong>Share with other managers</strong>
+          <small>Keep off for private templates that only you should reuse.</small>
+        </span>
+      </label>
+    </div>
+
+    <p *ngIf="saveTemplateError()" class="error">{{ saveTemplateError() }}</p>
+    <p *ngIf="saveTemplateSuccess()" class="success">{{ saveTemplateSuccess() }}</p>
+
+    <div class="setup-edit-actions">
+      <button class="secondary" type="button" (click)="closeSaveTemplate()" [disabled]="saveTemplateLoading()">Close</button>
+      <button class="primary" type="submit" [disabled]="saveTemplateLoading() || (saveTemplateForm.mode === 'new' ? !saveTemplateForm.name.trim() : !saveTemplateForm.template_key)">
+        {{ saveTemplateLoading() ? 'Saving...' : (saveTemplateForm.mode === 'revision' ? 'Save revision' : 'Save template') }}
+      </button>
+    </div>
+  </form>
+</section>
 
 <section class="modal-backdrop" *ngIf="setupOpen() && setupInitialState() && setupCurrentState() as setup">
   <form class="setup-edit-modal" (ngSubmit)="saveAssistantSetup()">
@@ -114,7 +186,7 @@
 
     <div class="setup-edit-actions">
       <button class="secondary" type="button" (click)="closeAssistantSetup()" [disabled]="setupSaving()">Cancel</button>
-      <button class="setup-action" type="submit" [disabled]="setupSaving() || !hasSetupChanges() || !setup.name.trim() || hasIncompatibleTemplate(setup)">
+      <button class="primary setup-save-action" type="submit" [disabled]="setupSaving() || !hasSetupChanges() || !setup.name.trim() || hasIncompatibleTemplate(setup)">
         {{ setupSaving() ? 'Saving...' : 'Save changes' }}
       </button>
     </div>
@@ -162,7 +234,7 @@
           <button
             *ngFor="let type of blockTypesByCategory(category)"
             type="button"
-            class="palette-block"
+            class="palette-block secondary"
             [class.active]="nodeType === type.value"
             [ngClass]="blockTypeClass(type.value)"
             (click)="selectBlockType(type.value)">
@@ -170,6 +242,7 @@
             <span>
               <strong>{{ type.label }}</strong>
               <small>{{ type.description }}</small>
+              <em class="block-status" [ngClass]="blockStatusClass(type.value)">{{ blockStatusLabel(type.value) }}</em>
             </span>
           </button>
         </section>
@@ -231,6 +304,7 @@
             [ngStyle]="nodeStyle(node)"
             [ngClass]="[blockTypeClass(node.type), hasNodeWarning(node) ? 'has-warning' : '']"
             [class.selected]="selectedNode()?.id === node.id"
+            [class.qa-current]="qaRuntimeState()?.current_node_key === node.node_key"
             [class.dragging]="dragging() === node.id"
             (click)="selectNode(node)">
             <div class="block-top" (pointerdown)="startDrag($event, node)">
@@ -250,7 +324,7 @@
             <p>{{ nodeText(node) || 'No text configured' }}</p>
 
             <div class="button-list" *ngIf="node.type === 'buttons'">
-              <button type="button" *ngFor="let option of nodeButtons(node)">{{ option }}</button>
+              <button class="secondary" type="button" *ngFor="let option of nodeButtons(node)">{{ option }}</button>
             </div>
 
             <div class="warning-list" *ngIf="hasNodeWarning(node)">
@@ -299,21 +373,22 @@
             <path d="M9 18l6-6-6-6"></path>
           </svg>
         </button>
-        <button *ngIf="selectedNode()" type="button" (click)="saveNode()" [disabled]="saving() || !selectedNode()">
+        <button *ngIf="selectedNode()" class="primary" type="button" (click)="saveNode()" [disabled]="saving() || !selectedNode()">
           {{ saving() ? 'Saving...' : 'Save' }}
         </button>
       </div>
 
-      <section *ngIf="!selectedNode()" class="empty-panel inspector-empty">
+      <section *ngIf="!selectedNode() && inspectorTab() !== 'qa'" class="empty-panel inspector-empty">
         <h3>Select a block to edit</h3>
         <p>Choose a node on the canvas to open its settings here.</p>
       </section>
 
-      <nav class="tabs" *ngIf="selectedNode()">
-        <button type="button" [class.active]="inspectorTab() === 'settings'" (click)="inspectorTab.set('settings')">Settings</button>
-        <button type="button" [class.active]="inspectorTab() === 'variables'" (click)="inspectorTab.set('variables')">Variables</button>
-        <button type="button" [class.active]="inspectorTab() === 'validation'" (click)="inspectorTab.set('validation')">Validation</button>
-        <button type="button" [class.active]="inspectorTab() === 'preview'" (click)="inspectorTab.set('preview')">Preview</button>
+      <nav class="tabs">
+        <button class="secondary" type="button" [disabled]="!selectedNode()" [class.active]="inspectorTab() === 'settings'" (click)="inspectorTab.set('settings')">Settings</button>
+        <button class="secondary" type="button" [disabled]="!selectedNode()" [class.active]="inspectorTab() === 'variables'" (click)="inspectorTab.set('variables')">Variables</button>
+        <button class="secondary" type="button" [disabled]="!selectedNode()" [class.active]="inspectorTab() === 'validation'" (click)="inspectorTab.set('validation')">Validation</button>
+        <button class="secondary" type="button" [disabled]="!selectedNode()" [class.active]="inspectorTab() === 'preview'" (click)="inspectorTab.set('preview')">Preview</button>
+        <button class="secondary" type="button" [class.active]="inspectorTab() === 'qa'" (click)="qaMode.set(true); inspectorTab.set('qa')">QA</button>
       </nav>
 
       <section *ngIf="inspectorTab() === 'settings' && selectedNode() as node" class="inspector-section">
@@ -325,12 +400,15 @@
         <div class="type-summary" [ngClass]="blockTypeClass(node.type)">
           <span class="block-icon">{{ blockMeta(node.type).icon }}</span>
           <div>
-            <strong>{{ blockMeta(node.type).label }}</strong>
+            <strong>
+              {{ blockMeta(node.type).label }}
+              <em class="block-status" [ngClass]="blockStatusClass(node.type)">{{ blockStatusLabel(node.type) }}</em>
+            </strong>
             <p>{{ helperText(node) }}</p>
           </div>
         </div>
 
-        <label *ngIf="!isAiAnswerNode(node.type) && node.type !== 'condition' && node.type !== 'set_variable' && node.type !== 'api_request' && !isAdvancedPlaceholder(node.type)">
+        <label *ngIf="!isAiAnswerNode(node.type) && node.type !== 'condition' && node.type !== 'set_variable' && node.type !== 'api_request' && node.type !== 'meeting_scheduler' && !isAdvancedPlaceholder(node.type)">
           Text
           <textarea rows="5" [ngModel]="nodeText(node)" (ngModelChange)="setNodeText($event)"></textarea>
         </label>
@@ -345,17 +423,41 @@
           <input [ngModel]="nodeConfigValue(node, 'invalid_message')" (ngModelChange)="updateNodeConfig('invalid_message', $event)">
         </label>
 
-        <label *ngIf="node.type === 'buttons'">
-          Buttons
-          <textarea rows="4" [ngModel]="buttonText(node)" (ngModelChange)="setButtonText($event)" placeholder="Admissions&#10;Finance&#10;Support"></textarea>
-          <small class="field-help">One button per line.</small>
-        </label>
+        <section class="choice-config" *ngIf="node.type === 'buttons'">
+          <div class="config-heading">
+            <div>
+              <p class="eyebrow">Choices</p>
+              <h4>Visitor buttons</h4>
+            </div>
+            <span>{{ nodeButtons(node).length }} options</span>
+          </div>
+          <label>
+            Button labels
+            <textarea rows="4" [ngModel]="buttonText(node)" (ngModelChange)="setButtonText($event)" placeholder="Admissions&#10;Finance&#10;Support"></textarea>
+            <small class="field-help">One option per line. Each option should have a target path below.</small>
+          </label>
+          <div class="route-preview-list" *ngIf="selectedButtonRouteRows().length">
+            <div *ngFor="let route of selectedButtonRouteRows()" [class.missing]="route.missing">
+              <span>{{ route.label }}</span>
+              <strong>{{ route.targetLabel }}</strong>
+            </div>
+          </div>
+        </section>
 
         <section class="condition-box" *ngIf="node.type === 'condition'">
-          <p class="eyebrow">Condition</p>
+          <div class="config-heading">
+            <div>
+              <p class="eyebrow">Condition</p>
+              <h4>Check a saved answer</h4>
+            </div>
+            <span>Silent block</span>
+          </div>
+          <small class="field-help">This block does not send a message. It checks a variable collected earlier and chooses True or False.</small>
+          <div class="condition-summary">{{ selectedConditionSummary() }}</div>
           <label>
-            Saved variable
-            <input [ngModel]="nodeConfigValue(node, 'field')" (ngModelChange)="updateNodeConfig('field', $event)" placeholder="subject">
+            Check variable
+            <input [ngModel]="nodeConfigValue(node, 'field')" (ngModelChange)="updateNodeConfig('field', $event)" placeholder="budget">
+            <small class="field-help" *ngIf="availableConditionVariableNames().length">Available: {{ availableConditionVariableNames().slice(0, 5).join(', ') }}</small>
           </label>
           <label>
             Rule
@@ -364,8 +466,35 @@
             </select>
           </label>
           <label *ngIf="nodeConfigValue(node, 'operator') !== 'exists' && nodeConfigValue(node, 'operator') !== 'not_exists'">
-            Expected answer
-            <input [ngModel]="nodeConfigValue(node, 'value')" (ngModelChange)="updateNodeConfig('value', $event)" placeholder="Admissions">
+            Expected value
+            <input [ngModel]="nodeConfigValue(node, 'value')" (ngModelChange)="updateNodeConfig('value', $event)" placeholder="1000">
+          </label>
+          <div class="route-preview-list">
+            <div *ngFor="let route of selectedConditionRouteRows()" [class.missing]="route.missing">
+              <span>{{ route.label | titlecase }}</span>
+              <strong>{{ route.targetLabel }}</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="condition-box" *ngIf="node.type === 'meeting_scheduler'">
+          <p class="eyebrow">Meeting Preference</p>
+          <small class="field-help">This captures a preferred time for manager follow-up. It does not create a calendar meeting.</small>
+          <label>
+            Prompt
+            <textarea rows="3" [ngModel]="nodeConfigValue(node, 'prompt')" (ngModelChange)="updateNodeConfig('prompt', $event)" placeholder="What meeting time works best?"></textarea>
+          </label>
+          <label>
+            Meeting variable
+            <input [ngModel]="nodeConfigValue(node, 'field')" (ngModelChange)="updateNodeConfig('field', $event)" placeholder="preferred_time">
+          </label>
+          <label>
+            Timezone
+            <input [ngModel]="nodeConfigValue(node, 'timezone')" (ngModelChange)="updateNodeConfig('timezone', $event)" placeholder="local">
+          </label>
+          <label>
+            Saved message
+            <input [ngModel]="nodeConfigValue(node, 'success_message')" (ngModelChange)="updateNodeConfig('success_message', $event)" placeholder="Meeting preference saved.">
           </label>
         </section>
 
@@ -450,15 +579,6 @@
             <textarea rows="4" [ngModel]="jsonConfigValue(node, 'input_variables')" (ngModelChange)="updateNodeJsonConfig('input_variables', $event)" placeholder='["user_question","user_email"]'></textarea>
           </label>
 
-          <label *ngIf="node.type === 'meeting_scheduler'">
-            Meeting variable
-            <input [ngModel]="nodeConfigValue(node, 'field')" (ngModelChange)="updateNodeConfig('field', $event)" placeholder="preferred_time">
-          </label>
-
-          <label *ngIf="node.type === 'meeting_scheduler'">
-            Timezone
-            <input [ngModel]="nodeConfigValue(node, 'timezone')" (ngModelChange)="updateNodeConfig('timezone', $event)" placeholder="local">
-          </label>
         </section>
 
         <section class="condition-box" *ngIf="node.type === 'set_variable'">
@@ -499,8 +619,20 @@
             <input [ngModel]="nodeConfigValue(node, 'response_field')" (ngModelChange)="updateNodeConfig('response_field', $event)" placeholder="api_response">
           </label>
           <label>
+            Timeout seconds
+            <input type="number" min="1" max="30" step="1" [ngModel]="nodeConfigValue(node, 'timeout') || 8" (ngModelChange)="updateNodeConfig('timeout', $event)">
+          </label>
+          <label>
             JSON body
             <textarea rows="4" [ngModel]="jsonConfigValue(node, 'body')" (ngModelChange)="updateNodeJsonConfig('body', $event)" placeholder="JSON body. Runtime supports variable templates such as user_email."></textarea>
+          </label>
+          <label>
+            Success message
+            <input [ngModel]="nodeConfigValue(node, 'success_message')" (ngModelChange)="updateNodeConfig('success_message', $event)" placeholder="Request completed.">
+          </label>
+          <label>
+            Error message
+            <input [ngModel]="nodeConfigValue(node, 'error_message')" (ngModelChange)="updateNodeConfig('error_message', $event)" placeholder="The request failed.">
           </label>
           <small class="field-help">Requests are not executed in the builder. Runtime allows only GET/POST HTTP(S) URLs.</small>
         </section>
@@ -547,10 +679,19 @@
         </section>
 
         <section class="routing-box" *ngIf="node.type === 'buttons'">
-          <p class="eyebrow">Button paths</p>
-          <div class="button-route" *ngFor="let button of nodeButtons(node)">
-            <strong>{{ button }}</strong>
-            <select [ngModel]="buttonTarget(button)" (ngModelChange)="setButtonTarget(button, $event)">
+          <div class="config-heading">
+            <div>
+              <p class="eyebrow">Button paths</p>
+              <h4>Map each choice</h4>
+            </div>
+            <span>{{ selectedButtonRouteRows().length }} paths</span>
+          </div>
+          <div class="button-route route-card" *ngFor="let route of selectedButtonRouteRows()" [class.missing]="route.missing">
+            <div>
+              <strong>{{ route.label }}</strong>
+              <small>{{ route.missing ? 'Needs a target block' : ('Routes to ' + route.targetLabel) }}</small>
+            </div>
+            <select [ngModel]="buttonTarget(route.label)" (ngModelChange)="setButtonTarget(route.label, $event)">
               <option value="">Choose next step</option>
               <option *ngFor="let target of nodes()" [value]="target.node_key" [disabled]="target.node_key === node.node_key">{{ target.label }}</option>
             </select>
@@ -558,17 +699,19 @@
         </section>
 
         <section class="routing-box" *ngIf="node.type === 'condition'">
-          <p class="eyebrow">Condition paths</p>
-          <div class="button-route">
-            <strong>True</strong>
-            <select [ngModel]="conditionTarget('true')" (ngModelChange)="setConditionTarget('true', $event)">
-              <option value="">Choose next step</option>
-              <option *ngFor="let target of nodes()" [value]="target.node_key" [disabled]="target.node_key === node.node_key">{{ target.label }}</option>
-            </select>
+          <div class="config-heading">
+            <div>
+              <p class="eyebrow">Condition paths</p>
+              <h4>Route the result</h4>
+            </div>
+            <span>True / False</span>
           </div>
-          <div class="button-route">
-            <strong>False</strong>
-            <select [ngModel]="conditionTarget('false')" (ngModelChange)="setConditionTarget('false', $event)">
+          <div class="button-route route-card" *ngFor="let route of selectedConditionRouteRows()" [class.missing]="route.missing">
+            <div>
+              <strong>{{ route.label | titlecase }}</strong>
+              <small>{{ route.label === 'true' ? 'Rule matched' : 'Rule did not match' }}</small>
+            </div>
+            <select [ngModel]="conditionTarget(route.label)" (ngModelChange)="setConditionTarget(route.label, $event)">
               <option value="">Choose next step</option>
               <option *ngFor="let target of nodes()" [value]="target.node_key" [disabled]="target.node_key === node.node_key">{{ target.label }}</option>
             </select>
@@ -615,7 +758,7 @@
           <div *ngFor="let item of previewMessages()" [class.user]="item.role === 'user'" [class.bot]="item.role === 'bot'" class="preview-bubble">
             <p>{{ item.text }}</p>
             <div class="button-list" *ngIf="item.options?.length">
-              <button type="button" *ngFor="let option of item.options" (click)="sendPreview(option)" [disabled]="previewLoading()">{{ option }}</button>
+              <button class="secondary" type="button" *ngFor="let option of item.options" (click)="sendPreview(option)" [disabled]="previewLoading()">{{ option }}</button>
             </div>
           </div>
           <p *ngIf="previewLoading()" class="muted">Preview is thinking...</p>
@@ -623,8 +766,84 @@
         </div>
         <div class="preview-input">
           <input [(ngModel)]="previewInput" (keyup.enter)="sendPreview()" placeholder="Type a test message" [disabled]="previewLoading()">
-          <button type="button" (click)="sendPreview()" [disabled]="previewLoading() || !previewInput.trim()">Send</button>
+          <button class="primary" type="button" (click)="sendPreview()" [disabled]="previewLoading() || !previewInput.trim()">Send</button>
         </div>
+      </section>
+
+      <section *ngIf="inspectorTab() === 'qa'" class="inspector-section qa-dock" aria-label="Flow QA mode">
+        <header class="qa-dock-header">
+          <div>
+            <p class="eyebrow">QA Mode</p>
+            <h3>Flow diagnostics</h3>
+          </div>
+          <button class="icon-button" type="button" (click)="toggleQaMode()" aria-label="Close QA mode" title="Close QA mode">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12"></path>
+              <path d="M18 6L6 18"></path>
+            </svg>
+          </button>
+        </header>
+
+        <span class="qa-status" [ngClass]="qaStatusClass()">{{ qaStatusLabel() }}</span>
+
+        <section class="qa-section">
+          <div class="qa-metric">
+            <span>Current block</span>
+            <strong>{{ qaCurrentNodeLabel() }}</strong>
+            <small>{{ qaCurrentNodeType() }}</small>
+          </div>
+          <div class="qa-metric">
+            <span>Runtime mode</span>
+            <strong>{{ qaModeLabel() }}</strong>
+            <small>Session #{{ previewSessionId() || '-' }}</small>
+          </div>
+          <div class="qa-metric">
+            <span>Last input</span>
+            <strong>{{ qaLastInput() || 'No message yet' }}</strong>
+            <small>{{ qaRuntimeState()?.sources?.length || 0 }} sources</small>
+          </div>
+        </section>
+
+        <section class="qa-section">
+          <div class="qa-section-title">
+            <h4>Validation</h4>
+            <button class="secondary compact" type="button" (click)="validateCurrentFlow()">Run</button>
+          </div>
+          <div class="qa-empty" *ngIf="!validationErrors().length">No blocking validation errors.</div>
+          <ul class="qa-issue-list" *ngIf="validationErrors().length">
+            <li *ngFor="let item of validationErrors().slice(0, 5)">{{ item }}</li>
+          </ul>
+          <small *ngIf="validationErrors().length > 5">+{{ validationErrors().length - 5 }} more issues in validation.</small>
+        </section>
+
+        <section class="qa-section">
+          <div class="qa-section-title">
+            <h4>Saved variables</h4>
+            <span>{{ qaVariables().length }}</span>
+          </div>
+          <div class="qa-empty" *ngIf="!qaVariables().length">No runtime variables captured yet.</div>
+          <div class="qa-variable-list" *ngIf="qaVariables().length">
+            <div *ngFor="let variable of qaVariables().slice(0, 6)">
+              <span>{{ variable.key }}</span>
+              <strong>{{ variable.value }}</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="qa-section">
+          <div class="qa-section-title">
+            <h4>Path coverage</h4>
+            <span>{{ transitions().length }} links</span>
+          </div>
+          <div class="qa-path-list">
+            <div *ngFor="let row of qaPathRows().slice(0, 8)" [class.active]="row.isCurrent">
+              <strong>{{ row.node.label }}</strong>
+              <small *ngIf="row.outgoing.length">{{ row.outgoing.length }} outgoing</small>
+              <small *ngIf="!row.outgoing.length && !isTerminalNode(row.node)">No next step</small>
+              <small *ngIf="isTerminalNode(row.node)">Terminal</small>
+            </div>
+          </div>
+        </section>
       </section>
     </aside>
   </section>

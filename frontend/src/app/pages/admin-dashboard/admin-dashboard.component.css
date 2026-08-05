@@ -1,21 +1,21 @@
 :host {
-  --ga-primary: #4099ff;
-  --ga-primary-2: #73b4ff;
-  --ga-green: #2ed8b6;
-  --ga-green-2: #59e0c5;
-  --ga-yellow: #ffb64d;
-  --ga-yellow-2: #ffcb80;
-  --ga-red: #ff5370;
-  --ga-red-2: #ff869a;
-  --ga-purple: #7759de;
-  --ga-bg: #f6f7fb;
-  --ga-text: #222;
-  --ga-muted: #666;
-  --ga-border: #e2e5e8;
-  --ga-shadow: 0 1px 2.94px 0.06px rgba(4, 26, 55, 0.16);
+  --ga-primary: var(--brand-primary);
+  --ga-primary-2: var(--brand-primary-hover);
+  --ga-green: var(--status-success);
+  --ga-green-2: #54c796;
+  --ga-yellow: var(--status-warning);
+  --ga-yellow-2: #f1b85d;
+  --ga-red: var(--status-danger);
+  --ga-red-2: #e8798e;
+  --ga-purple: var(--accent-secondary);
+  --ga-bg: var(--surface-page);
+  --ga-text: var(--text-primary);
+  --ga-muted: var(--text-secondary);
+  --ga-border: var(--border-default);
+  --ga-shadow: none;
   color: var(--ga-text);
   display: block;
-  font-family: Poppins, "Segoe UI", Arial, sans-serif;
+  font-family: var(--font-body);
   font-size: 14px;
 }
 
@@ -159,7 +159,7 @@
 }
 
 .bg-c-blue {
-  background: linear-gradient(45deg, #4099ff, #73b4ff);
+  background: linear-gradient(45deg, var(--brand-primary), #72e4da);
 }
 
 .bg-c-green {
@@ -284,7 +284,7 @@
 }
 
 .usage-bars span {
-  background: linear-gradient(to top, #4099ff, #73b4ff);
+  background: linear-gradient(to top, var(--brand-primary), #72e4da);
   border-radius: 2px 2px 0 0;
   box-shadow: 0 8px 16px rgba(64, 153, 255, 0.18);
   flex: 1;

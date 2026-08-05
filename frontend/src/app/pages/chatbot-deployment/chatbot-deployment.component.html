@@ -1,0 +1,210 @@
+<section class="deployment-page" *ngIf="!loading(); else loadingState">
+  <header class="deployment-header">
+    <div class="header-copy">
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a [routerLink]="['/dashboard/projects']">Projects</a>
+        <span>/</span>
+        <a [routerLink]="['/dashboard/projects', projectId]">{{ project()?.name || 'Project' }}</a>
+        <span>/</span>
+        <a [routerLink]="['/dashboard/projects', projectId, 'chatbots']">Assistants</a>
+        <span>/</span>
+        <strong>Deployment</strong>
+      </nav>
+      <p class="eyebrow">Assistant Deployment</p>
+      <h1>{{ assistant()?.name || 'Assistant' }}</h1>
+      <p>Publish access points for public chat, embedded web widgets, and REST API integrations.</p>
+    </div>
+
+    <div class="header-actions">
+      <span class="status-badge" [ngClass]="statusSummary().toLowerCase().replace(' ', '-')">
+        <svg *ngIf="statusSummary() !== 'Needs attention'" lucideShieldCheck size="14" aria-hidden="true"></svg>
+        <svg *ngIf="statusSummary() === 'Needs attention'" lucideTriangleAlert size="14" aria-hidden="true"></svg>
+        {{ statusSummary() }}
+      </span>
+      <button class="secondary-button" type="button" (click)="loadChannels()" [disabled]="channelsLoading()">
+        <svg lucideRefreshCw size="15" aria-hidden="true"></svg>
+        {{ channelsLoading() ? 'Refreshing...' : 'Refresh' }}
+      </button>
+    </div>
+  </header>
+
+  <p *ngIf="error()" class="alert error" role="alert">{{ error() }}</p>
+  <p *ngIf="success()" class="alert success" role="status">{{ success() }}</p>
+
+  <section class="runtime-strip" aria-label="Deployment architecture">
+    <div>
+      <span>01</span>
+      <strong>Flow Builder</strong>
+      <small>Draft and versioned assistant logic</small>
+    </div>
+    <i aria-hidden="true"></i>
+    <div>
+      <span>02</span>
+      <strong>Unified Runtime</strong>
+      <small>One execution path for all channels</small>
+    </div>
+    <i aria-hidden="true"></i>
+    <div>
+      <span>03</span>
+      <strong>Channel Adapters</strong>
+      <small>Public chat, widget and REST API</small>
+    </div>
+  </section>
+
+  <section class="channel-layout" aria-label="Deployment channels">
+    <article class="channel-panel public-chat-panel">
+      <div class="panel-heading">
+        <span class="channel-icon"><svg lucideGlobe2 size="18" aria-hidden="true"></svg></span>
+        <div>
+          <p class="technical-label">WEB CHAT</p>
+          <h2>Public chat link</h2>
+          <p>Share a hosted chat page for this assistant.</p>
+        </div>
+        <span class="channel-status" [ngClass]="channelStatusClass('web')">
+          <svg lucideCheckCircle2 size="13" aria-hidden="true"></svg>
+          {{ channelStatusLabel('web') }}
+        </span>
+      </div>
+
+      <label class="field-block">
+        <span>Public URL</span>
+        <div class="copy-control">
+          <input [ngModel]="publicLink()" readonly aria-label="Public chat URL">
+          <button type="button" class="icon-button" (click)="copyText(publicLink())" aria-label="Copy public chat URL">
+            <svg lucideClipboard size="15" aria-hidden="true"></svg>
+          </button>
+        </div>
+      </label>
+
+      <div class="panel-actions">
+        <a class="secondary-button" [routerLink]="['/public-chat', chatbotId]" target="_blank" rel="noopener">
+          <svg lucideExternalLink size="15" aria-hidden="true"></svg>
+          Open chat
+        </a>
+        <button class="secondary-button" type="button" (click)="testChannel('web')" [disabled]="channelTesting() === 'web'">
+          {{ channelTesting() === 'web' ? 'Testing...' : 'Test channel' }}
+        </button>
+      </div>
+    </article>
+
+    <article class="channel-panel widget-panel">
+      <div class="panel-heading">
+        <span class="channel-icon"><svg lucideCode2 size="18" aria-hidden="true"></svg></span>
+        <div>
+          <p class="technical-label">WEB WIDGET</p>
+          <h2>Embed script</h2>
+          <p>Add this assistant to an existing website.</p>
+        </div>
+        <span class="channel-status" [ngClass]="channelStatusClass('widget')">
+          <svg lucideCheckCircle2 size="13" aria-hidden="true"></svg>
+          {{ channelStatusLabel('widget') }}
+        </span>
+      </div>
+
+      <label class="field-block code-field">
+        <span>Script</span>
+        <div class="code-box">
+          <textarea [ngModel]="widgetCode()" readonly rows="4" aria-label="Widget embed script"></textarea>
+          <button type="button" class="icon-button" (click)="copyText(widgetCode())" aria-label="Copy widget embed script">
+            <svg lucideClipboard size="15" aria-hidden="true"></svg>
+          </button>
+        </div>
+      </label>
+
+      <p class="inline-note">Widget customization is configured in the assistant channel settings when available.</p>
+    </article>
+
+    <article class="channel-panel api-panel">
+      <div class="panel-heading">
+        <span class="channel-icon"><svg lucideServer size="18" aria-hidden="true"></svg></span>
+        <div>
+          <p class="technical-label">REST API</p>
+          <h2>Server integration</h2>
+          <p>Use the public runtime endpoint from your own application.</p>
+        </div>
+        <span class="channel-status" [ngClass]="channelStatusClass('api')">
+          <svg lucideCheckCircle2 size="13" aria-hidden="true"></svg>
+          {{ channelStatusLabel('api') }}
+        </span>
+      </div>
+
+      <div class="api-grid">
+        <label class="field-block">
+          <span>Endpoint</span>
+          <div class="copy-control">
+            <input [ngModel]="apiEndpoint()" readonly aria-label="REST API endpoint">
+            <button type="button" class="icon-button" (click)="copyText(apiEndpoint())" aria-label="Copy REST API endpoint">
+              <svg lucideClipboard size="15" aria-hidden="true"></svg>
+            </button>
+          </div>
+        </label>
+
+        <label class="field-block">
+          <span>API key</span>
+          <div class="copy-control">
+            <input [ngModel]="maskedApiKey()" readonly aria-label="Masked API key">
+            <button type="button" class="icon-button" (click)="copyText(assistant()?.public_api_key)" aria-label="Copy API key">
+              <svg lucideKeyRound size="15" aria-hidden="true"></svg>
+            </button>
+          </div>
+        </label>
+      </div>
+
+      <label class="field-block code-field">
+        <span>cURL example</span>
+        <div class="code-box">
+          <textarea [ngModel]="apiCurl()" readonly rows="5" aria-label="cURL API example"></textarea>
+          <button type="button" class="icon-button" (click)="copyText(apiCurl())" aria-label="Copy cURL example">
+            <svg lucideClipboard size="15" aria-hidden="true"></svg>
+          </button>
+        </div>
+      </label>
+
+      <p *ngIf="channelCurrentError('api')" class="channel-error" role="alert">{{ channelCurrentError('api') }}</p>
+
+      <div class="panel-actions">
+        <button class="secondary-button" type="button" (click)="testChannel('api')" [disabled]="channelTesting() === 'api'">
+          {{ channelTesting() === 'api' ? 'Testing...' : 'Test API' }}
+        </button>
+        <button class="danger-ghost" type="button" (click)="regenerateApiKey()" [disabled]="apiKeyId() === chatbotId">
+          {{ apiKeyId() === chatbotId ? 'Regenerating...' : 'Regenerate key' }}
+        </button>
+      </div>
+    </article>
+  </section>
+</section>
+
+<ng-template #loadingState>
+  <section class="deployment-page">
+    <div class="loading-card">
+      <svg lucideRocket size="20" aria-hidden="true"></svg>
+      <p>Loading deployment workspace...</p>
+    </div>
+  </section>
+</ng-template>
+
+<section
+  *ngIf="pendingApiKeyReset()"
+  class="confirm-overlay"
+  role="presentation"
+  (click)="cancelRegenerateApiKey()">
+  <div
+    class="confirm-card"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="regenerate-api-key-title"
+    (click)="$event.stopPropagation()">
+    <button type="button" class="close-confirm" aria-label="Cancel API key regeneration" (click)="cancelRegenerateApiKey()">
+      <svg lucideX size="16" aria-hidden="true"></svg>
+    </button>
+    <p class="technical-label">SECURITY</p>
+    <h2 id="regenerate-api-key-title">Regenerate API key?</h2>
+    <p>The current public API key will stop working immediately. Update any external integrations after regenerating it.</p>
+    <div class="confirm-actions">
+      <button type="button" class="secondary-button" (click)="cancelRegenerateApiKey()" [disabled]="apiKeyId() === chatbotId">Cancel</button>
+      <button type="button" class="danger-button" (click)="confirmRegenerateApiKey()" [disabled]="apiKeyId() === chatbotId">
+        {{ apiKeyId() === chatbotId ? 'Regenerating...' : 'Regenerate key' }}
+      </button>
+    </div>
+  </div>
+</section>

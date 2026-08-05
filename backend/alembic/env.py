@@ -21,7 +21,7 @@ if config.config_file_name is not None:
 
 # add your model's MetaData object here
 # for 'autogenerate' support
-from models import audit_log, chatbot, chatbot_channel, chunk, conversation, document, flow, knowledge_base, llm_config, project, runtime_log, user, version
+from models import audit_log, chatbot, chatbot_channel, chunk, conversation, document, evaluation, flow, flow_template, knowledge_base, llm_config, project, runtime_log, user, version, version_smoke_test
 # target_metadata = mymodel.Base.metadata
 from database.db import Base
 target_metadata = Base.metadata

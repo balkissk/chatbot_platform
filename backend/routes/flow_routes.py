@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from database.db import SessionLocal
 from models.flow import Flow, FlowNode, FlowTransition
+from models.flow_template import FlowTemplate, FlowTemplateRevision
 from models.chatbot import Chatbot
 from models.chatbot_schema import safe_chatbot_language
 from models.flow_schema import BuilderContextResponse, FlowNodeCreate, FlowNodeResponse, FlowNodeUpdate, FlowResponse, FlowTransitionCreate, FlowTransitionResponse, FlowTransitionUpdate
@@ -23,8 +24,9 @@ from services.flow_limits import (
     normalize_transition_output_key,
 )
 from services.flow_validation import validate_flow_version
+from services.flow_runtime import execute_flow
 from services.generated_flow import ensure_generated_flow_is_valid
-from services.templates import create_starter_flow, replace_flow_with_template, template_generated_payload, template_options
+from services.templates import TEMPLATES, create_starter_flow, replace_flow_with_template, template_generated_payload, template_metadata, template_options
 import uuid
 
 router = APIRouter()
@@ -34,6 +36,36 @@ logger = logging.getLogger(__name__)
 class FlowTemplateApply(BaseModel):
     template_key: str
     purpose: str | None = None
+    template_revision: int | None = None
+
+
+class FlowTemplateCreate(BaseModel):
+    name: str
+    description: str | None = None
+    purpose: str = "custom"
+    is_exposed: bool = False
+    is_shared: bool = False
+    change_note: str | None = None
+
+
+class FlowTemplateUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    purpose: str | None = None
+    is_exposed: bool | None = None
+    is_shared: bool | None = None
+    test_scenarios: list[dict] | None = None
+
+
+class FlowTemplateTestRun(BaseModel):
+    name: str | None = None
+    messages: list[str] | None = None
+    expected_variables: dict | None = None
+    expected_final_node_key: str | None = None
+
+
+class FlowTemplateRevisionCreate(BaseModel):
+    change_note: str | None = None
 
 
 class AiGenerateRequest(BaseModel):
@@ -76,6 +108,141 @@ class AiGenerateResponse(BaseModel):
     generation_confidence: float
     generation_explanation: str
     initial_flow_structure: dict
+
+
+VISIBLE_TEMPLATE_BLOCK_TYPES = {
+    "message",
+    "question",
+    "buttons",
+    "end",
+    "rag_answer",
+    "knowledge_search",
+    "collect_name",
+    "collect_email",
+    "collect_phone",
+    "condition",
+    "set_variable",
+    "meeting_scheduler",
+    "handoff",
+}
+
+HIDDEN_TEMPLATE_BLOCK_TYPES = {
+    "api_request",
+    "ai_router",
+    "ai_classifier",
+    "confidence_check",
+    "lead_score",
+    "action",
+}
+
+
+def _template_issue(severity: str, message: str, node_key: str | None = None) -> dict:
+    return {
+        "severity": severity,
+        "message": message,
+        "node_key": node_key,
+    }
+
+
+def _template_config_value(config: dict, key: str) -> str:
+    return str((config or {}).get(key) or "").strip()
+
+
+def _template_buttons(config: dict) -> list[str]:
+    buttons = (config or {}).get("buttons") or []
+    return [str(item).strip() for item in buttons if str(item).strip()] if isinstance(buttons, list) else []
+
+
+def analyze_template_quality(template_key: str, template: dict) -> dict:
+    nodes = template.get("nodes") or []
+    transitions = template.get("transitions") or []
+    issues: list[dict] = []
+    node_keys = [str(node[0]) for node in nodes]
+    node_key_set = set(node_keys)
+    block_types: dict[str, int] = {}
+    hidden_blocks: list[str] = []
+    unsupported_blocks: list[str] = []
+
+    if not nodes:
+        issues.append(_template_issue("error", "Template has no blocks."))
+
+    if len(node_keys) != len(node_key_set):
+        issues.append(_template_issue("error", "Template has duplicate block keys."))
+
+    if "start" not in node_key_set:
+        issues.append(_template_issue("error", "Template has no start block."))
+
+    for node_key, node_type, label, config, x, y in nodes:
+        block_types[node_type] = block_types.get(node_type, 0) + 1
+        if node_type in HIDDEN_TEMPLATE_BLOCK_TYPES:
+            hidden_blocks.append(node_type)
+            issues.append(_template_issue("warning", f"Uses hidden or legacy block type '{node_type}'.", node_key))
+        elif node_type not in VISIBLE_TEMPLATE_BLOCK_TYPES:
+            unsupported_blocks.append(node_type)
+            issues.append(_template_issue("error", f"Unsupported block type '{node_type}'.", node_key))
+
+        if not str(label or "").strip():
+            issues.append(_template_issue("warning", "Block has no readable label.", node_key))
+        if not is_valid_canvas_position(x) or not is_valid_canvas_position(y):
+            issues.append(_template_issue("error", "Block position is outside supported canvas bounds.", node_key))
+
+        config = config or {}
+        if node_type == "message" and not _template_config_value(config, "text"):
+            issues.append(_template_issue("error", "Message block is missing text.", node_key))
+        if node_type in {"question", "collect_name", "collect_email", "collect_phone", "meeting_scheduler"}:
+            if not _template_config_value(config, "prompt"):
+                issues.append(_template_issue("error", "Input block is missing a prompt.", node_key))
+            if not _template_config_value(config, "field"):
+                issues.append(_template_issue("error", "Input block is missing a variable name.", node_key))
+        if node_type == "buttons":
+            buttons = _template_buttons(config)
+            if not buttons:
+                issues.append(_template_issue("error", "Buttons block has no options.", node_key))
+            for button in buttons:
+                if not any(source == node_key and label == button for source, _target, label, _condition in transitions):
+                    issues.append(_template_issue("error", f"Button '{button}' has no matching path.", node_key))
+        if node_type == "condition":
+            if not _template_config_value(config, "field"):
+                issues.append(_template_issue("error", "Condition is missing the variable to check.", node_key))
+            labels = {str(label or "").lower() for source, _target, label, _condition in transitions if source == node_key}
+            if "true" not in labels:
+                issues.append(_template_issue("error", "Condition is missing a true path.", node_key))
+            if "false" not in labels:
+                issues.append(_template_issue("error", "Condition is missing a false path.", node_key))
+        if node_type in {"rag_answer", "knowledge_search"} and not _template_config_value(config, "fallback"):
+            issues.append(_template_issue("warning", "AI/RAG block has no fallback message.", node_key))
+        if node_type == "end" and not _template_config_value(config, "message"):
+            issues.append(_template_issue("warning", "End block has no closing message.", node_key))
+
+    seen_transitions: set[tuple[str, str, str]] = set()
+    for source, target, label, condition in transitions:
+        if source not in node_key_set:
+            issues.append(_template_issue("error", f"Connector starts from unknown block '{source}'."))
+        if target not in node_key_set:
+            issues.append(_template_issue("error", f"Connector points to unknown block '{target}'."))
+        key = (str(source), str(target), normalize_transition_output_key(label, condition))
+        if key in seen_transitions:
+            issues.append(_template_issue("error", "Duplicate connector with same source, target and output key."))
+        seen_transitions.add(key)
+
+    severity_rank = {"error": 2, "warning": 1}
+    max_severity = max((severity_rank.get(issue["severity"], 0) for issue in issues), default=0)
+    status = "invalid" if max_severity == 2 else "warning" if max_severity == 1 else "valid"
+    metadata = template_metadata(template_key)
+    return {
+        "key": template_key,
+        "name": template.get("name") or template_key,
+        "source": "builtin",
+        "shared": True,
+        **metadata,
+        "status": status,
+        "nodes_count": len(nodes),
+        "transitions_count": len(transitions),
+        "block_types": [{"type": key, "count": value} for key, value in sorted(block_types.items())],
+        "hidden_blocks": sorted(set(hidden_blocks)),
+        "unsupported_blocks": sorted(set(unsupported_blocks)),
+        "issues": issues,
+    }
 
 
 class GeneratedFlowApply(BaseModel):
@@ -133,6 +300,368 @@ def ensure_transition_access(db: Session, transition_id: int, current_user: User
         raise HTTPException(status_code=404, detail="Transition not found")
     ensure_flow_access(db, transition.flow_id, current_user)
     return transition
+
+
+def _can_read_custom_template(template: FlowTemplate, current_user: User) -> bool:
+    return current_user.role == "admin" or template.owner_id == current_user.id or bool(template.is_shared)
+
+
+def _can_manage_custom_template(template: FlowTemplate, current_user: User) -> bool:
+    return current_user.role == "admin" or template.owner_id == current_user.id
+
+
+def _custom_template_query(db: Session, current_user: User):
+    query = db.query(FlowTemplate)
+    if current_user.role == "manager":
+        query = query.filter((FlowTemplate.owner_id == current_user.id) | (FlowTemplate.is_shared == True))  # noqa: E712
+    return query
+
+
+def _custom_template_payload(template: FlowTemplate) -> dict:
+    return {
+        "key": template.key,
+        "name": template.name,
+        "description": template.description or "",
+        "purposes": [template.purpose or "custom"],
+        "primary_purpose": template.purpose or "custom",
+        "exposed": bool(template.is_exposed),
+        "shared": bool(template.is_shared),
+        "owner_id": template.owner_id,
+        "source": "custom",
+        "current_revision_number": template.current_revision_number or 1,
+        "nodes": template.nodes or [],
+        "transitions": template.transitions or [],
+        "test_scenarios": template.test_scenarios or [],
+        "created_at": template.created_at,
+        "updated_at": template.updated_at,
+    }
+
+
+def _template_ownership_scope(template: FlowTemplate, current_user: User) -> str:
+    if template.owner_id == current_user.id:
+        return "mine"
+    return "shared"
+
+
+def _revision_payload(revision: FlowTemplateRevision) -> dict:
+    return {
+        "id": revision.id,
+        "revision_number": revision.revision_number,
+        "name": revision.name,
+        "description": revision.description or "",
+        "purpose": revision.purpose or "custom",
+        "nodes_count": len(revision.nodes or []),
+        "transitions_count": len(revision.transitions or []),
+        "test_scenarios_count": len(revision.test_scenarios or []),
+        "change_note": revision.change_note or "",
+        "created_by": revision.created_by,
+        "created_at": revision.created_at,
+    }
+
+
+def _latest_template_revision(db: Session, template: FlowTemplate) -> FlowTemplateRevision | None:
+    return db.query(FlowTemplateRevision).filter(
+        FlowTemplateRevision.template_id == template.id
+    ).order_by(FlowTemplateRevision.revision_number.desc()).first()
+
+
+def _template_revision(db: Session, template: FlowTemplate, revision_number: int | None = None) -> FlowTemplateRevision | None:
+    query = db.query(FlowTemplateRevision).filter(FlowTemplateRevision.template_id == template.id)
+    if revision_number is not None:
+        return query.filter(FlowTemplateRevision.revision_number == revision_number).first()
+    return query.order_by(FlowTemplateRevision.revision_number.desc()).first()
+
+
+def _create_template_revision(
+    db: Session,
+    template: FlowTemplate,
+    current_user: User,
+    nodes: list[dict],
+    transitions: list[dict],
+    test_scenarios: list[dict] | None = None,
+    change_note: str | None = None,
+) -> FlowTemplateRevision:
+    latest = _latest_template_revision(db, template)
+    revision_number = (latest.revision_number if latest else 0) + 1
+    revision = FlowTemplateRevision(
+        template_id=template.id,
+        revision_number=revision_number,
+        name=template.name,
+        description=template.description or "",
+        purpose=template.purpose or "custom",
+        nodes=nodes,
+        transitions=transitions,
+        test_scenarios=test_scenarios if test_scenarios is not None else (template.test_scenarios or []),
+        change_note=(change_note or "").strip()[:600],
+        created_by=current_user.id,
+    )
+    db.add(revision)
+    template.current_revision_number = revision_number
+    template.nodes = nodes
+    template.transitions = transitions
+    if test_scenarios is not None:
+        template.test_scenarios = test_scenarios
+    return revision
+
+
+def _template_from_db(db: Session, template_key: str, current_user: User) -> FlowTemplate | None:
+    template = db.query(FlowTemplate).filter(FlowTemplate.key == template_key).first()
+    if template and not _can_read_custom_template(template, current_user):
+        raise HTTPException(status_code=404, detail="Template not found")
+    return template
+
+
+def _analyze_payload_template(payload: dict) -> dict:
+    nodes = [
+        (
+            node.get("key"),
+            node.get("type"),
+            node.get("label"),
+            node.get("config") or {},
+            node.get("position_x", 0),
+            node.get("position_y", 0),
+        )
+        for node in payload.get("nodes", [])
+    ]
+    transitions = [
+        (
+            transition.get("source_node_key"),
+            transition.get("target_node_key"),
+            transition.get("label"),
+            transition.get("condition"),
+        )
+        for transition in payload.get("transitions", [])
+    ]
+    analysis = analyze_template_quality(payload.get("key") or "", {
+        "name": payload.get("name"),
+        "nodes": nodes,
+        "transitions": transitions,
+    })
+    analysis.update({
+        "description": payload.get("description") or "",
+        "purposes": payload.get("purposes") or [],
+        "primary_purpose": payload.get("primary_purpose") or "custom",
+        "exposed": bool(payload.get("exposed")),
+        "shared": bool(payload.get("shared")),
+        "owner_id": payload.get("owner_id"),
+        "source": payload.get("source") or "custom",
+        "current_revision_number": payload.get("current_revision_number") or payload.get("selected_revision_number") or 1,
+        "selected_revision_number": payload.get("selected_revision_number") or payload.get("current_revision_number") or 1,
+        "nodes": payload.get("nodes") or [],
+        "transitions": payload.get("transitions") or [],
+        "created_at": payload.get("created_at"),
+        "updated_at": payload.get("updated_at"),
+    })
+    return analysis
+
+
+def _current_flow_payload(flow: Flow) -> tuple[list[dict], list[dict]]:
+    nodes = [
+        {
+            "key": node.node_key,
+            "type": node.type,
+            "label": node.label,
+            "config": node.config or {},
+            "position_x": node.position_x,
+            "position_y": node.position_y,
+        }
+        for node in sorted(flow.nodes, key=lambda item: (item.position_y or 0, item.position_x or 0, item.id or 0))
+    ]
+    transitions = [
+        {
+            "source_node_key": transition.source_node_key,
+            "target_node_key": transition.target_node_key,
+            "label": transition.label,
+            "condition": transition.condition,
+        }
+        for transition in sorted(flow.transitions, key=lambda item: item.id or 0)
+    ]
+    return nodes, transitions
+
+
+def _runtime_graph_from_payload(nodes: list[dict], transitions: list[dict]) -> tuple[Flow, list[FlowNode], list[FlowTransition]]:
+    flow = Flow(id=0, version_id=0, name="Template Test")
+    runtime_nodes = [
+        FlowNode(
+            id=index + 1,
+            flow_id=0,
+            node_key=_item_value(node, "key"),
+            type=_item_value(node, "type"),
+            label=_item_value(node, "label"),
+            config=node.get("config") or {},
+            position_x=_item_value(node, "position_x") or 0,
+            position_y=_item_value(node, "position_y") or 0,
+        )
+        for index, node in enumerate(nodes or [])
+    ]
+    runtime_transitions = [
+        FlowTransition(
+            id=index + 1,
+            flow_id=0,
+            source_node_key=_item_value(transition, "source_node_key"),
+            target_node_key=_item_value(transition, "target_node_key"),
+            label=transition.get("label"),
+            condition=transition.get("condition"),
+        )
+        for index, transition in enumerate(transitions or [])
+    ]
+    return flow, runtime_nodes, runtime_transitions
+
+
+def _test_rag_answer(query: str, variables: dict, config: dict | None = None) -> dict:
+    response = (config or {}).get("test_response") or f"Test AI answer for: {query or 'empty input'}"
+    return {
+        "response": response,
+        "messages": [{"text": response, "options": []}],
+        "mode_used": "template_test_rag",
+        "sources": [],
+        "variables": variables,
+    }
+
+
+def _default_message_for_node(node: FlowNode, transitions: list[FlowTransition]) -> str:
+    config = node.config or {}
+    if node.type == "collect_email":
+        return "test@example.com"
+    if node.type == "collect_phone":
+        return "+21612345678"
+    if node.type == "collect_name":
+        return "Test User"
+    if node.type == "meeting_scheduler":
+        return "Tomorrow at 10:00"
+    if node.type == "buttons":
+        options = config.get("buttons") or [
+            transition.label
+            for transition in transitions
+            if transition.source_node_key == node.node_key and transition.label
+        ]
+        return str(options[0]) if options else ""
+    if node.type == "question":
+        field = str(config.get("field") or node.node_key).lower()
+        if "email" in field:
+            return "test@example.com"
+        if "phone" in field:
+            return "+21612345678"
+        if "budget" in field:
+            return "1500"
+        return "Test question"
+    if node.type in {"rag_answer", "knowledge_search"}:
+        return "Test question"
+    return ""
+
+
+def _run_template_scenario(template: dict, scenario: FlowTemplateTestRun) -> dict:
+    nodes = template.get("nodes") or []
+    transitions = template.get("transitions") or []
+    runtime_graph = _runtime_graph_from_payload(nodes, transitions)
+    node_by_key = {node.node_key: node for node in runtime_graph[1]}
+    variables = {"__language": "en"}
+    current_node_key = None
+    transcript: list[dict] = []
+    path: list[str] = []
+    errors: list[str] = []
+
+    def record(message: str, result: dict):
+        response = result.get("response") or ""
+        transcript.append({
+            "input": message,
+            "response": response,
+            "messages": result.get("messages") or [],
+            "current_node_key": result.get("current_node_key"),
+            "mode_used": result.get("mode_used"),
+        })
+        if result.get("current_node_key"):
+            path.append(result["current_node_key"])
+
+    try:
+        result = execute_flow(
+            db=None,
+            version_id=0,
+            message="",
+            current_node_key=None,
+            variables=variables,
+            rag_answer=_test_rag_answer,
+            allow_rag_fallback=True,
+            _runtime_graph=runtime_graph,
+        )
+        variables = result.get("variables") or variables
+        current_node_key = result.get("current_node_key")
+        record("__start__", result)
+
+        messages = scenario.messages
+        if messages is None:
+            messages = []
+            for _ in range(12):
+                current_node = node_by_key.get(current_node_key or "")
+                if not current_node:
+                    break
+                message = _default_message_for_node(current_node, runtime_graph[2])
+                if not message:
+                    break
+                messages.append(message)
+                probe = execute_flow(
+                    db=None,
+                    version_id=0,
+                    message=message,
+                    current_node_key=current_node_key,
+                    variables=variables,
+                    rag_answer=_test_rag_answer,
+                    allow_rag_fallback=True,
+                    _runtime_graph=runtime_graph,
+                )
+                variables = probe.get("variables") or variables
+                current_node_key = probe.get("current_node_key")
+                record(message, probe)
+                if probe.get("runtime_error") or not current_node_key:
+                    break
+            return _template_test_result(scenario, transcript, path, variables, current_node_key, errors)
+
+        for message in messages:
+            result = execute_flow(
+                db=None,
+                version_id=0,
+                message=message,
+                current_node_key=current_node_key,
+                variables=variables,
+                rag_answer=_test_rag_answer,
+                allow_rag_fallback=True,
+                _runtime_graph=runtime_graph,
+            )
+            variables = result.get("variables") or variables
+            current_node_key = result.get("current_node_key")
+            record(message, result)
+            if result.get("runtime_error"):
+                errors.append(result["runtime_error"].get("message") or "Runtime error")
+                break
+    except Exception as exc:
+        errors.append(str(exc))
+
+    return _template_test_result(scenario, transcript, path, variables, current_node_key, errors)
+
+
+def _template_test_result(
+    scenario: FlowTemplateTestRun,
+    transcript: list[dict],
+    path: list[str],
+    variables: dict,
+    current_node_key: str | None,
+    errors: list[str],
+) -> dict:
+    expected_variables = scenario.expected_variables or {}
+    for key, expected in expected_variables.items():
+        if variables.get(key) != expected:
+            errors.append(f"Expected variable '{key}' to equal '{expected}', got '{variables.get(key)}'.")
+    if scenario.expected_final_node_key is not None and current_node_key != scenario.expected_final_node_key:
+        errors.append(f"Expected final node '{scenario.expected_final_node_key}', got '{current_node_key or 'completed'}'.")
+    return {
+        "name": scenario.name or "Ad hoc test",
+        "status": "failed" if errors else "passed",
+        "errors": errors,
+        "path": path,
+        "final_node_key": current_node_key,
+        "variables": variables,
+        "transcript": transcript,
+    }
 
 
 def _compact(value: str | None, fallback: str = "") -> str:
@@ -280,8 +809,8 @@ def _analyze_generation_context(goal: str, context: str, knowledge: str) -> dict
     needs_handoff = _has_any(text, {"handoff", "human", "agent", "escalate", "complex", "support team", "advisor"})
     needs_routing = _has_any(text, {"multiple", "topics", "route", "routing", "department", "category", "intent"})
     needs_booking = _has_any(text, {"appointment", "booking", "schedule", "meeting", "reservation", "consultation"})
-    needs_api = bool(api_url) and _has_any(text, {"api", "webhook", "external", "ticket", "crm", "create request", "system"})
-    suggests_api = bool(api_url) or _has_any(text, {"api", "webhook", "external", "ticket", "crm", "create request", "system"})
+    needs_api = False
+    suggests_api = False
     needs_condition = needs_lead or _has_any(text, {"if", "score", "eligibility", "qualify", "decision"})
 
     intents = ["answer questions"]
@@ -290,11 +819,9 @@ def _analyze_generation_context(goal: str, context: str, knowledge: str) -> dict
     if needs_lead:
         intents.append("capture and qualify leads")
     if needs_booking:
-        intents.append("schedule meetings")
+        intents.append("capture meeting preferences")
     if needs_handoff:
         intents.append("escalate to a human")
-    if suggests_api:
-        intents.append("trigger external actions")
 
     variables = ["user_question"]
     if needs_lead or needs_handoff or needs_booking:
@@ -316,9 +843,7 @@ def _analyze_generation_context(goal: str, context: str, knowledge: str) -> dict
     if needs_condition:
         blocks.extend(["Confidence Check", "Lead Score"])
     if needs_booking:
-        blocks.append("Meeting Scheduler")
-    if suggests_api:
-        blocks.append("API Call")
+        blocks.append("Meeting Preference")
     if needs_handoff:
         blocks.append("Human Handoff")
 
@@ -435,21 +960,11 @@ def _build_generated_flow(welcome_message: str, rag_prompt: str, analysis: dict,
         })
 
     if analysis.get("needs_booking"):
-        add("scheduler", "meeting_scheduler", "Meeting Scheduler", {
+        add("scheduler", "meeting_scheduler", "Meeting Preference", {
             "field": "preferred_time",
-            "message": "Share your preferred meeting time.",
-            "timezone": "local"
-        })
-
-    if analysis.get("needs_api"):
-        add("api", "api_request", "API Call", {
-            "method": "POST",
-            "url": _compact(analysis.get("api_url")),
-            "headers": {},
-            "body": {},
-            "response_field": "api_response",
-            "success_message": "The request was sent.",
-            "error_message": "The request could not be sent."
+            "prompt": _localized_ai_text(language, "Share your preferred meeting time.", "Indiquez votre disponibilite preferee."),
+            "timezone": "local",
+            "success_message": _localized_ai_text(language, "Meeting preference saved.", "Preference de rendez-vous enregistree.")
         })
 
     add("question", "question", "User Question", {
@@ -545,8 +1060,8 @@ def _normalize_ai_generation(raw: dict, payload: AiGenerateRequest) -> AiGenerat
         payload.knowledge_base_description or "",
     )
     analysis["api_url"] = api_url
-    analysis["needs_api"] = bool(api_url) and bool(analysis.get("needs_api"))
-    analysis["suggests_api"] = bool(analysis.get("suggests_api") or analysis.get("needs_api") or "API Call" in (analysis.get("suggested_advanced_blocks") or []))
+    analysis["needs_api"] = False
+    analysis["suggests_api"] = False
     use_knowledge_base = bool(analysis.get("use_knowledge_base", fallback["use_knowledge_base"]))
     analysis["needs_rag"] = use_knowledge_base
     if language == "fr" and "Always answer in French." not in rag_prompt:
@@ -556,7 +1071,10 @@ def _normalize_ai_generation(raw: dict, payload: AiGenerateRequest) -> AiGenerat
     detected_intents = _string_list(analysis.get("detected_intents") or fallback["detected_intents"])
     suggested_variables = _string_list(analysis.get("suggested_variables") or fallback["suggested_variables"])
     suggested_kb_categories = _string_list(analysis.get("suggested_kb_categories") or fallback["suggested_kb_categories"])
-    suggested_advanced_blocks = _string_list(analysis.get("suggested_advanced_blocks") or fallback["suggested_advanced_blocks"])
+    suggested_advanced_blocks = [
+        block for block in _string_list(analysis.get("suggested_advanced_blocks") or fallback["suggested_advanced_blocks"])
+        if block != "API Call"
+    ]
     generation_confidence = max(0.1, min(float(analysis.get("generation_confidence") or fallback["generation_confidence"]), 0.98))
     explanation = _compact(analysis.get("generation_explanation"), fallback["generation_explanation"])[:800]
 
@@ -677,9 +1195,301 @@ def validate_flow(
 
 @router.get("/flow-templates")
 def list_flow_templates(
+    purpose: str | None = None,
+    exposed_only: bool = False,
+    include_builtin: bool = True,
+    db: Session = Depends(get_db),
     current_user=Depends(require_roles("admin", "manager"))
 ):
-    return template_options()
+    requested_purpose = str(purpose or "").strip()
+    items = template_options(purpose=requested_purpose or None, exposed_only=exposed_only) if include_builtin else []
+    for template in _custom_template_query(db, current_user).order_by(FlowTemplate.updated_at.desc(), FlowTemplate.id.desc()).all():
+        if requested_purpose and requested_purpose != (template.purpose or "custom"):
+            continue
+        if exposed_only and not template.is_exposed:
+            continue
+        items.append({
+            "key": template.key,
+            "name": template.name,
+            "description": template.description or "",
+            "purposes": [template.purpose or "custom"],
+            "primary_purpose": template.purpose or "custom",
+            "exposed": bool(template.is_exposed),
+            "shared": bool(template.is_shared),
+            "owner_id": template.owner_id,
+            "ownership_scope": _template_ownership_scope(template, current_user),
+            "source": "custom",
+            "current_revision_number": template.current_revision_number or 1,
+        })
+    return items
+
+
+@router.get("/flow-templates/qa")
+def template_quality_report(
+    db: Session = Depends(get_db),
+    current_user=Depends(require_roles("admin", "manager"))
+):
+    items = []
+    for key, template in sorted(TEMPLATES.items()):
+        item = analyze_template_quality(key, template)
+        item["ownership_scope"] = "builtin"
+        items.append(item)
+    items.extend(
+        {
+            **_analyze_payload_template(_custom_template_payload(template)),
+            "ownership_scope": _template_ownership_scope(template, current_user),
+        }
+        for template in _custom_template_query(db, current_user).order_by(FlowTemplate.updated_at.desc(), FlowTemplate.id.desc()).all()
+    )
+    return {
+        "summary": {
+            "total": len(items),
+            "valid": sum(1 for item in items if item["status"] == "valid"),
+            "warning": sum(1 for item in items if item["status"] == "warning"),
+            "invalid": sum(1 for item in items if item["status"] == "invalid"),
+            "hidden_block_templates": sum(1 for item in items if item["hidden_blocks"]),
+            "custom": sum(1 for item in items if item.get("source") == "custom"),
+            "mine": sum(1 for item in items if item.get("ownership_scope") == "mine"),
+            "shared": sum(1 for item in items if item.get("shared")),
+        },
+        "items": items,
+    }
+
+
+@router.get("/flow-templates/{template_key}")
+def get_flow_template_detail(
+    template_key: str,
+    revision: int | None = None,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_roles("admin", "manager"))
+):
+    custom = _template_from_db(db, template_key, current_user)
+    if custom:
+        payload = _custom_template_payload(custom)
+        selected_revision = _template_revision(db, custom, revision)
+        if selected_revision:
+            payload.update({
+                "name": selected_revision.name,
+                "description": selected_revision.description or "",
+                "purposes": [selected_revision.purpose or "custom"],
+                "primary_purpose": selected_revision.purpose or "custom",
+                "nodes": selected_revision.nodes or [],
+                "transitions": selected_revision.transitions or [],
+                "test_scenarios": selected_revision.test_scenarios or [],
+                "selected_revision_number": selected_revision.revision_number,
+            })
+        else:
+            payload["selected_revision_number"] = custom.current_revision_number or 1
+        detail = _analyze_payload_template(payload)
+        detail["can_edit"] = _can_manage_custom_template(custom, current_user)
+        detail["ownership_scope"] = _template_ownership_scope(custom, current_user)
+        revisions = db.query(FlowTemplateRevision).filter(
+            FlowTemplateRevision.template_id == custom.id
+        ).order_by(FlowTemplateRevision.revision_number.desc()).all()
+        detail["revisions"] = [_revision_payload(item) for item in revisions]
+        return detail
+
+    template = TEMPLATES.get(template_key)
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    nodes, transitions = template_generated_payload(template_key)
+    detail = analyze_template_quality(template_key, template)
+    detail.update({
+        "source": "builtin",
+        "shared": True,
+        "ownership_scope": "builtin",
+        "can_edit": False,
+        "nodes": nodes,
+        "transitions": transitions,
+        "test_scenarios": [],
+        "current_revision_number": 1,
+        "selected_revision_number": 1,
+        "revisions": [{
+            "revision_number": 1,
+            "name": detail["name"],
+            "description": detail.get("description") or "",
+            "purpose": detail.get("primary_purpose") or "internal",
+            "nodes_count": len(nodes),
+            "transitions_count": len(transitions),
+            "test_scenarios_count": 0,
+            "change_note": "Built-in template",
+            "created_by": None,
+            "created_at": None,
+        }],
+    })
+    return detail
+
+
+@router.patch("/flow-templates/{template_key}")
+def update_flow_template(
+    template_key: str,
+    payload: FlowTemplateUpdate,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_roles("admin", "manager"))
+):
+    template = _template_from_db(db, template_key, current_user)
+    if not template:
+        if template_key in TEMPLATES:
+            raise HTTPException(status_code=400, detail="Built-in templates are read-only")
+        raise HTTPException(status_code=404, detail="Template not found")
+    if not _can_manage_custom_template(template, current_user):
+        raise HTTPException(status_code=403, detail="Only the template owner can update this template")
+
+    if payload.name is not None:
+        name = payload.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Template name is required")
+        template.name = name[:120]
+    if payload.description is not None:
+        template.description = payload.description.strip()[:600]
+    if payload.purpose is not None:
+        template.purpose = payload.purpose.strip() or "custom"
+    if payload.is_exposed is not None:
+        template.is_exposed = payload.is_exposed
+    if payload.is_shared is not None:
+        template.is_shared = payload.is_shared
+    if payload.test_scenarios is not None:
+        template.test_scenarios = payload.test_scenarios[:20]
+
+    db.commit()
+    db.refresh(template)
+    detail = _analyze_payload_template(_custom_template_payload(template))
+    detail["can_edit"] = True
+    detail["ownership_scope"] = _template_ownership_scope(template, current_user)
+    return detail
+
+
+@router.post("/flow-templates/{template_key}/test")
+def run_flow_template_test(
+    template_key: str,
+    payload: FlowTemplateTestRun | None = None,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_roles("admin", "manager"))
+):
+    detail = get_flow_template_detail(template_key, db=db, current_user=current_user)
+    scenarios = []
+    if payload and (payload.messages is not None or payload.expected_variables or payload.expected_final_node_key):
+        scenarios = [payload]
+    else:
+        scenarios = [
+            FlowTemplateTestRun(**scenario)
+            for scenario in detail.get("test_scenarios") or []
+        ]
+        if not scenarios:
+            scenarios = [FlowTemplateTestRun(name="Auto path smoke test")]
+
+    results = [_run_template_scenario(detail, scenario) for scenario in scenarios]
+    status = "failed" if any(result["status"] == "failed" for result in results) else "passed"
+    return {
+        "template_key": template_key,
+        "template_name": detail.get("name"),
+        "status": status,
+        "scenario_count": len(results),
+        "results": results,
+    }
+
+
+@router.get("/flow-templates/{template_key}/revisions")
+def list_flow_template_revisions(
+    template_key: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_roles("admin", "manager"))
+):
+    custom = _template_from_db(db, template_key, current_user)
+    if not custom:
+        if template_key not in TEMPLATES:
+            raise HTTPException(status_code=404, detail="Template not found")
+        detail = get_flow_template_detail(template_key, db=db, current_user=current_user)
+        return detail["revisions"]
+    revisions = db.query(FlowTemplateRevision).filter(
+        FlowTemplateRevision.template_id == custom.id
+    ).order_by(FlowTemplateRevision.revision_number.desc()).all()
+    return [_revision_payload(item) for item in revisions]
+
+
+@router.post("/flows/{flow_id}/template-library")
+def create_flow_template_from_flow(
+    flow_id: int,
+    payload: FlowTemplateCreate,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_roles("admin", "manager"))
+):
+    flow = ensure_flow_access(db, flow_id, current_user)
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Template name is required")
+    nodes, transitions = _current_flow_payload(flow)
+    version = db.query(VersionChatbot).filter(VersionChatbot.id == flow.version_id).first()
+    _ensure_flow_size(len(nodes), len(transitions))
+    ensure_generated_flow_is_valid(db, version.chatbot_id if version else 0, nodes, transitions, name)
+
+    template = FlowTemplate(
+        name=name[:120],
+        description=(payload.description or "").strip()[:600],
+        purpose=(payload.purpose or "custom").strip() or "custom",
+        is_exposed=payload.is_exposed,
+        is_shared=payload.is_shared,
+        owner_id=current_user.id,
+        source_flow_id=flow.id,
+        nodes=nodes,
+        transitions=transitions,
+    )
+    db.add(template)
+    db.flush()
+    template.key = f"custom_template_{template.id}"
+    _create_template_revision(
+        db,
+        template,
+        current_user,
+        nodes,
+        transitions,
+        test_scenarios=template.test_scenarios or [],
+        change_note=payload.change_note or "Initial template version",
+    )
+    db.commit()
+    db.refresh(template)
+    detail = _analyze_payload_template(_custom_template_payload(template))
+    detail["can_edit"] = True
+    detail["ownership_scope"] = _template_ownership_scope(template, current_user)
+    return detail
+
+
+@router.post("/flows/{flow_id}/template-library/{template_key}/revisions")
+def create_flow_template_revision_from_flow(
+    flow_id: int,
+    template_key: str,
+    payload: FlowTemplateRevisionCreate,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_roles("admin", "manager"))
+):
+    flow = ensure_flow_access(db, flow_id, current_user)
+    template = _template_from_db(db, template_key, current_user)
+    if not template:
+        if template_key in TEMPLATES:
+            raise HTTPException(status_code=400, detail="Built-in templates are read-only")
+        raise HTTPException(status_code=404, detail="Template not found")
+    if not _can_manage_custom_template(template, current_user):
+        raise HTTPException(status_code=403, detail="Only the template owner can version this template")
+
+    nodes, transitions = _current_flow_payload(flow)
+    version = db.query(VersionChatbot).filter(VersionChatbot.id == flow.version_id).first()
+    _ensure_flow_size(len(nodes), len(transitions))
+    ensure_generated_flow_is_valid(db, version.chatbot_id if version else 0, nodes, transitions, template.name)
+    revision = _create_template_revision(
+        db,
+        template,
+        current_user,
+        nodes,
+        transitions,
+        test_scenarios=template.test_scenarios or [],
+        change_note=payload.change_note,
+    )
+    db.commit()
+    db.refresh(template)
+    return {
+        "template": get_flow_template_detail(template.key, db=db, current_user=current_user),
+        "revision": _revision_payload(revision),
+    }
 
 
 @router.post("/flows/{flow_id}/template", response_model=FlowResponse)
@@ -695,7 +1505,16 @@ def apply_flow_template(
     language = chatbot.language if chatbot else None
 
     try:
-        nodes, transitions = template_generated_payload(payload.template_key, language)
+        custom_template = _template_from_db(db, payload.template_key, current_user)
+        if custom_template:
+            selected_revision = _template_revision(db, custom_template, payload.template_revision)
+            if not selected_revision:
+                raise ValueError("Template revision not found")
+            nodes = selected_revision.nodes or []
+            transitions = selected_revision.transitions or []
+        else:
+            selected_revision = None
+            nodes, transitions = template_generated_payload(payload.template_key, language)
         _ensure_flow_size(len(nodes), len(transitions))
         for node in nodes:
             _ensure_canvas_position(_item_value(node, "position_x"), _item_value(node, "position_y"))
@@ -707,12 +1526,39 @@ def apply_flow_template(
             transitions,
             payload.template_key,
         )
-        saved_flow = replace_flow_with_template(db, flow, payload.template_key, language)
+        if custom_template:
+            db.query(FlowTransition).filter(FlowTransition.flow_id == flow.id).delete()
+            db.query(FlowNode).filter(FlowNode.flow_id == flow.id).delete()
+            flow.name = custom_template.name
+            db.flush()
+            for node in nodes:
+                db.add(FlowNode(
+                    flow_id=flow.id,
+                    node_key=_item_value(node, "key"),
+                    type=_item_value(node, "type"),
+                    label=_item_value(node, "label"),
+                    config=node.get("config") or {},
+                    position_x=_item_value(node, "position_x"),
+                    position_y=_item_value(node, "position_y"),
+                ))
+            for transition in transitions:
+                db.add(FlowTransition(
+                    flow_id=flow.id,
+                    source_node_key=_item_value(transition, "source_node_key"),
+                    target_node_key=_item_value(transition, "target_node_key"),
+                    label=transition.get("label"),
+                    condition=transition.get("condition"),
+                ))
+            db.commit()
+            db.refresh(flow)
+            saved_flow = flow
+        else:
+            saved_flow = replace_flow_with_template(db, flow, payload.template_key, language)
         if version:
             if chatbot and chatbot.build_method == "template":
                 chatbot.template_key = payload.template_key
                 chatbot.source_template_key = payload.template_key
-                chatbot.source_template_version = None
+                chatbot.source_template_version = str(selected_revision.revision_number) if selected_revision else "builtin"
                 if payload.purpose:
                     chatbot.purpose = payload.purpose
                 db.commit()

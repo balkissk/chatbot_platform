@@ -35,7 +35,7 @@ TEMPLATES = {
             ("email", "question", "Ask email", {"field": "email", "prompt": "What is your work email?"}, 600, 120),
             ("budget", "question", "Ask budget", {"field": "budget", "prompt": "What is your estimated budget?"}, 860, 120),
             ("score", "condition", "Qualify lead", {"field": "budget", "operator": "greater_than", "value": "1000"}, 1120, 120),
-            ("book", "action", "Book meeting", {"action": "calendar_link"}, 1380, 40),
+            ("book", "meeting_scheduler", "Meeting Preference", {"field": "preferred_time", "prompt": "What time would work for a follow-up meeting?", "timezone": "local", "success_message": "Meeting preference saved."}, 1380, 40),
             ("nurture", "message", "Nurture lead", {"text": "Thanks. Our team will send helpful resources."}, 1380, 220),
             ("end", "end", "End", {"message": "Thanks for your interest."}, 1640, 120)
         ],
@@ -55,7 +55,7 @@ TEMPLATES = {
         "nodes": [
             ("start", "message", "Welcome", {"text": "Hi! I can help you request an appointment."}, 80, 120),
             ("service", "question", "Choose service", {"field": "service", "prompt": "Which service are you interested in?"}, 360, 120),
-            ("date", "question", "Preferred date", {"field": "preferred_date", "prompt": "What date works best?"}, 660, 120),
+            ("date", "meeting_scheduler", "Meeting Preference", {"field": "preferred_time", "prompt": "What date or time works best?", "timezone": "local", "success_message": "Meeting preference saved."}, 660, 120),
             ("contact", "question", "Contact info", {"field": "phone", "prompt": "What phone number should we use?"}, 960, 120),
             ("confirm", "end", "Confirm request", {"message": "Thanks. We received your appointment request."}, 1240, 120)
         ],
@@ -422,7 +422,7 @@ TEMPLATES = {
             ("name", "collect_name", "Name", {"prompt": "What is your name?", "field": "user_name"}, 340, 120),
             ("email", "collect_email", "Email", {"prompt": "What email should we use?", "field": "user_email"}, 600, 120),
             ("topic", "question", "Consultation Topic", {"prompt": "What would you like to discuss?", "field": "consultation_topic"}, 860, 120),
-            ("date", "question", "Preferred Date", {"prompt": "What date or time works best for you?", "field": "preferred_time"}, 1120, 120),
+            ("date", "meeting_scheduler", "Meeting Preference", {"prompt": "What date or time works best for you?", "field": "preferred_time", "timezone": "local", "success_message": "Meeting preference saved."}, 1120, 120),
             ("handoff", "handoff", "Consultation Handoff", {"message": "A consultant will follow up with you.", "department": "Support", "email_field": "user_email"}, 1380, 120)
         ],
         "transitions": [
@@ -595,9 +595,138 @@ TEMPLATES = {
 }
 
 
-def template_options() -> list[dict]:
-    return [{"key": key, "name": value["name"]} for key, value in TEMPLATES.items()]
+TEMPLATE_METADATA = {
+    "customer_support_basic": {
+        "description": "Message, customer question, AI/RAG answer, and closing step.",
+        "purposes": ["customer_support"],
+        "exposed": True,
+    },
+    "customer_support_rag": {
+        "description": "Support assistant optimized for answering from uploaded knowledge.",
+        "purposes": ["customer_support"],
+        "exposed": True,
+    },
+    "customer_support_handoff": {
+        "description": "Support answer flow with a handoff step for complex issues.",
+        "purposes": ["customer_support"],
+        "exposed": True,
+    },
+    "customer_support_ticket_creation": {
+        "description": "Collect issue details and prepare a support ticket handoff.",
+        "purposes": ["customer_support"],
+        "exposed": True,
+    },
+    "hr_knowledge_bot": {
+        "description": "Answer HR policy and employee process questions from knowledge.",
+        "purposes": ["employee_knowledge"],
+        "exposed": True,
+    },
+    "it_helpdesk_bot": {
+        "description": "Guide employees through common IT support requests.",
+        "purposes": ["employee_knowledge"],
+        "exposed": True,
+    },
+    "company_policies_bot": {
+        "description": "Help employees find company policy answers quickly.",
+        "purposes": ["employee_knowledge"],
+        "exposed": True,
+    },
+    "employee_onboarding_bot": {
+        "description": "Guide new employees through onboarding steps and resources.",
+        "purposes": ["employee_knowledge"],
+        "exposed": True,
+    },
+    "microsoft_certification_advisor": {
+        "description": "Recommend Microsoft certification paths based on goals.",
+        "purposes": ["training_certification"],
+        "exposed": True,
+    },
+    "azure_training_assistant": {
+        "description": "Help users choose Azure learning paths and next courses.",
+        "purposes": ["training_certification"],
+        "exposed": True,
+    },
+    "cybersecurity_learning_assistant": {
+        "description": "Recommend cybersecurity learning tracks and certifications.",
+        "purposes": ["training_certification"],
+        "exposed": True,
+    },
+    "course_recommendation_bot": {
+        "description": "Collect learner goals and suggest relevant courses.",
+        "purposes": ["training_certification"],
+        "exposed": True,
+    },
+    "simple_lead_capture": {
+        "description": "Collect contact details and route the request to the team.",
+        "purposes": ["lead_generation"],
+        "exposed": True,
+    },
+    "sales_starter": {
+        "description": "Capture business needs and qualify requests for sales follow-up.",
+        "purposes": ["lead_generation", "custom"],
+        "exposed": True,
+    },
+    "consultation_booking": {
+        "description": "Capture consultation needs, preferred time, and contact details.",
+        "purposes": ["lead_generation"],
+        "exposed": True,
+    },
+    "cloud_assessment_lead_form": {
+        "description": "Qualify Azure and Microsoft Cloud assessment requests.",
+        "purposes": ["lead_generation"],
+        "exposed": True,
+    },
+    "training_registration_bot": {
+        "description": "Collect training interest and registration contact details.",
+        "purposes": ["lead_generation"],
+        "exposed": True,
+    },
+    "blank_business_bot": {
+        "description": "A minimal business assistant starter flow.",
+        "purposes": ["custom"],
+        "exposed": True,
+    },
+    "ai_assistant_starter": {
+        "description": "Start with a question and AI/RAG answer structure.",
+        "purposes": ["custom"],
+        "exposed": True,
+    },
+    "faq_starter": {
+        "description": "Start with a guided FAQ-style button flow.",
+        "purposes": ["custom"],
+        "exposed": True,
+    },
+}
 
+
+def template_metadata(template_key: str) -> dict:
+    metadata = TEMPLATE_METADATA.get(template_key, {})
+    purposes = metadata.get("purposes") or []
+    return {
+        "description": metadata.get("description") or "Backend template for generated assistant draft flows.",
+        "purposes": purposes,
+        "primary_purpose": purposes[0] if purposes else "internal",
+        "exposed": bool(metadata.get("exposed")),
+    }
+
+
+def template_options(purpose: str | None = None, exposed_only: bool = False) -> list[dict]:
+    requested_purpose = str(purpose or "").strip()
+    options = []
+    for key, value in sorted(TEMPLATES.items()):
+        metadata = template_metadata(key)
+        if requested_purpose and requested_purpose not in metadata["purposes"]:
+            continue
+        if exposed_only and not metadata["exposed"]:
+            continue
+        options.append({
+            "key": key,
+            "name": value["name"],
+            "source": "builtin",
+            "shared": True,
+            **metadata,
+        })
+    return options
 
 FRENCH_TEMPLATE_TEXT = {
     "Welcome! How can I help you today?": "Bonjour ! Comment puis-je vous aider aujourd'hui ?",

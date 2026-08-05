@@ -6,8 +6,7 @@ import {
   AssistantPurposeCode,
   AssistantTemplateOption,
   normalizeAssistantPurpose,
-  purposeLabel,
-  templatesForPurpose
+  purposeLabel
 } from '../../shared/assistant-options';
 
 @Component({
@@ -52,15 +51,27 @@ export class TemplateSelectionComponent implements OnInit {
         this.chatbot.set(chatbot);
         const purpose = this.requestedPurpose(chatbot);
         this.selectedPurpose.set(purpose);
-        const options = templatesForPurpose(purpose);
-        this.templates.set(options);
-        const requestedTemplate = this.route.snapshot.queryParamMap.get('template') || '';
-        this.selectedTemplate.set(options.some(option => option.key === requestedTemplate) ? requestedTemplate : '');
-        this.loading.set(false);
+        this.loadTemplates(purpose);
       },
       error: err => {
         this.errorTitle.set('');
         this.error.set(err.error?.detail || 'Could not load assistant');
+        this.loading.set(false);
+      }
+    });
+  }
+
+  private loadTemplates(purpose: AssistantPurposeCode) {
+    this.api.getFlowTemplates({ purpose, exposed_only: true }).subscribe({
+      next: options => {
+        this.templates.set(options || []);
+        const requestedTemplate = this.route.snapshot.queryParamMap.get('template') || '';
+        this.selectedTemplate.set((options || []).some(option => option.key === requestedTemplate) ? requestedTemplate : '');
+        this.loading.set(false);
+      },
+      error: err => {
+        this.errorTitle.set('');
+        this.error.set(err.error?.detail || 'Could not load starter templates');
         this.loading.set(false);
       }
     });

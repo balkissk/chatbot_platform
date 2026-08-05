@@ -1,6 +1,6 @@
 <div class="page-header hero-header">
   <div>
-    <p class="eyebrow">Chatbot {{ chatbotId }}</p>
+    <p class="eyebrow">Assistant {{ chatbotId }}</p>
     <h2>Conversation History</h2>
     <p>Review customer sessions, inspect RAG evidence, identify gaps, and export transcripts.</p>
   </div>
@@ -69,6 +69,7 @@
       <div>
         <p class="eyebrow">Inbox</p>
         <h3>{{ sessions().length }} conversations</h3>
+        <p class="list-context">{{ activeFilterSummary() }}</p>
       </div>
       <span class="soft-badge">Manager view</span>
     </div>
@@ -82,36 +83,38 @@
       <p>{{ search || dateFrom || dateTo || channel || feedback || responseType ? 'Adjust filters to broaden the search.' : 'Conversations will appear here when users start chatting.' }}</p>
     </div>
 
-    <button
-      type="button"
-      *ngFor="let session of sessions()"
-      class="session-row"
-      [class.selected]="selectedSession()?.id === session.id"
-      (click)="openSession(session)">
-      <div class="session-main">
-        <div class="session-title">
-          <strong>Session #{{ session.id }}</strong>
-          <span class="badge channel">{{ channelLabel(session.channel) }}</span>
+    <div *ngFor="let group of groupedSessions()" class="session-group">
+      <p class="group-label">{{ group.label }}</p>
+      <button
+        type="button"
+        *ngFor="let session of group.sessions"
+        class="session-row secondary"
+        [class.selected]="selectedSession()?.id === session.id"
+        (click)="openSession(session)">
+        <div class="session-main">
+          <div class="session-title">
+            <strong>{{ conversationTitle(session) }}</strong>
+            <span class="session-status" [ngClass]="sessionStatusClass(session)">{{ sessionOperationalStatus(session) }}</span>
+          </div>
+          <p>{{ conversationPreview(session) }}</p>
+          <div class="session-chips">
+            <span>{{ session.message_count }} messages</span>
+            <span>{{ channelLabel(session.channel) }}</span>
+            <span>{{ responseLabel(session.response_type) }}</span>
+          </div>
+          <small class="session-id">Session #{{ session.id }}</small>
         </div>
-        <p>{{ session.last_message || 'No messages yet' }}</p>
-        <div class="session-chips">
-          <span>{{ session.message_count }} messages</span>
-          <span>{{ responseLabel(session.response_type) }}</span>
-          <span [class.negative]="session.feedback_status === 'negative'" [class.positive]="session.feedback_status === 'positive'">
-            {{ feedbackLabel(session.feedback_status) }}
-          </span>
+        <div class="session-meta">
+          <small>{{ session.updated_at | date:'MMM d' }}</small>
+          <small>{{ session.updated_at | date:'shortTime' }}</small>
         </div>
-      </div>
-      <div class="session-meta">
-        <small>Created {{ session.created_at | date:'MMM d, y' }}</small>
-        <small>Last {{ session.updated_at | date:'short' }}</small>
-      </div>
-    </button>
+      </button>
+    </div>
 
     <button
       *ngIf="!loading() && hasMore()"
       type="button"
-      class="load-more"
+      class="load-more secondary"
       (click)="loadMore()"
       [disabled]="loadingMore()">
       {{ loadingMore() ? 'Loading more...' : 'Load more conversations' }}
@@ -207,7 +210,7 @@
   </div>
 
   <div *ngIf="!unansweredLoading() && unansweredQuestions().length > 0" class="gap-grid">
-    <button type="button" class="gap-card" *ngFor="let item of unansweredQuestions()" (click)="openSessionById(item.session_id)">
+    <button type="button" class="gap-card secondary" *ngFor="let item of unansweredQuestions()" (click)="openSessionById(item.session_id)">
       <strong>{{ item.question }}</strong>
       <div>
         <span class="badge negative">{{ item.count }} times</span>

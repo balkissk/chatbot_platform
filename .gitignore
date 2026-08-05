@@ -1,5 +1,5 @@
 .env
-.env.*
+backend/.env.development
 !.env.example
 backend/.env
 backend/.env.*

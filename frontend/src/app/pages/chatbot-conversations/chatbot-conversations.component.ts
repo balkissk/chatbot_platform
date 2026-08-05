@@ -48,6 +48,10 @@ export class ChatbotConversationsComponent implements OnInit {
     if (!this.isBrowser) return;
     this.loadSessions();
     this.loadUnansweredQuestions();
+    const sessionId = Number(this.route.snapshot.queryParamMap.get('sessionId') || 0);
+    if (sessionId) {
+      this.openSessionById(sessionId);
+    }
   }
 
   loadSessions(append = false) {
@@ -179,6 +183,77 @@ export class ChatbotConversationsComponent implements OnInit {
       no_feedback: 'No feedback'
     };
     return labels[value] || 'No feedback';
+  }
+
+  groupedSessions() {
+    const groups: { label: string; sessions: any[] }[] = [];
+    for (const session of this.sessions()) {
+      const label = this.sessionGroupLabel(session);
+      const group = groups.find(item => item.label === label);
+      if (group) {
+        group.sessions.push(session);
+      } else {
+        groups.push({ label, sessions: [session] });
+      }
+    }
+    return groups;
+  }
+
+  sessionGroupLabel(session: any) {
+    const value = session.updated_at || session.created_at;
+    if (!value) return 'Older';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'Older';
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const startOfYesterday = startOfToday - 86400000;
+    const time = date.getTime();
+    if (time >= startOfToday) return 'Today';
+    if (time >= startOfYesterday) return 'Yesterday';
+    if (Date.now() - time < 7 * 86400000) return 'This week';
+    return 'Older';
+  }
+
+  conversationTitle(session: any) {
+    const message = this.cleanMessage(session.last_message);
+    if (message) return this.truncate(message, 58);
+    return `${this.channelLabel(session.channel)} session #${session.id}`;
+  }
+
+  conversationPreview(session: any) {
+    const message = this.cleanMessage(session.last_message);
+    return message ? this.truncate(message, 120) : 'No messages captured yet.';
+  }
+
+  sessionOperationalStatus(session: any) {
+    if (session.feedback_status === 'negative') return 'Needs review';
+    if (session.response_type === 'fallback') return 'Fallback';
+    if (session.feedback_status === 'positive') return 'Helpful';
+    if (session.response_type === 'flow') return 'Flow';
+    if (session.response_type === 'ai_rag') return 'AI/RAG';
+    return 'Open';
+  }
+
+  sessionStatusClass(session: any) {
+    const label = this.sessionOperationalStatus(session).toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    return `status-${label}`;
+  }
+
+  activeFilterSummary() {
+    const filters = [
+      this.channel ? this.channelLabel(this.channel) : '',
+      this.feedback ? this.feedbackLabel(this.feedback) : '',
+      this.responseType ? this.responseLabel(this.responseType) : ''
+    ].filter(Boolean);
+    return filters.length ? filters.join(' · ') : 'All sessions';
+  }
+
+  private cleanMessage(value: unknown) {
+    return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+
+  private truncate(value: string, length: number) {
+    return value.length > length ? `${value.slice(0, length).trim()}...` : value;
   }
 
   exportConversationsCsv() {

@@ -25,6 +25,7 @@ export class FlowTestComponent implements OnInit {
   loading = signal(false);
   error = signal('');
   errorInfo = signal<{ title: string; message: string; detail: string } | null>(null);
+  debugState = signal<any | null>(null);
 
   private isBrowser: boolean;
 
@@ -48,6 +49,7 @@ export class FlowTestComponent implements OnInit {
     this.loading.set(true);
     this.error.set('');
     this.errorInfo.set(null);
+    this.debugState.set(null);
     this.api.getChatbotBuilder(this.chatbotId).subscribe({
       next: context => {
         this.context.set(context);
@@ -124,6 +126,7 @@ export class FlowTestComponent implements OnInit {
       await this.api.chatStream(payload, event => {
         if (event.type === 'start') {
           this.sessionId.set(event.session_id);
+          this.updateDebugState(event);
           return;
         }
 
@@ -149,6 +152,7 @@ export class FlowTestComponent implements OnInit {
 
         if (event.type === 'final') {
           this.sessionId.set(event.session_id);
+          this.updateDebugState(event);
           const botMessages = this.toBotMessages(event);
           this.messages.update(messages => {
             return [
@@ -246,6 +250,35 @@ export class FlowTestComponent implements OnInit {
     return this.context()?.chatbot?.rag_settings?.show_sources !== false;
   }
 
+  currentBlockLabel() {
+    const key = this.debugState()?.current_node_key;
+    if (!key) return 'Completed';
+    const node = this.context()?.flow?.nodes?.find((item: any) => item.node_key === key || item.key === key);
+    return node?.label || key;
+  }
+
+  currentBlockType() {
+    const key = this.debugState()?.current_node_key;
+    if (!key) return 'end';
+    const node = this.context()?.flow?.nodes?.find((item: any) => item.node_key === key || item.key === key);
+    return node?.node_type || node?.type || 'unknown';
+  }
+
+  modeLabel() {
+    return String(this.debugState()?.mode_used || 'flow').replace(/_/g, ' ');
+  }
+
+  sourceCount() {
+    return this.debugState()?.sources?.length || 0;
+  }
+
+  visibleVariables() {
+    const variables = this.debugState()?.variables || {};
+    return Object.entries(variables)
+      .filter(([key, value]) => !key.startsWith('__') && value !== null && value !== undefined && String(value).trim())
+      .map(([key, value]) => ({ key, value: this.formatDebugValue(value) }));
+  }
+
   hasStreamingResponse() {
     return this.messages().some(item => item.streaming);
   }
@@ -277,6 +310,25 @@ export class FlowTestComponent implements OnInit {
     console.info('ChatBot Factory Test Flow latency', { status, ...metrics });
   }
 
+  private updateDebugState(event: any) {
+    this.debugState.set({
+      session_id: event.session_id || this.sessionId(),
+      current_node_key: event.current_node_key ?? this.debugState()?.current_node_key,
+      variables: event.variables || this.debugState()?.variables || {},
+      mode_used: event.mode_used || this.debugState()?.mode_used || 'flow',
+      sources: event.sources || []
+    });
+  }
+
+  private formatDebugValue(value: unknown) {
+    if (typeof value === 'string') return value;
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+
   private setFriendlyError(err: any, preferredTitle: string, fallback: string) {
     const raw = err?.error?.detail || err?.message || fallback;
     const detail = typeof raw === 'object' ? JSON.stringify(raw) : String(raw);
@@ -286,6 +338,9 @@ export class FlowTestComponent implements OnInit {
     if (detail.includes('LLM service') || detail.includes('OpenAI') || detail.includes('Azure')) {
       title = 'AI service error';
       message = 'The AI service could not generate an answer right now.';
+    } else if (detail === 'Not Found' || detail.includes('/chat/stream')) {
+      title = 'Backend route missing';
+      message = 'The test chat endpoint is not available from the running backend.';
     } else if (detail.includes('knowledge') || detail.includes('embedding') || detail.includes('chunk')) {
       title = 'Knowledge base error';
       message = 'The knowledge base could not be used for this answer.';

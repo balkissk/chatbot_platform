@@ -1,6 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
-import { Observable, of, shareReplay, tap } from 'rxjs';
+import { firstValueFrom, Observable, of, shareReplay, tap } from 'rxjs';
 import { apiBaseUrl } from '../config/app-config';
 
 @Injectable({
@@ -198,6 +198,19 @@ export class ApiService {
     return this.http.get<any[]>(`${this.baseUrl}/chatbots/${chatbotId}/conversations/unanswered`);
   }
 
+  getChatbotCollectedData(chatbotId: number, filters: any = {}) {
+    const params: any = {};
+    if (filters.search?.trim()) params.search = filters.search.trim();
+    if (filters.field_type) params.field_type = filters.field_type;
+    if (filters.limit) params.limit = filters.limit;
+    if (filters.offset) params.offset = filters.offset;
+    return this.http.get<any>(`${this.baseUrl}/chatbots/${chatbotId}/collected-data`, { params });
+  }
+
+  updateConversationFollowUp(chatbotId: number, sessionId: number, data: any) {
+    return this.http.patch<any>(`${this.baseUrl}/chatbots/${chatbotId}/conversations/${sessionId}/follow-up`, data);
+  }
+
   updateChatbot(chatbotId: number, data: any) {
     return this.http.put<any>(`${this.baseUrl}/chatbots/${chatbotId}`, data).pipe(
       tap(() => this.clearChatbotCaches())
@@ -283,11 +296,96 @@ export class ApiService {
       data
     );
   }
-  publishVersion(versionId: number) {
+  publishVersion(versionId: number, confirmWarnings = false) {
     return this.http.put(
       `${this.baseUrl}/versions/${versionId}/publish`,
-      {}
+      {},
+      { params: confirmWarnings ? { confirm_warnings: 'true' } : {} }
     );
+  }
+
+  getVersionReadiness(versionId: number) {
+    return this.http.get<any>(`${this.baseUrl}/versions/${versionId}/readiness`);
+  }
+
+  runVersionSmokeTest(versionId: number) {
+    return this.http.post<any>(`${this.baseUrl}/versions/${versionId}/smoke-test`, {});
+  }
+
+  getEvaluationDatasets(chatbotId: number, includeArchived = false) {
+    return this.http.get<any[]>(`${this.baseUrl}/evaluations/assistants/${chatbotId}/datasets`, {
+      params: includeArchived ? { include_archived: 'true' } : {}
+    });
+  }
+
+  getEvaluationDataset(datasetId: number) {
+    return this.http.get<any>(`${this.baseUrl}/evaluations/datasets/${datasetId}`);
+  }
+
+  createEvaluationDataset(chatbotId: number, data: any) {
+    return this.http.post<any>(`${this.baseUrl}/evaluations/assistants/${chatbotId}/datasets`, data);
+  }
+
+  updateEvaluationDataset(datasetId: number, data: any) {
+    return this.http.put<any>(`${this.baseUrl}/evaluations/datasets/${datasetId}`, data);
+  }
+
+  createEvaluationCase(datasetId: number, data: any) {
+    return this.http.post<any>(`${this.baseUrl}/evaluations/datasets/${datasetId}/cases`, data);
+  }
+
+  updateEvaluationCase(caseId: number, data: any) {
+    return this.http.put<any>(`${this.baseUrl}/evaluations/cases/${caseId}`, data);
+  }
+
+  duplicateEvaluationCase(caseId: number) {
+    return this.http.post<any>(`${this.baseUrl}/evaluations/cases/${caseId}/duplicate`, {});
+  }
+
+  setEvaluationCaseEnabled(caseId: number, enabled: boolean) {
+    return this.http.post<any>(`${this.baseUrl}/evaluations/cases/${caseId}/enabled`, {}, {
+      params: { enabled: String(enabled) }
+    });
+  }
+
+  importEvaluationCases(datasetId: number, data: any) {
+    return this.http.post<any>(`${this.baseUrl}/evaluations/datasets/${datasetId}/import`, data);
+  }
+
+  exportEvaluationDataset(datasetId: number, format: 'json' | 'csv' = 'json') {
+    return this.http.get<any>(`${this.baseUrl}/evaluations/datasets/${datasetId}/export`, {
+      params: { format },
+      responseType: format === 'csv' ? 'text' as 'json' : 'json'
+    });
+  }
+
+  runEvaluation(data: any) {
+    return this.http.post<any>(`${this.baseUrl}/evaluations/runs`, data);
+  }
+
+  getEvaluationRuns(chatbotId: number) {
+    return this.http.get<any[]>(`${this.baseUrl}/evaluations/assistants/${chatbotId}/runs`);
+  }
+
+  getEvaluationRun(runId: number) {
+    return this.http.get<any>(`${this.baseUrl}/evaluations/runs/${runId}`);
+  }
+
+  compareEvaluationRuns(baselineRunId: number, candidateRunId: number) {
+    return this.http.get<any>(`${this.baseUrl}/evaluations/compare`, {
+      params: {
+        baseline_run_id: String(baselineRunId),
+        candidate_run_id: String(candidateRunId)
+      }
+    });
+  }
+
+  getEvaluationPolicy(chatbotId: number) {
+    return this.http.get<any>(`${this.baseUrl}/evaluations/assistants/${chatbotId}/policy`);
+  }
+
+  updateEvaluationPolicy(chatbotId: number, data: any) {
+    return this.http.put<any>(`${this.baseUrl}/evaluations/assistants/${chatbotId}/policy`, data);
   }
 
   archiveVersion(versionId: number) {
@@ -324,14 +422,44 @@ export class ApiService {
     return this.http.get<any>(`${this.baseUrl}/versions/${versionId}/flow/validate`);
   }
 
-  getFlowTemplates() {
-    return this.http.get<any[]>(`${this.baseUrl}/flow-templates`);
+  getFlowTemplates(filters: { purpose?: string; exposed_only?: boolean } = {}) {
+    const params: any = {};
+    if (filters.purpose) params.purpose = filters.purpose;
+    if (filters.exposed_only !== undefined) params.exposed_only = filters.exposed_only;
+    return this.http.get<any[]>(`${this.baseUrl}/flow-templates`, { params });
   }
 
-  applyFlowTemplate(flowId: number, templateKey: string, purpose?: string) {
+  getFlowTemplateQa() {
+    return this.http.get<any>(`${this.baseUrl}/flow-templates/qa`);
+  }
+
+  getFlowTemplate(templateKey: string, revision?: number) {
+    const params: any = {};
+    if (revision) params.revision = revision;
+    return this.http.get<any>(`${this.baseUrl}/flow-templates/${encodeURIComponent(templateKey)}`, { params });
+  }
+
+  updateFlowTemplate(templateKey: string, data: any) {
+    return this.http.patch<any>(`${this.baseUrl}/flow-templates/${encodeURIComponent(templateKey)}`, data);
+  }
+
+  runFlowTemplateTest(templateKey: string, data: any = {}) {
+    return this.http.post<any>(`${this.baseUrl}/flow-templates/${encodeURIComponent(templateKey)}/test`, data);
+  }
+
+  createFlowTemplateFromFlow(flowId: number, data: any) {
+    return this.http.post<any>(`${this.baseUrl}/flows/${flowId}/template-library`, data);
+  }
+
+  createFlowTemplateRevisionFromFlow(flowId: number, templateKey: string, data: any = {}) {
+    return this.http.post<any>(`${this.baseUrl}/flows/${flowId}/template-library/${encodeURIComponent(templateKey)}/revisions`, data);
+  }
+
+  applyFlowTemplate(flowId: number, templateKey: string, purpose?: string, templateRevision?: number) {
     return this.http.post<any>(`${this.baseUrl}/flows/${flowId}/template`, {
       template_key: templateKey,
-      ...(purpose ? { purpose } : {})
+      ...(purpose ? { purpose } : {}),
+      ...(templateRevision ? { template_revision: templateRevision } : {})
     }).pipe(
       tap(() => this.clearChatbotCaches())
     );
@@ -423,11 +551,9 @@ export class ApiService {
 
   async chatStream(data: any, onEvent: (event: any) => void) {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (typeof localStorage !== 'undefined') {
-      const token = localStorage.getItem('chatbot_factory_token');
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
+    const token = this.authToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
     }
 
     const requestDispatchedAt = Date.now();
@@ -446,6 +572,19 @@ export class ApiService {
         const body = await response.json();
         detail = body.detail || detail;
       } catch {}
+      if (response.status === 404 && detail === 'Not Found') {
+        const result = await firstValueFrom(this.chat(data));
+        onEvent({
+          type: 'final',
+          ...result,
+          __frontend_chunk_received_at_ms: this.nowMs(),
+          latency: {
+            ...(result?.latency || {}),
+            stream_fallback_used: true
+          }
+        });
+        return;
+      }
       throw new Error(detail);
     }
 
@@ -630,14 +769,19 @@ export class ApiService {
   }
 
   private ensureCacheScope() {
-    const token = typeof localStorage === 'undefined'
-      ? ''
-      : (localStorage.getItem('chatbot_factory_token') || '');
+    const token = this.authToken();
     if (token !== this.cacheToken) {
       this.cacheToken = token;
       this.clearProjectCaches();
       this.clearChatbotCaches();
     }
+  }
+
+  private authToken() {
+    if (typeof localStorage === 'undefined' || typeof localStorage.getItem !== 'function') {
+      return '';
+    }
+    return localStorage.getItem('chatbot_factory_token') || '';
   }
 
 }

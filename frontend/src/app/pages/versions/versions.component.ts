@@ -35,8 +35,12 @@ export class VersionsComponent implements OnInit {
   creating = signal(false);
   actionId = signal<number | undefined>(undefined);
   error = signal('');
+  readiness = signal<any | null>(null);
+  readinessLoading = signal(false);
+  smokeLoading = signal(false);
+  smokeMessage = signal('');
   pendingConfirm = signal<{
-    type: 'version' | 'document';
+    type: 'version' | 'document' | 'publish-warning';
     item: any;
     title: string;
     message: string;
@@ -87,8 +91,10 @@ export class VersionsComponent implements OnInit {
         if (selectedVersionId) {
           this.loadDocuments(selectedVersionId);
           this.loadLlmConfig(selectedVersionId);
+          this.loadReadiness(selectedVersionId);
         } else {
           this.documents.set([]);
+          this.readiness.set(null);
         }
       },
       error: err => {
@@ -117,28 +123,49 @@ export class VersionsComponent implements OnInit {
   publish(versionId: number) {
     this.actionId.set(versionId);
     this.error.set('');
+    this.smokeMessage.set('');
 
-    this.api.validateFlow(versionId).subscribe({
-      next: validation => {
-        const errors = validation?.errors || [];
-        if (errors.length) {
-          this.error.set(`Fix these flow issues before publishing: ${errors.join(' ')}`);
+    this.api.getVersionReadiness(versionId).subscribe({
+      next: readiness => {
+        this.readiness.set(readiness);
+        const blocked = (readiness?.checks || []).filter((check: any) => check.status === 'BLOCKED');
+        const warnings = (readiness?.checks || []).filter((check: any) => check.status === 'WARNING');
+        if (blocked.length) {
+          this.error.set(`Resolve blocked readiness checks before publishing: ${blocked.map((check: any) => check.label).join(', ')}`);
           this.actionId.set(undefined);
           return;
         }
-
-        this.api.publishVersion(versionId).subscribe({
-          next: () => {
-            this.actionId.set(undefined);
-            this.loadVersions();
-          },
-          error: err => {
-            this.error.set(this.publishError(err));
-            this.actionId.set(undefined);
-          }
-        });
+        if (warnings.length) {
+          this.pendingConfirm.set({
+            type: 'publish-warning',
+            item: { id: versionId, warnings },
+            title: 'Publish with warnings?',
+            message: `This version has ${warnings.length} warning${warnings.length === 1 ? '' : 's'}. Publishing is allowed, but confirm that you reviewed them.`,
+            actionLabel: 'Publish anyway'
+          });
+          this.actionId.set(undefined);
+          return;
+        }
+        this.publishNow(versionId, false);
       },
       error: err => {
+        this.error.set(this.publishError(err));
+        this.actionId.set(undefined);
+      }
+    });
+  }
+
+  private publishNow(versionId: number, confirmWarnings: boolean) {
+    this.actionId.set(versionId);
+    this.api.publishVersion(versionId, confirmWarnings).subscribe({
+      next: () => {
+        this.actionId.set(undefined);
+        this.pendingConfirm.set(null);
+        this.loadVersions();
+      },
+      error: err => {
+        const readiness = err?.error?.detail?.readiness;
+        if (readiness) this.readiness.set(readiness);
         this.error.set(this.publishError(err));
         this.actionId.set(undefined);
       }
@@ -208,6 +235,12 @@ export class VersionsComponent implements OnInit {
     this.chatSessionId.set(undefined);
     this.loadDocuments(versionId);
     this.loadLlmConfig(versionId);
+    this.loadReadiness(versionId);
+  }
+
+  selectedVersion() {
+    const selectedId = this.selectedVersionId();
+    return this.versions().find(version => version.id === selectedId);
   }
 
   loadLlmConfig(versionId: number) {
@@ -295,6 +328,41 @@ export class VersionsComponent implements OnInit {
     });
   }
 
+  loadReadiness(versionId = this.selectedVersionId()) {
+    if (!versionId) return;
+    this.readinessLoading.set(true);
+    this.api.getVersionReadiness(versionId).subscribe({
+      next: readiness => {
+        this.readiness.set(readiness);
+        this.readinessLoading.set(false);
+      },
+      error: err => {
+        this.error.set(err.error?.detail || 'Could not load readiness checklist');
+        this.readinessLoading.set(false);
+      }
+    });
+  }
+
+  runSmokeTest() {
+    const versionId = this.selectedVersionId();
+    if (!versionId) return;
+    this.smokeLoading.set(true);
+    this.smokeMessage.set('');
+    this.error.set('');
+    this.api.runVersionSmokeTest(versionId).subscribe({
+      next: result => {
+        this.smokeMessage.set(result.message || (result.status === 'passed' ? 'Smoke test passed' : 'Smoke test failed'));
+        this.smokeLoading.set(false);
+        this.loadReadiness(versionId);
+      },
+      error: err => {
+        this.error.set(err.error?.detail || 'Smoke test failed');
+        this.smokeLoading.set(false);
+        this.loadReadiness(versionId);
+      }
+    });
+  }
+
   deleteDocument(document: any) {
     this.pendingConfirm.set({
       type: 'document',
@@ -332,7 +400,15 @@ export class VersionsComponent implements OnInit {
       this.deleteVersionNow(pending.item);
       return;
     }
+    if (pending.type === 'publish-warning') {
+      this.publishNow(pending.item.id, true);
+      return;
+    }
     this.deleteDocumentNow(pending.item);
+  }
+
+  readinessStatusClass(status: string) {
+    return `readiness-${String(status || '').toLowerCase()}`;
   }
 
   @HostListener('document:keydown.escape')

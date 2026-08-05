@@ -36,7 +36,7 @@
     <section class="template-grid" aria-label="Recommended templates">
       <button
         type="button"
-        class="template-card"
+        class="template-card secondary"
         *ngFor="let template of templates()"
         [class.selected]="selectedTemplate() === template.key"
         (click)="selectTemplate(template.key)"
@@ -50,6 +50,11 @@
         <span class="selected-dot" *ngIf="selectedTemplate() === template.key"></span>
       </button>
     </section>
+
+    <article class="empty-state" *ngIf="templates().length === 0">
+      <strong>No exposed templates for {{ assistantTypeLabel() }} yet.</strong>
+      <p class="muted">Use a blank assistant flow for now, or expose a backend template for this purpose.</p>
+    </article>
 
     <footer class="apply-bar">
       <div>

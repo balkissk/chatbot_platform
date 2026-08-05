@@ -682,9 +682,7 @@ export class ProjectsComponent implements OnInit, OnDestroy {
 
   setViewMode(mode: 'grid' | 'table') {
     this.viewMode.set(mode);
-    if (this.isBrowser) {
-      localStorage.setItem(this.viewModeStorageKey, mode);
-    }
+    this.safeLocalStorage()?.setItem(this.viewModeStorageKey, mode);
   }
 
   setSortMode(mode: string) {
@@ -774,10 +772,21 @@ export class ProjectsComponent implements OnInit, OnDestroy {
   }
 
   private restoreViewMode() {
-    const saved = localStorage.getItem(this.viewModeStorageKey);
+    const saved = this.safeLocalStorage()?.getItem(this.viewModeStorageKey);
     if (saved === 'grid' || saved === 'table') {
       this.viewMode.set(saved);
     }
+  }
+
+  private safeLocalStorage(): Storage | null {
+    if (!this.isBrowser || typeof localStorage === 'undefined') return null;
+    if (
+      typeof localStorage.getItem !== 'function' ||
+      typeof localStorage.setItem !== 'function'
+    ) {
+      return null;
+    }
+    return localStorage;
   }
 
   lastActivity(project: any) {

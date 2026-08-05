@@ -22,7 +22,7 @@ import { ToastService } from '../services/toast.service';
   `,
   styles: [`
     .toast-stack{display:grid;gap:8px;inset:auto 18px 18px auto;max-width:min(360px,calc(100vw - 36px));position:fixed;z-index:2400}
-    .toast-item{background:rgba(255,255,255,.96);border:1px solid var(--ds-border);border-radius:12px;box-shadow:0 18px 44px rgba(24,59,74,.16);color:var(--ds-text);font:700 13px/1.35 Inter,Arial,sans-serif;min-height:0;padding:10px 12px;text-align:left}
+    .toast-item{background:var(--surface-raised);border:1px solid var(--border-default);border-radius:12px;box-shadow:0 18px 44px rgba(16,34,56,.16);color:var(--text-primary);font:800 13px/1.35 var(--font-body);min-height:0;padding:10px 12px;text-align:left}
     .toast-item.success{border-color:rgba(34,197,94,.35)}
     .toast-item.error{border-color:rgba(239,68,68,.38);color:var(--danger)}
     .toast-item.warning{border-color:rgba(245,158,11,.38)}

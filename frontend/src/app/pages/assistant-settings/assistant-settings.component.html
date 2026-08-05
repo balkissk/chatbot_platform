@@ -1,0 +1,135 @@
+<section class="settings-page">
+  <header class="settings-header">
+    <div>
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a [routerLink]="['/dashboard/projects']">Projects</a>
+        <span>/</span>
+        <a [routerLink]="['/dashboard/projects', projectId, 'chatbots']">Assistants</a>
+        <span>/</span>
+        <a [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId]">{{ assistant()?.name || 'Assistant' }}</a>
+        <span>/</span>
+        <strong>Settings</strong>
+      </nav>
+      <p class="eyebrow">Assistant Settings</p>
+      <h1>{{ assistant()?.name || ('Assistant ' + chatbotId) }}</h1>
+      <p>Edit assistant identity, default channel, language, and operational status.</p>
+    </div>
+    <span class="status-badge" [class.live]="assistant()?.is_active">
+      <svg lucideCheckCircle2 size="14" aria-hidden="true"></svg>
+      {{ statusLabel() }}
+    </span>
+  </header>
+
+  <p *ngIf="loading()" class="muted">Loading settings...</p>
+  <p *ngIf="error()" class="error" role="alert">{{ error() }}</p>
+  <p *ngIf="message()" class="success" role="status">{{ message() }}</p>
+
+  <section class="settings-layout" *ngIf="assistant()">
+    <main class="settings-main">
+      <section class="panel">
+        <div class="panel-heading">
+          <span><svg lucideBot size="17" aria-hidden="true"></svg></span>
+          <div>
+            <p class="eyebrow">Identity</p>
+            <h2>Assistant profile</h2>
+            <p>These values appear across the workspace and public channel surfaces.</p>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <label>
+            Name
+            <input [(ngModel)]="form.name" autocomplete="off">
+          </label>
+          <label>
+            Language
+            <select [(ngModel)]="form.language">
+              <option *ngFor="let option of languageOptions" [value]="option.value">{{ option.label }}</option>
+            </select>
+          </label>
+          <label>
+            Channel
+            <select [(ngModel)]="form.channel">
+              <option *ngFor="let option of channelOptions" [value]="option.value">{{ option.label }}</option>
+            </select>
+          </label>
+          <label class="wide">
+            Description
+            <textarea [(ngModel)]="form.description" rows="5"></textarea>
+          </label>
+        </div>
+
+        <div class="panel-actions">
+          <button type="button" class="primary-button" (click)="saveSettings()" [disabled]="saving() || isArchivedProject() || !form.name.trim()">
+            <svg lucideSave size="15" aria-hidden="true"></svg>
+            {{ saving() ? 'Saving...' : 'Save settings' }}
+          </button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-heading">
+          <span><svg lucideSlidersHorizontal size="17" aria-hidden="true"></svg></span>
+          <div>
+            <p class="eyebrow">Operation</p>
+            <h2>Availability</h2>
+            <p>Control whether this assistant is active for configured channels.</p>
+          </div>
+        </div>
+
+        <div class="availability-row">
+          <div>
+            <strong>{{ statusLabel() }}</strong>
+            <p>{{ assistant()?.is_active ? 'This assistant is active.' : 'This assistant is currently draft/inactive.' }}</p>
+          </div>
+          <button
+            type="button"
+            class="secondary-button"
+            (click)="setActive(!assistant()?.is_active)"
+            [disabled]="statusSaving() || isArchivedProject()">
+            {{ statusSaving() ? 'Updating...' : assistant()?.is_active ? 'Deactivate' : 'Activate' }}
+          </button>
+        </div>
+      </section>
+    </main>
+
+    <aside class="settings-side">
+      <section class="panel compact-panel">
+        <p class="eyebrow">Current Configuration</p>
+        <div class="definition-list">
+          <span>Purpose <strong>{{ purposeLabel() }}</strong></span>
+          <span>Language <strong>{{ languageLabel() }}</strong></span>
+          <span>Channel <strong>{{ channelLabel() }}</strong></span>
+          <span>Created <strong>{{ assistant()?.created_at | date:'mediumDate' }}</strong></span>
+        </div>
+      </section>
+
+      <section class="panel danger-panel">
+        <p class="eyebrow">Danger Zone</p>
+        <h2>Delete assistant</h2>
+        <p>Deleting removes this assistant from the project. This action cannot be undone.</p>
+        <button type="button" class="danger-button" (click)="confirmDeleteOpen.set(true)" [disabled]="isArchivedProject()">
+          Delete assistant
+        </button>
+      </section>
+    </aside>
+  </section>
+</section>
+
+<section
+  *ngIf="confirmDeleteOpen()"
+  class="confirm-overlay"
+  role="presentation"
+  (click)="confirmDeleteOpen.set(false)">
+  <div class="confirm-card" role="dialog" aria-modal="true" aria-labelledby="delete-assistant-title" (click)="$event.stopPropagation()">
+    <p class="eyebrow danger-eyebrow">Delete</p>
+    <h2 id="delete-assistant-title">Delete assistant?</h2>
+    <p>Are you sure you want to delete "{{ assistant()?.name || ('Assistant ' + chatbotId) }}"?</p>
+    <div class="confirm-actions">
+      <button type="button" class="secondary-button" (click)="confirmDeleteOpen.set(false)" [disabled]="deleting()">Cancel</button>
+      <button type="button" class="danger-button" (click)="deleteAssistant()" [disabled]="deleting()">
+        {{ deleting() ? 'Deleting...' : 'Delete assistant' }}
+      </button>
+    </div>
+  </div>
+</section>

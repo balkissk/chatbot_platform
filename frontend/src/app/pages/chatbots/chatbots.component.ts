@@ -98,7 +98,8 @@ export class ChatbotsComponent implements OnInit {
   languageOptions = ASSISTANT_LANGUAGE_OPTIONS;
   channelOptions = ASSISTANT_CHANNEL_OPTIONS;
   private isBrowser: boolean;
-  private pendingDeployChatbotId: number | undefined;
+  private pendingPanelChatbotId: number | undefined;
+  private pendingPanelMode: 'deploy' | 'settings' | undefined;
 
   assistantCounts = computed(() => {
     const items = this.chatbots();
@@ -152,8 +153,10 @@ export class ChatbotsComponent implements OnInit {
     if (!this.isBrowser) return;
     const query = this.route.snapshot.queryParamMap;
     const returnedChatbotId = Number(query.get('chatbot_id'));
-    if (query.get('mode') === 'deploy' && returnedChatbotId) {
-      this.pendingDeployChatbotId = returnedChatbotId;
+    const returnedMode = query.get('mode');
+    if ((returnedMode === 'deploy' || returnedMode === 'settings') && returnedChatbotId) {
+      this.pendingPanelChatbotId = returnedChatbotId;
+      this.pendingPanelMode = returnedMode;
     }
     this.loadProject();
     const cachedChatbots = this.api.getCachedChatbotsByProject(this.projectId);
@@ -206,10 +209,10 @@ export class ChatbotsComponent implements OnInit {
         this.currentPage.set(1);
         this.loading.set(false);
         this.refreshing.set(false);
-        this.openPendingDeployPanel(chatbots);
+        this.openPendingPanel(chatbots);
       },
       error: err => {
-        this.error.set(err.error?.detail || 'Could not load chatbots');
+        this.error.set(err.error?.detail || 'Could not load assistants');
         this.loading.set(false);
         this.refreshing.set(false);
       }
@@ -291,16 +294,26 @@ export class ChatbotsComponent implements OnInit {
     return `Updated ${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`;
   }
 
-  openPendingDeployPanel(chatbots: any[]) {
-    if (!this.pendingDeployChatbotId) return;
-    const bot = chatbots.find(item => Number(item.id) === this.pendingDeployChatbotId);
+  openPendingPanel(chatbots: any[]) {
+    if (!this.pendingPanelChatbotId || !this.pendingPanelMode) return;
+    const bot = chatbots.find(item => Number(item.id) === this.pendingPanelChatbotId);
     if (!bot) return;
-    const id = this.pendingDeployChatbotId;
-    this.pendingDeployChatbotId = undefined;
-    this.openPanel(bot, 'deploy');
+    const id = this.pendingPanelChatbotId;
+    const mode = this.pendingPanelMode;
+    this.pendingPanelChatbotId = undefined;
+    this.pendingPanelMode = undefined;
+    if (mode === 'deploy') {
+      this.router.navigate(['/dashboard/projects', this.projectId, 'chatbots', id, 'deployment'], { replaceUrl: true });
+      return;
+    }
+    if (mode === 'settings') {
+      this.router.navigate(['/dashboard/projects', this.projectId, 'chatbots', id, 'settings'], { replaceUrl: true });
+      return;
+    }
+    this.openPanel(bot, mode);
     this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: { chatbot_id: id, mode: 'deploy' },
+      queryParams: { chatbot_id: id, mode },
       replaceUrl: true
     });
   }
@@ -341,7 +354,7 @@ export class ChatbotsComponent implements OnInit {
       next: (created: any) => {
         this.creating.set(false);
         this.wizardOpen.set(false);
-        this.success.set(`Assistant created as draft. Chatbot ID: ${created.id}`);
+        this.success.set(`Assistant created as draft. Assistant ID: ${created.id}`);
         this.navigateAfterCreation(state.creation_mode, created.id);
       },
       error: err => {
@@ -424,6 +437,16 @@ export class ChatbotsComponent implements OnInit {
 
   openPanel(bot: any, mode: 'overview' | 'deploy' | 'settings') {
     if (this.isArchivedProject() && mode !== 'overview') return;
+    if (mode === 'deploy') {
+      this.closeActionMenu();
+      this.router.navigate(['/dashboard/projects', this.projectId, 'chatbots', bot.id, 'deployment']);
+      return;
+    }
+    if (mode === 'settings') {
+      this.closeActionMenu();
+      this.router.navigate(['/dashboard/projects', this.projectId, 'chatbots', bot.id, 'settings']);
+      return;
+    }
     this.closeActionMenu();
     this.detailsMode.set(mode);
     this.detailsLoading.set(true);
@@ -434,12 +457,9 @@ export class ChatbotsComponent implements OnInit {
       next: details => {
         this.selectedDetails.set(details);
         this.detailsLoading.set(false);
-        if (mode === 'deploy') {
-          this.loadChannels(details.id);
-        }
       },
       error: err => {
-        this.error.set(err.error?.detail || 'Could not load chatbot details');
+        this.error.set(err.error?.detail || 'Could not load assistant details');
         this.detailsLoading.set(false);
       }
     });
@@ -543,7 +563,7 @@ export class ChatbotsComponent implements OnInit {
   saveChatbot(bot: any) {
     const name = this.editForm.name.trim();
     if (!name) {
-      this.error.set('Chatbot name is required');
+      this.error.set('Assistant name is required');
       return;
     }
 
@@ -564,11 +584,11 @@ export class ChatbotsComponent implements OnInit {
         this.savingId.set(undefined);
         this.editingId.set(undefined);
         this.selectedDetails.update(details => details?.id === bot.id ? { ...details, ...updated } : details);
-        this.success.set('Chatbot updated');
+        this.success.set('Assistant updated');
         this.loadChatbots(true, true);
       },
       error: err => {
-        this.error.set(err.error?.detail || 'Could not update chatbot');
+        this.error.set(err.error?.detail || 'Could not update assistant');
         this.savingId.set(undefined);
       }
     });
@@ -584,11 +604,11 @@ export class ChatbotsComponent implements OnInit {
       next: updated => {
         this.statusId.set(undefined);
         this.selectedDetails.update(details => details?.id === bot.id ? { ...details, ...updated } : details);
-        this.success.set(isActive ? 'Chatbot activated' : 'Chatbot deactivated');
+        this.success.set(isActive ? 'Assistant activated' : 'Assistant deactivated');
         this.loadChatbots(true, true);
       },
       error: err => {
-        this.error.set(err.error?.detail || 'Could not update chatbot status');
+        this.error.set(err.error?.detail || 'Could not update assistant status');
         this.statusId.set(undefined);
       }
     });

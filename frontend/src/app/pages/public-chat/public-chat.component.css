@@ -1,6 +1,6 @@
 .chat-page {
   background:
-    radial-gradient(circle at top left, rgba(22, 119, 255, .18), transparent 34%),
+    radial-gradient(circle at top left, rgba(24, 185, 168, .18), transparent 34%),
     linear-gradient(135deg, #eef8f9 0%, #f7fbff 52%, #f4f1ff 100%);
   min-height: 100vh;
   padding: 24px;
@@ -37,7 +37,7 @@ header h1 {
 }
 
 button {
-  background: #1677FF;
+  background: var(--brand-primary);
   border: 0;
   border-radius: 12px;
   color: #fff;
@@ -75,7 +75,7 @@ button:disabled {
 
 .message.user {
   align-self: flex-end;
-  background: linear-gradient(135deg, #1677FF, #0B6BFF);
+  background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-hover));
   border-color: transparent;
   color: #fff;
 }
@@ -94,7 +94,7 @@ button:disabled {
 
 .typing-dots i {
   animation: bounce .9s infinite ease-in-out;
-  background: #1677FF;
+  background: var(--brand-primary);
   border-radius: 50%;
   display: block;
   height: 7px;
@@ -122,9 +122,9 @@ button:disabled {
 }
 
 .quick-replies button {
-  background: #EAF3FF;
+  background: var(--brand-primary-soft);
   border: 1px solid #D5E6FF;
-  color: #1677FF;
+  color: var(--brand-primary);
   min-height: 34px;
   padding: 6px 10px;
 }
@@ -149,11 +149,11 @@ button:disabled {
 .feedback-row button:hover:not(:disabled) {
   background: #eef8f7;
   border-color: #9ddbd4;
-  color: #0B6BFF;
+  color: var(--brand-primary-hover);
 }
 
 .feedback-row small {
-  color: #0B6BFF;
+  color: var(--brand-primary-hover);
   font-weight: 700;
 }
 

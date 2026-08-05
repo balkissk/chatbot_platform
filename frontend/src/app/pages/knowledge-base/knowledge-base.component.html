@@ -1,7 +1,7 @@
 <section class="kb-page">
   <header class="kb-header">
     <div>
-      <p class="eyebrow">{{ chatbot()?.name || ('Chatbot ' + chatbotId) }}</p>
+      <p class="eyebrow">{{ chatbot()?.name || ('Assistant ' + chatbotId) }}</p>
       <h2>Knowledge Base</h2>
       <p class="subtitle">Manage indexed documents and test retrieval for this assistant.</p>
     </div>
@@ -16,21 +16,11 @@
         </select>
       </label>
       <button class="secondary" type="button" (click)="loadDocuments()" [disabled]="loading()">Refresh</button>
-      <label class="upload-button">
-        <input
-          type="file"
-          accept=".txt,.md,.csv,.json,.pdf,application/pdf"
-          (change)="onFileSelected($event)"
-          [disabled]="uploadLoading() || !selectedVersionId()">
-        <span>{{ uploadLoading() ? 'Uploading...' : 'Upload Document' }}</span>
-      </label>
     </div>
   </header>
 
   <p *ngIf="error()" class="error">{{ error() }}</p>
   <p *ngIf="message()" class="success">{{ message() }}</p>
-  <p *ngIf="selectedFileName" class="muted">Selected: {{ selectedFileName }}</p>
-
   <section class="health-strip" [ngClass]="indexHealth().tone" aria-label="Knowledge health">
     <div>
       <span>Documents</span>
@@ -65,21 +55,29 @@
     <span></span>
   </section>
 
-  <section *ngIf="!loading() && documents().length === 0" class="primary-empty">
+  <section class="upload-section">
     <div>
-      <p class="eyebrow">Knowledge Coverage</p>
-      <h3>Build your assistant's knowledge</h3>
-      <p>Upload documents so the assistant can retrieve grounded information.</p>
-      <small>Supported formats: TXT, Markdown, CSV, JSON, and PDF.</small>
+      <p class="eyebrow">Add Knowledge</p>
+      <h3>Upload source documents</h3>
+      <p>Attach approved documents so this assistant can retrieve grounded answers.</p>
     </div>
-    <label class="upload-button primary">
+    <label class="file-dropzone" [class.disabled]="uploadLoading() || !selectedVersionId()">
       <input
         type="file"
         accept=".txt,.md,.csv,.json,.pdf,application/pdf"
         (change)="onFileSelected($event)"
         [disabled]="uploadLoading() || !selectedVersionId()">
-      <span>{{ uploadLoading() ? 'Uploading...' : 'Upload first document' }}</span>
+      <span class="drop-icon">KB</span>
+      <strong>{{ uploadLoading() ? 'Uploading document...' : 'Choose files' }}</strong>
+      <small>TXT, Markdown, CSV, JSON and PDF supported</small>
     </label>
+    <p *ngIf="selectedFileName" class="upload-progress">Selected: {{ selectedFileName }}</p>
+    <p *ngIf="!selectedVersionId()" class="field-hint">Create or select a version before uploading documents.</p>
+  </section>
+
+  <section *ngIf="!loading() && documents().length === 0" class="primary-empty">
+    <strong>No documents yet</strong>
+    <span>Uploaded files will appear here with indexing status and chunk coverage.</span>
   </section>
 
   <section *ngIf="!loading() && documents().length" class="knowledge-workspace">
@@ -134,6 +132,7 @@
           <input [(ngModel)]="documentEdit.content_type" placeholder="Content type">
           <button
             type="button"
+            class="primary"
             (click)="saveDocument(document)"
             [disabled]="savingDocumentId() === document.id || !documentEdit.filename.trim()">
             {{ savingDocumentId() === document.id ? 'Saving...' : 'Save' }}
@@ -144,7 +143,7 @@
         <button
           *ngIf="hasFailedChunks(document) && editingDocumentId() !== document.id"
           type="button"
-          class="retry-link"
+          class="retry-link secondary"
           (click)="reprocessEmbeddings(document)"
           [disabled]="isDocumentActionBusy(document)">
           {{ reprocessId() === document.id ? 'Retrying...' : 'Retry failed chunks' }}
@@ -164,16 +163,17 @@
             class="document-menu"
             role="menu"
             (click)="$event.stopPropagation()">
-            <button type="button" role="menuitem" (click)="viewDocument(document)">View details</button>
-            <button type="button" role="menuitem" (click)="startDocumentEdit(document)">Rename</button>
+            <button type="button" class="secondary" role="menuitem" (click)="viewDocument(document)">View details</button>
+            <button type="button" class="secondary" role="menuitem" (click)="startDocumentEdit(document)">Rename</button>
             <button
               type="button"
+              class="secondary"
               role="menuitem"
               (click)="reprocessChunks(document)"
               [disabled]="isDocumentActionBusy(document)">
               Reprocess
             </button>
-            <button type="button" role="menuitem" class="danger-item" (click)="deleteDocument(document)">Delete</button>
+            <button type="button" role="menuitem" class="danger danger-item" (click)="deleteDocument(document)">Delete</button>
           </div>
         </div>
       </article>
@@ -232,7 +232,19 @@
               type="search"
               placeholder="Search inside document..."
               [ngModel]="chunkSearch()"
-              (ngModelChange)="chunkSearch.set($event)">
+              (ngModelChange)="setChunkSearch($event)">
+          </div>
+
+          <div class="chunk-toolbar" aria-label="Chunk filters">
+            <div class="chunk-filter-group">
+              <button type="button" class="chunk-filter secondary" [class.active]="chunkStatusFilter() === 'all'" (click)="setChunkStatusFilter('all')">All</button>
+              <button type="button" class="chunk-filter secondary" [class.active]="chunkStatusFilter() === 'ready'" (click)="setChunkStatusFilter('ready')">Ready</button>
+              <button type="button" class="chunk-filter secondary" [class.active]="chunkStatusFilter() === 'pending'" (click)="setChunkStatusFilter('pending')">Pending</button>
+              <button type="button" class="chunk-filter secondary" [class.active]="chunkStatusFilter() === 'failed'" (click)="setChunkStatusFilter('failed')">Failed</button>
+            </div>
+            <p class="chunk-count" *ngIf="filteredChunks().length">
+              Showing {{ chunkRangeStart() }}-{{ chunkRangeEnd() }} of {{ filteredChunks().length }}
+            </p>
           </div>
 
           <p *ngIf="chunksLoading()" class="muted">Loading chunks...</p>
@@ -241,23 +253,37 @@
             <span>{{ chunkSearch() ? 'No chunks match this search.' : 'This document has no chunks yet.' }}</span>
           </div>
 
-          <article *ngFor="let chunk of filteredChunks()" class="chunk-row">
-            <button type="button" class="chunk-summary" (click)="toggleChunk(chunk)">
-              <span>
-                <strong>{{ chunk.title || ('Chunk #' + (chunk.order + 1)) }}</strong>
-                <small>{{ chunkLength(chunk) }} characters{{ chunk.section_type ? ' · ' + chunk.section_type : '' }}</small>
+          <article *ngFor="let chunk of pagedChunks()" class="chunk-row" [class.expanded]="chunkExpanded(chunk)">
+            <button type="button" class="chunk-summary secondary" (click)="toggleChunk(chunk)">
+              <span class="chunk-index">#{{ chunkOrdinal(chunk) }}</span>
+              <span class="chunk-copy">
+                <span class="chunk-heading">
+                  <strong>{{ chunk.title || ('Chunk #' + chunkOrdinal(chunk)) }}</strong>
+                  <small>{{ chunkLength(chunk) }} chars{{ chunk.section_type ? ' · ' + chunk.section_type : '' }}</small>
+                </span>
+                <span class="chunk-preview">{{ chunkPreview(chunk) }}</span>
               </span>
               <span class="status-pill" [ngClass]="chunk.embedding_status">{{ chunkStatusLabel(chunk) }}</span>
             </button>
             <div *ngIf="chunkExpanded(chunk)" class="chunk-body">
-              <small *ngIf="chunk.embedding_model">Model: {{ chunk.embedding_model }}</small>
-              <small *ngIf="chunk.retry_count">Retries: {{ chunk.retry_count }}</small>
+              <div class="chunk-meta-grid">
+                <small *ngIf="chunk.embedding_model">Model: {{ chunk.embedding_model }}</small>
+                <small *ngIf="chunk.retry_count">Retries: {{ chunk.retry_count }}</small>
+                <small>Length: {{ chunkLength(chunk) }} characters</small>
+                <small *ngIf="chunk.section_type">Section: {{ chunk.section_type }}</small>
+              </div>
               <small *ngIf="chunk.embedding_status === 'failed'" class="error">
                 {{ safeIngestionMessage(chunk.last_error || chunk.embedding_error || '') }}
               </small>
               <p>{{ chunk.text }}</p>
             </div>
           </article>
+
+          <footer *ngIf="filteredChunks().length > chunkPageSize" class="chunk-pagination">
+            <button type="button" class="secondary" (click)="goToChunkPage(chunkPage() - 1)" [disabled]="chunkPage() === 1">Previous</button>
+            <span>Page {{ chunkPage() }} of {{ chunkPageCount() }}</span>
+            <button type="button" class="secondary" (click)="goToChunkPage(chunkPage() + 1)" [disabled]="chunkPage() === chunkPageCount()">Next</button>
+          </footer>
         </section>
       </ng-container>
     </section>
@@ -265,7 +291,7 @@
 
   <section class="advanced-grid">
     <section class="panel advanced-panel">
-      <button type="button" class="collapse-header" (click)="toggleSettings()" [attr.aria-expanded]="settingsExpanded()">
+      <button type="button" class="collapse-header secondary" (click)="toggleSettings()" [attr.aria-expanded]="settingsExpanded()">
         <span>
           <p class="eyebrow">Retrieval Configuration</p>
           <strong>{{ retrievalConfigSummary() }}</strong>
@@ -334,7 +360,7 @@
         </label>
 
         <div class="settings-actions">
-          <button type="button" (click)="saveRagSettings()" [disabled]="settingsLoading()">
+          <button class="primary" type="button" (click)="saveRagSettings()" [disabled]="settingsLoading()">
             {{ settingsLoading() ? 'Saving...' : 'Save settings' }}
           </button>
         </div>
@@ -342,7 +368,7 @@
     </section>
 
     <section class="panel advanced-panel">
-      <button type="button" class="collapse-header" (click)="togglePlayground()" [attr.aria-expanded]="playgroundExpanded()">
+      <button type="button" class="collapse-header secondary" (click)="togglePlayground()" [attr.aria-expanded]="playgroundExpanded()">
         <span>
           <p class="eyebrow">Retrieval Playground</p>
           <strong>{{ retrievalResultSummary() || 'Test document retrieval' }}</strong>
@@ -394,7 +420,7 @@
     <p>An identical copy of this document already exists in this Knowledge Base.</p>
     <div class="confirm-actions">
       <button type="button" class="secondary" (click)="closeDuplicateModal()">Cancel</button>
-      <button type="button" (click)="viewExistingDuplicate()">View existing document</button>
+      <button class="primary" type="button" (click)="viewExistingDuplicate()">View existing document</button>
     </div>
   </div>
 </section>

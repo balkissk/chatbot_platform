@@ -26,6 +26,8 @@ export class KnowledgeBaseComponent implements OnInit, OnDestroy {
   retrievalMode = signal('');
   documentSearch = signal('');
   chunkSearch = signal('');
+  chunkStatusFilter = signal<'all' | 'ready' | 'pending' | 'failed'>('all');
+  chunkPage = signal(1);
   settingsExpanded = signal(false);
   playgroundExpanded = signal(false);
   openDocumentMenuId = signal<number | undefined>(undefined);
@@ -157,6 +159,7 @@ export class KnowledgeBaseComponent implements OnInit, OnDestroy {
     this.selectedVersionId.set(Number(versionId));
     this.selectedDocument.set(null);
     this.chunks.set([]);
+    this.chunkPage.set(1);
     this.retrievalChunks.set([]);
     this.loadDocuments();
   }
@@ -288,6 +291,7 @@ export class KnowledgeBaseComponent implements OnInit, OnDestroy {
     this.selectedDocument.set(document);
     this.openDocumentMenuId.set(undefined);
     this.expandedChunkIds.set([]);
+    this.chunkPage.set(1);
     this.chunksLoading.set(true);
     this.error.set('');
     this.api.getDocumentChunks(document.id).subscribe({
@@ -753,13 +757,49 @@ export class KnowledgeBaseComponent implements OnInit, OnDestroy {
 
   filteredChunks() {
     const query = this.chunkSearch().trim().toLowerCase();
-    const chunks = this.chunks();
-    if (!query) return chunks;
-    return chunks.filter(chunk => {
-      return String(chunk.title || '').toLowerCase().includes(query)
+    const status = this.chunkStatusFilter();
+    return this.chunks().filter(chunk => {
+      const matchesStatus = status === 'all' || String(chunk.embedding_status || 'pending').toLowerCase() === status;
+      const matchesSearch = !query
+        || String(chunk.title || '').toLowerCase().includes(query)
         || String(chunk.text || '').toLowerCase().includes(query)
         || String(chunk.section_type || '').toLowerCase().includes(query);
+      return matchesStatus && matchesSearch;
     });
+  }
+
+  setChunkSearch(value: string) {
+    this.chunkSearch.set(value);
+    this.chunkPage.set(1);
+  }
+
+  setChunkStatusFilter(value: 'all' | 'ready' | 'pending' | 'failed') {
+    this.chunkStatusFilter.set(value);
+    this.chunkPage.set(1);
+  }
+
+  readonly chunkPageSize = 12;
+
+  pagedChunks() {
+    const start = (this.chunkPage() - 1) * this.chunkPageSize;
+    return this.filteredChunks().slice(start, start + this.chunkPageSize);
+  }
+
+  chunkPageCount() {
+    return Math.max(1, Math.ceil(this.filteredChunks().length / this.chunkPageSize));
+  }
+
+  chunkRangeStart() {
+    if (!this.filteredChunks().length) return 0;
+    return (this.chunkPage() - 1) * this.chunkPageSize + 1;
+  }
+
+  chunkRangeEnd() {
+    return Math.min(this.filteredChunks().length, this.chunkPage() * this.chunkPageSize);
+  }
+
+  goToChunkPage(page: number) {
+    this.chunkPage.set(Math.max(1, Math.min(page, this.chunkPageCount())));
   }
 
   toggleChunk(chunk: any) {
@@ -774,6 +814,16 @@ export class KnowledgeBaseComponent implements OnInit, OnDestroy {
 
   chunkLength(chunk: any) {
     return String(chunk.text || '').length;
+  }
+
+  chunkPreview(chunk: any) {
+    const text = String(chunk.text || '').replace(/\s+/g, ' ').trim();
+    if (!text) return 'No text preview available for this chunk.';
+    return text.length > 220 ? `${text.slice(0, 220).trim()}...` : text;
+  }
+
+  chunkOrdinal(chunk: any) {
+    return Number(chunk.order ?? 0) + 1;
   }
 
   retrievalResultSummary() {

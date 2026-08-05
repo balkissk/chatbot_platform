@@ -1,0 +1,62 @@
+<section class="assistant-overview-page">
+  <header class="overview-header">
+    <div>
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a [routerLink]="['/dashboard/projects']">Projects</a>
+        <span>/</span>
+        <a [routerLink]="['/dashboard/projects', projectId, 'chatbots']">Assistants</a>
+        <span>/</span>
+        <strong>{{ assistant()?.name || ('Assistant ' + chatbotId) }}</strong>
+      </nav>
+      <p class="eyebrow">Assistant Overview</p>
+      <h1>{{ assistant()?.name || ('Assistant ' + chatbotId) }}</h1>
+      <p>{{ assistant()?.description || 'Open a workspace area to build, test, publish, or operate this assistant.' }}</p>
+    </div>
+    <span class="status-badge" [class.live]="assistant()?.is_active">{{ statusLabel() }}</span>
+  </header>
+
+  <p *ngIf="error()" class="error">{{ error() }}</p>
+  <p *ngIf="loading()" class="muted">Loading assistant...</p>
+
+  <section class="summary-grid" *ngIf="assistant()">
+    <article><span>Purpose</span><strong>{{ purpose() }}</strong></article>
+    <article><span>Language</span><strong>{{ language() }}</strong></article>
+    <article><span>Channel</span><strong>{{ channel() }}</strong></article>
+    <article><span>Versions</span><strong>{{ versionSummary() }}</strong></article>
+  </section>
+
+  <section class="workspace-grid" aria-label="Assistant workspace">
+    <a [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId, 'flow']" class="workspace-card primary-card">
+      <span><svg lucideWorkflow size="18" aria-hidden="true"></svg></span>
+      <div>
+        <p class="eyebrow">Build</p>
+        <h2>Flow Builder</h2>
+        <p>Design and connect the assistant conversation logic.</p>
+      </div>
+    </a>
+    <a [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId, 'knowledge']" class="workspace-card">
+      <span><svg lucideBookOpen size="18" aria-hidden="true"></svg></span>
+      <div><h2>Knowledge</h2><p>Manage source documents, chunks, and retrieval settings.</p></div>
+    </a>
+    <a [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId, 'flow', 'test']" class="workspace-card">
+      <span><svg lucideMessageSquareText size="18" aria-hidden="true"></svg></span>
+      <div><h2>Test</h2><p>Run the current draft through the chat test workspace.</p></div>
+    </a>
+    <a [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId, 'versions']" class="workspace-card">
+      <span><svg lucideGitBranch size="18" aria-hidden="true"></svg></span>
+      <div><h2>Versions</h2><p>Review draft, live, and archived assistant versions.</p></div>
+    </a>
+    <a [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId, 'analytics']" class="workspace-card">
+      <span><svg lucideBarChart3 size="18" aria-hidden="true"></svg></span>
+      <div><h2>Analytics</h2><p>Inspect assistant activity and operating signals.</p></div>
+    </a>
+    <a [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId, 'deployment']" class="workspace-card">
+      <span><svg lucideRocket size="18" aria-hidden="true"></svg></span>
+      <div><h2>Deployment</h2><p>Share public chat links, widgets, and API access.</p></div>
+    </a>
+    <a [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId, 'settings']" class="workspace-card">
+      <span><svg lucideSettings size="18" aria-hidden="true"></svg></span>
+      <div><h2>Settings</h2><p>Edit assistant identity, channel, language, and status.</p></div>
+    </a>
+  </section>
+</section>

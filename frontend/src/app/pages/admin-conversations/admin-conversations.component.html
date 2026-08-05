@@ -22,7 +22,7 @@
     <button
       type="button"
       *ngFor="let session of sessions()"
-      class="session-row"
+      class="session-row secondary"
       [class.selected]="selectedSession()?.id === session.id"
       (click)="openSession(session.id)">
       <div>

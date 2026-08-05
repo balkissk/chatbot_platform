@@ -75,7 +75,7 @@
   margin: 8px 0 3px;
 }
 
-.accent-teal::before { background: #1677FF; }
+.accent-teal::before { background: var(--brand-primary); }
 .accent-blue::before { background: #3b82f6; }
 .accent-violet::before { background: #8b5cf6; }
 .accent-amber::before { background: #f59e0b; }
@@ -114,7 +114,7 @@
 }
 
 .eyebrow {
-  color: #1677FF;
+  color: var(--brand-primary);
   font-size: 11px;
   font-weight: 800;
   letter-spacing: .08em;
@@ -152,7 +152,7 @@ h3 {
 
 .bar {
   align-self: end;
-  background: linear-gradient(180deg, #1677FF, #0B6BFF);
+  background: linear-gradient(180deg, var(--brand-primary), var(--brand-primary-hover));
   border-radius: 999px 999px 5px 5px;
   display: block;
   min-height: 3px;
@@ -194,7 +194,7 @@ h3 {
   background: #eef8f7;
   border: 1px solid #cce9e5;
   border-radius: 999px;
-  color: #0B6BFF;
+  color: var(--brand-primary-hover);
   padding: 5px 10px;
 }
 
@@ -211,7 +211,7 @@ h3 {
 
 .skeleton-card::after {
   animation: shimmer 1.2s infinite;
-  background: linear-gradient(90deg, transparent, rgba(22, 119, 255, .12), transparent);
+  background: linear-gradient(90deg, transparent, rgba(24, 185, 168, .12), transparent);
   content: "";
   inset: 0;
   position: absolute;
@@ -260,4 +260,32 @@ h3 {
   .bar-column small {
     font-size: 9px;
   }
+}
+
+.eyebrow,
+.filter-pill,
+.metric-label {
+  font-family: var(--font-mono);
+}
+
+.accent-teal::before,
+.bar-column span {
+  background: var(--brand-primary) !important;
+}
+
+a,
+.link-action {
+  color: var(--brand-primary-hover) !important;
+}
+
+.source-pill,
+.filter-pill {
+  background: var(--brand-primary-soft) !important;
+  border-color: rgba(24, 185, 168, .28) !important;
+  border-radius: var(--ds-radius-sm) !important;
+  color: var(--brand-primary-hover) !important;
+}
+
+.skeleton-card::after {
+  background: linear-gradient(90deg, transparent, rgba(24, 185, 168, .14), transparent);
 }

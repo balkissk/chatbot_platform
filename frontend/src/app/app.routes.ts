@@ -43,6 +43,18 @@ export const routes: Routes = [
             .then(m => m.ProfileComponent)
       },
       {
+        path: 'template-qa',
+        loadComponent: () =>
+          import('./pages/template-qa/template-qa.component')
+            .then(m => m.TemplateQaComponent)
+      },
+      {
+        path: 'template-qa/:templateKey',
+        loadComponent: () =>
+          import('./pages/template-qa/template-qa.component')
+            .then(m => m.TemplateQaComponent)
+      },
+      {
         path: 'projects',
         loadComponent: () =>
           import('./pages/projects/projects.component')
@@ -55,10 +67,22 @@ export const routes: Routes = [
             .then(m => m.ChatbotsComponent)
       },
       {
+        path: 'projects/:projectId/chatbots/:chatbotId',
+        loadComponent: () =>
+          import('./pages/assistant-overview/assistant-overview.component')
+            .then(m => m.AssistantOverviewComponent)
+      },
+      {
         path: 'projects/:projectId/chatbots/:chatbotId/versions',
         loadComponent: () =>
           import('./pages/versions/versions.component')
             .then(m => m.VersionsComponent)
+      },
+      {
+        path: 'projects/:projectId/chatbots/:chatbotId/evaluations',
+        loadComponent: () =>
+          import('./pages/evaluations/evaluations.component')
+            .then(m => m.EvaluationsComponent)
       },
       {
         path: 'projects/:projectId/chatbots/:chatbotId/analytics',
@@ -71,6 +95,24 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./pages/chatbot-conversations/chatbot-conversations.component')
             .then(m => m.ChatbotConversationsComponent)
+      },
+      {
+        path: 'projects/:projectId/chatbots/:chatbotId/collected-data',
+        loadComponent: () =>
+          import('./pages/collected-data/collected-data.component')
+            .then(m => m.CollectedDataComponent)
+      },
+      {
+        path: 'projects/:projectId/chatbots/:chatbotId/deployment',
+        loadComponent: () =>
+          import('./pages/chatbot-deployment/chatbot-deployment.component')
+            .then(m => m.ChatbotDeploymentComponent)
+      },
+      {
+        path: 'projects/:projectId/chatbots/:chatbotId/settings',
+        loadComponent: () =>
+          import('./pages/assistant-settings/assistant-settings.component')
+            .then(m => m.AssistantSettingsComponent)
       },
       {
         path: 'projects/:projectId/chatbots/:chatbotId/flow',

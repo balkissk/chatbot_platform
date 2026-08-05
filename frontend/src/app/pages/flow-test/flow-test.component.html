@@ -1,7 +1,7 @@
 <div class="page-header">
   <div>
-    <p class="eyebrow">{{ context()?.chatbot?.name || ('Chatbot ' + chatbotId) }}</p>
-    <h2>Test Flow</h2>
+    <p class="eyebrow">{{ context()?.chatbot?.name || ('Assistant ' + chatbotId) }}</p>
+    <h2>Test assistant</h2>
   </div>
 
   <div class="actions">
@@ -68,8 +68,46 @@
   </section>
 
   <aside class="notes">
-    <p class="eyebrow">How to use</p>
-    <h3>Preview the draft flow</h3>
-    <p>This page tests the current draft version before publishing. Use Restart test when you change the flow and want a clean session.</p>
+    <section class="debug-card">
+      <p class="eyebrow">Runtime trace</p>
+      <h3>{{ currentBlockLabel() }}</h3>
+      <dl class="trace-list">
+        <div>
+          <dt>Block type</dt>
+          <dd>{{ currentBlockType() }}</dd>
+        </div>
+        <div>
+          <dt>Mode</dt>
+          <dd>{{ modeLabel() }}</dd>
+        </div>
+        <div>
+          <dt>Session</dt>
+          <dd>#{{ sessionId() || '-' }}</dd>
+        </div>
+        <div>
+          <dt>Sources</dt>
+          <dd>{{ sourceCount() }}</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="debug-card">
+      <p class="eyebrow">Saved variables</p>
+      <div class="variable-list" *ngIf="visibleVariables().length; else noVariables">
+        <div *ngFor="let variable of visibleVariables()">
+          <span>{{ variable.key }}</span>
+          <strong>{{ variable.value }}</strong>
+        </div>
+      </div>
+      <ng-template #noVariables>
+        <p>No saved variables yet.</p>
+      </ng-template>
+    </section>
+
+    <section class="debug-card quiet">
+      <p class="eyebrow">How to use</p>
+      <h3>Preview the draft flow</h3>
+      <p>Use Restart test after changing the flow. Check the runtime trace to see which block is waiting for input or where the path ended.</p>
+    </section>
   </aside>
 </section>

@@ -94,7 +94,7 @@ textarea:focus {
 }
 
 .primary {
-  background: #1677ff;
+  background: var(--brand-primary);
 }
 
 .secondary {
@@ -131,4 +131,22 @@ textarea:focus {
     align-items: stretch;
     flex-direction: column;
   }
+}
+
+.eyebrow {
+  color: var(--brand-primary-hover);
+  font-family: var(--font-mono);
+  letter-spacing: .08em;
+}
+
+h2,
+h3 {
+  color: var(--text-primary);
+  font-family: var(--font-display);
+}
+
+.primary {
+  background: linear-gradient(135deg, var(--brand-primary-hover), var(--brand-primary));
+  border-color: var(--brand-primary);
+  color: #fff;
 }

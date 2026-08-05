@@ -45,7 +45,7 @@
 
 .setup-card span {
   animation: pulse 1.4s ease-in-out infinite;
-  background: linear-gradient(135deg, #EAF3FF, #F7F9FC);
+  background: linear-gradient(135deg, var(--brand-primary-soft), #F7F9FC);
   border-radius: 12px;
   height: 38px;
   width: 38px;
@@ -106,9 +106,9 @@ small {
 }
 
 .primary {
-  background: linear-gradient(135deg, #1677FF, #0B6BFF);
+  background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-hover));
   border: 1px solid rgba(255, 255, 255, .45);
-  box-shadow: 0 12px 26px rgba(22, 119, 255, .28);
+  box-shadow: 0 12px 26px rgba(24, 185, 168, .28);
   color: #fff;
   cursor: pointer;
 }
@@ -149,13 +149,13 @@ small {
 }
 
 .template-card.selected {
-  border-color: #1677FF;
-  box-shadow: 0 20px 52px rgba(22, 119, 255, .22);
+  border-color: var(--brand-primary);
+  box-shadow: 0 20px 52px rgba(24, 185, 168, .22);
 }
 
 .template-icon {
   align-items: center;
-  background: linear-gradient(135deg, #1677FF, #0B6BFF);
+  background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-hover));
   border-radius: 10px;
   color: #fff;
   display: flex;
@@ -192,8 +192,8 @@ small {
 }
 
 .selected-dot {
-  background: #1677FF;
-  border: 4px solid #EAF3FF;
+  background: var(--brand-primary);
+  border: 4px solid var(--brand-primary-soft);
   border-radius: 50%;
   height: 14px;
   position: absolute;
@@ -216,6 +216,16 @@ small {
   display: block;
   font-size: 14px;
   margin-bottom: 2px;
+}
+
+.empty-state {
+  background: var(--surface-raised);
+  border: 1px dashed var(--border-default);
+  border-radius: 12px;
+  color: var(--text-primary);
+  display: grid;
+  gap: 4px;
+  padding: 14px;
 }
 
 .error-card p {
@@ -272,4 +282,43 @@ small {
   h2 {
     font-size: 28px;
   }
+}
+
+.eyebrow,
+.template-tag,
+.step-indicator {
+  color: var(--brand-primary-hover);
+  font-family: var(--font-mono);
+}
+
+h2,
+h3 {
+  color: var(--text-primary);
+  font-family: var(--font-display);
+}
+
+.primary,
+.apply-button {
+  background: linear-gradient(135deg, var(--brand-primary-hover), var(--brand-primary)) !important;
+  border-color: var(--brand-primary) !important;
+  box-shadow: 0 10px 24px rgba(8, 122, 112, .2) !important;
+}
+
+.template-card.selected,
+.mode-card.selected,
+.recommendation-card.selected {
+  border-color: var(--brand-primary) !important;
+  box-shadow: 0 0 0 4px rgba(24, 185, 168, .14) !important;
+}
+
+.status-dot,
+.template-card::after {
+  background: var(--brand-primary) !important;
+  border-color: var(--brand-primary-soft) !important;
+}
+
+.confirm-modal {
+  background: var(--surface-raised);
+  border-color: var(--border-default);
+  box-shadow: 0 24px 70px rgba(8, 26, 47, .2);
 }

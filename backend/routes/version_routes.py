@@ -19,6 +19,7 @@ from models.version_schema import VersionCreate
 from services.auth import require_roles
 from services.audit import record_audit_log
 from services.flow_validation import validate_flow_version
+from services.publication_readiness import readiness_report, run_version_smoke_test
 from services.templates import create_starter_flow
 
 router = APIRouter()
@@ -218,14 +219,57 @@ def get_versions(
     return [serialize_version(version, chatbot) for version in versions]
 
 
-@router.put("/versions/{version_id}/publish")
-def publish_version(
+@router.get("/versions/{version_id}/readiness")
+def get_version_readiness(
     version_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "manager"))
 ):
     version = get_accessible_version(db, version_id, current_user)
     chatbot = get_accessible_chatbot(db, version.chatbot_id, current_user)
+    return readiness_report(db, version, chatbot)
+
+
+@router.post("/versions/{version_id}/smoke-test")
+def smoke_test_version(
+    version_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "manager"))
+):
+    version = get_accessible_version(db, version_id, current_user)
+    chatbot = get_accessible_chatbot(db, version.chatbot_id, current_user)
+    return run_version_smoke_test(db, version, chatbot, current_user.id)
+
+
+@router.put("/versions/{version_id}/publish")
+def publish_version(
+    version_id: int,
+    confirm_warnings: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "manager"))
+):
+    version = get_accessible_version(db, version_id, current_user)
+    chatbot = get_accessible_chatbot(db, version.chatbot_id, current_user)
+    readiness = readiness_report(db, version, chatbot)
+    blocked = [check for check in readiness["checks"] if check["status"] == "BLOCKED"]
+    warnings = [check for check in readiness["checks"] if check["status"] == "WARNING"]
+    if blocked:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "Resolve blocked readiness checks before publishing.",
+                "readiness": readiness,
+            }
+        )
+    if warnings and not confirm_warnings:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Confirm readiness warnings before publishing.",
+                "readiness": readiness,
+            }
+        )
+
     validation = validate_flow_version(db, version_id)
     if not validation["valid"]:
         raise HTTPException(

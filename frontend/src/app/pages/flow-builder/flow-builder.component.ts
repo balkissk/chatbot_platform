@@ -34,6 +34,20 @@ type FlowTransition = {
   condition?: string;
 };
 
+type BlockStatus = 'ready' | 'needs-config' | 'placeholder';
+
+type BlockTypeMeta = {
+  value: string;
+  label: string;
+  icon: string;
+  category: string;
+  description: string;
+  iconBg: string;
+  iconColor: string;
+  status: BlockStatus;
+  hidden?: boolean;
+};
+
 @Component({
   selector: 'app-flow-builder',
   standalone: true,
@@ -53,7 +67,7 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
   editorOpen = signal(false);
   sidebarCollapsed = signal(false);
   inspectorCollapsed = signal(false);
-  inspectorTab = signal<'settings' | 'variables' | 'validation' | 'preview'>('settings');
+  inspectorTab = signal<'settings' | 'variables' | 'validation' | 'preview' | 'qa'>('settings');
   deleteConfirm = signal<{ type: 'node' | 'transition' | 'document'; item: FlowNode | FlowTransition | any; title: string; message: string; actionLabel?: string } | null>(null);
   discardSetupConfirm = signal(false);
   aiDraftConfirm = signal(false);
@@ -64,25 +78,26 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
 
   nodeType = 'message';
   blockCategories = ['Basic', 'AI', 'Data Collection', 'Logic', 'Integration'];
-  blockTypes = [
-    { value: 'message', label: 'Message', icon: 'M', category: 'Basic', description: 'Send text and continue.', iconBg: '#ccfbf1', iconColor: '#0f766e' },
-    { value: 'question', label: 'Question', icon: 'Q', category: 'Basic', description: 'Ask and save a response.', iconBg: '#dbeafe', iconColor: '#2563eb' },
-    { value: 'buttons', label: 'Buttons', icon: 'B', category: 'Basic', description: 'Offer button choices.', iconBg: '#fef3c7', iconColor: '#b45309' },
-    { value: 'end', label: 'End', icon: 'E', category: 'Basic', description: 'Close the conversation.', iconBg: '#f1f5f9', iconColor: '#475569' },
-    { value: 'rag_answer', label: 'AI Answer', icon: 'AI', category: 'AI', description: 'Answer with an AI prompt.', iconBg: '#ede9fe', iconColor: '#7c3aed' },
-    { value: 'knowledge_search', label: 'Knowledge Search', icon: 'KS', category: 'AI', description: 'Answer using uploaded documents.', iconBg: '#cffafe', iconColor: '#0e7490' },
-    { value: 'ai_router', label: 'AI Router', icon: 'RT', category: 'AI', description: 'Route by detected intent.', iconBg: '#e0e7ff', iconColor: '#4f46e5' },
-    { value: 'ai_classifier', label: 'AI Classifier', icon: 'CL', category: 'AI', description: 'Classify a message into categories.', iconBg: '#f5d0fe', iconColor: '#a21caf' },
-    { value: 'collect_name', label: 'Collect Name', icon: 'N', category: 'Data Collection', description: 'Capture visitor name.', iconBg: '#e0f2fe', iconColor: '#0369a1' },
-    { value: 'collect_email', label: 'Collect Email', icon: '@', category: 'Data Collection', description: 'Capture and validate email.', iconBg: '#ecfccb', iconColor: '#4d7c0f' },
-    { value: 'collect_phone', label: 'Collect Phone', icon: 'P', category: 'Data Collection', description: 'Capture and validate phone.', iconBg: '#fae8ff', iconColor: '#a21caf' },
-    { value: 'condition', label: 'Condition', icon: 'IF', category: 'Logic', description: 'Route by variable value.', iconBg: '#ffedd5', iconColor: '#c2410c' },
-    { value: 'confidence_check', label: 'Confidence Check', icon: 'CF', category: 'Logic', description: 'Check confidence before routing.', iconBg: '#fef9c3', iconColor: '#a16207' },
-    { value: 'lead_score', label: 'Lead Score', icon: 'LS', category: 'Logic', description: 'Score and qualify a lead.', iconBg: '#dcfce7', iconColor: '#15803d' },
-    { value: 'set_variable', label: 'Set Variable', icon: 'V', category: 'Logic', description: 'Set a value manually.', iconBg: '#dcfce7', iconColor: '#15803d' },
-    { value: 'meeting_scheduler', label: 'Meeting Scheduler', icon: 'MS', category: 'Integration', description: 'Collect a meeting preference.', iconBg: '#dbeafe', iconColor: '#2563eb' },
-    { value: 'api_request', label: 'API Call', icon: 'API', category: 'Integration', description: 'Call a webhook at runtime.', iconBg: '#ffe4e6', iconColor: '#e11d48' },
-    { value: 'handoff', label: 'Human Handoff', icon: 'H', category: 'Integration', description: 'Route to a human team.', iconBg: '#cffafe', iconColor: '#0e7490' }
+  blockTypes: BlockTypeMeta[] = [
+    { value: 'message', label: 'Message', icon: 'M', category: 'Basic', description: 'Send text and continue.', iconBg: '#edf3ff', iconColor: '#3b6fe8', status: 'ready' },
+    { value: 'question', label: 'Question', icon: 'Q', category: 'Basic', description: 'Ask and save a response.', iconBg: '#dbeafe', iconColor: '#2563eb', status: 'ready' },
+    { value: 'buttons', label: 'Buttons', icon: 'B', category: 'Basic', description: 'Offer button choices.', iconBg: '#fef3c7', iconColor: '#b45309', status: 'ready' },
+    { value: 'end', label: 'End', icon: 'E', category: 'Basic', description: 'Close the conversation.', iconBg: '#f1f5f9', iconColor: '#475569', status: 'ready' },
+    { value: 'rag_answer', label: 'AI Answer', icon: 'AI', category: 'AI', description: 'Uses the configured model/RAG answer path.', iconBg: '#edf3ff', iconColor: '#3b6fe8', status: 'needs-config' },
+    { value: 'knowledge_search', label: 'Knowledge Search', icon: 'KS', category: 'AI', description: 'Requires uploaded knowledge and model config.', iconBg: '#cffafe', iconColor: '#0e7490', status: 'needs-config' },
+    { value: 'collect_name', label: 'Collect Name', icon: 'N', category: 'Data Collection', description: 'Capture visitor name.', iconBg: '#e0f2fe', iconColor: '#0369a1', status: 'ready' },
+    { value: 'collect_email', label: 'Collect Email', icon: '@', category: 'Data Collection', description: 'Capture and validate email.', iconBg: '#eef2f6', iconColor: '#5f7185', status: 'ready' },
+    { value: 'collect_phone', label: 'Collect Phone', icon: 'P', category: 'Data Collection', description: 'Capture and validate phone.', iconBg: '#fae8ff', iconColor: '#a21caf', status: 'ready' },
+    { value: 'condition', label: 'Condition', icon: 'IF', category: 'Logic', description: 'Route by a saved variable. No message is shown.', iconBg: '#ffedd5', iconColor: '#c2410c', status: 'ready' },
+    { value: 'set_variable', label: 'Set Variable', icon: 'V', category: 'Logic', description: 'Set a variable value silently or with confirmation.', iconBg: '#eef2f6', iconColor: '#5f7185', status: 'ready' },
+    { value: 'meeting_scheduler', label: 'Meeting Preference', icon: 'MP', category: 'Integration', description: 'Ask for and save a meeting preference.', iconBg: '#dbeafe', iconColor: '#2563eb', status: 'ready' },
+    { value: 'api_request', label: 'API Call', icon: 'API', category: 'Integration', description: 'Legacy block. Hidden until integrations are productized.', iconBg: '#ffe4e6', iconColor: '#e11d48', status: 'placeholder', hidden: true },
+    { value: 'handoff', label: 'Human Handoff', icon: 'H', category: 'Integration', description: 'Route to a human team.', iconBg: '#cffafe', iconColor: '#0e7490', status: 'ready' },
+    { value: 'ai_router', label: 'AI Router', icon: 'RT', category: 'AI', description: 'Placeholder: stores a simple route value, not real AI routing yet.', iconBg: '#e0e7ff', iconColor: '#4f46e5', status: 'placeholder', hidden: true },
+    { value: 'ai_classifier', label: 'AI Classifier', icon: 'CL', category: 'AI', description: 'Placeholder: stores a simple classification value, not real AI classification yet.', iconBg: '#f5d0fe', iconColor: '#a21caf', status: 'placeholder', hidden: true },
+    { value: 'confidence_check', label: 'Confidence Check', icon: 'CF', category: 'Logic', description: 'Placeholder: pass-through confidence metadata block.', iconBg: '#fef9c3', iconColor: '#a16207', status: 'placeholder', hidden: true },
+    { value: 'lead_score', label: 'Lead Score', icon: 'LS', category: 'Logic', description: 'Placeholder: stores a configured default score, not rule scoring yet.', iconBg: '#fff7e8', iconColor: '#d99124', status: 'placeholder', hidden: true },
+    { value: 'action', label: 'Action', icon: 'A', category: 'Logic', description: 'Legacy runtime action block.', iconBg: '#eef2f6', iconColor: '#5f7185', status: 'placeholder', hidden: true }
   ];
   conditionOperators = [
     { value: 'equals', label: 'equals' },
@@ -115,11 +130,19 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
 
   previewInput = '';
   validationErrors = signal<string[]>([]);
+  validationDetails = signal<any[]>([]);
+  qaMode = signal(false);
+  qaRuntimeState = signal<any | null>(null);
+  qaLastInput = signal('');
   previewMessages = signal<{ role: 'user' | 'bot'; text: string; options?: string[]; mode?: string; retrievalMode?: string; sources?: any[] }[]>([]);
   previewSessionId = signal<number | undefined>(undefined);
   previewLoading = signal(false);
   previewError = signal('');
   variableRows = computed(() => this.collectVariableRows());
+  selectedButtonRouteRows = computed(() => this.buildButtonRouteRows(this.selectedNode()));
+  selectedConditionRouteRows = computed(() => this.buildConditionRouteRows(this.selectedNode()));
+  selectedConditionSummary = computed(() => this.buildConditionSummary(this.selectedNode()));
+  availableConditionVariableNames = computed(() => this.variableRows().map(item => item.name));
   setupOpen = signal(false);
   setupLoading = signal(false);
   setupSaving = signal(false);
@@ -128,6 +151,21 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
   setupActionLoading = signal(false);
   setupInitialState = signal<any | null>(null);
   setupCurrentState = signal<any | null>(null);
+  saveTemplateOpen = signal(false);
+  saveTemplateLoading = signal(false);
+  saveTemplateError = signal('');
+  saveTemplateSuccess = signal('');
+  saveTemplateForm = {
+    mode: 'new' as 'new' | 'revision',
+    template_key: '',
+    name: '',
+    description: '',
+    purpose: 'custom',
+    is_exposed: false,
+    is_shared: false,
+    change_note: ''
+  };
+  customTemplates = signal<any[]>([]);
   languageOptions = ASSISTANT_LANGUAGE_OPTIONS;
   channelOptions = ASSISTANT_CHANNEL_OPTIONS;
   purposeOptions = ASSISTANT_PURPOSE_OPTIONS;
@@ -202,6 +240,76 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
 
   versionId() {
     return this.context()?.version?.id;
+  }
+
+  flowId() {
+    return this.context()?.flow?.id;
+  }
+
+  openSaveTemplate() {
+    const assistantName = this.context()?.chatbot?.name || 'Assistant';
+    const setup = this.setupCurrentState() || this.context()?.chatbot || {};
+    this.saveTemplateForm = {
+      mode: 'new',
+      template_key: '',
+      name: `${assistantName} template`,
+      description: '',
+      purpose: normalizeAssistantPurpose(setup.assistant_type || setup.purpose || 'custom'),
+      is_exposed: false,
+      is_shared: false,
+      change_note: ''
+    };
+    this.saveTemplateError.set('');
+    this.saveTemplateSuccess.set('');
+    this.saveTemplateOpen.set(true);
+    this.api.getFlowTemplates({ exposed_only: false }).subscribe({
+      next: templates => this.customTemplates.set((templates || []).filter((template: any) => template.source === 'custom')),
+      error: () => this.customTemplates.set([])
+    });
+  }
+
+  closeSaveTemplate() {
+    if (this.saveTemplateLoading()) return;
+    this.saveTemplateOpen.set(false);
+    this.saveTemplateError.set('');
+  }
+
+  createTemplateFromCurrentFlow() {
+    const flowId = this.flowId();
+    if (!flowId) {
+      this.saveTemplateError.set('No draft flow is available to save as a template.');
+      return;
+    }
+    if (this.saveTemplateForm.mode === 'revision' && !this.saveTemplateForm.template_key) {
+      this.saveTemplateError.set('Choose the template you want to version.');
+      return;
+    }
+    if (this.saveTemplateForm.mode === 'new' && !this.saveTemplateForm.name.trim()) {
+      this.saveTemplateError.set('Template name is required.');
+      return;
+    }
+    this.saveTemplateLoading.set(true);
+    this.saveTemplateError.set('');
+    this.saveTemplateSuccess.set('');
+
+    const request = this.saveTemplateForm.mode === 'revision'
+      ? this.api.createFlowTemplateRevisionFromFlow(flowId, this.saveTemplateForm.template_key, {
+          change_note: this.saveTemplateForm.change_note
+        })
+      : this.api.createFlowTemplateFromFlow(flowId, this.saveTemplateForm);
+
+    request.subscribe({
+      next: template => {
+        this.saveTemplateLoading.set(false);
+        const name = template?.template?.name || template?.name || 'Template';
+        const revision = template?.revision?.revision_number || template?.current_revision_number;
+        this.saveTemplateSuccess.set(revision ? `Saved ${name} as revision v${revision}.` : `Saved ${name} to Template QA.`);
+      },
+      error: err => {
+        this.saveTemplateError.set(err.error?.detail || 'Could not save this flow as a template.');
+        this.saveTemplateLoading.set(false);
+      }
+    });
   }
 
   openAssistantSetup() {
@@ -587,9 +695,9 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
     const node = this.selectedNode();
     if (!node) return;
 
-    const key = ['question', 'collect_name', 'collect_email', 'collect_phone'].includes(node.type)
+    const key = ['question', 'collect_name', 'collect_email', 'collect_phone', 'meeting_scheduler'].includes(node.type)
       ? 'prompt'
-      : ['handoff', 'end', 'action', 'set_variable', 'api_request', 'ai_router', 'ai_classifier', 'confidence_check', 'lead_score', 'meeting_scheduler', 'knowledge_search'].includes(node.type)
+      : ['handoff', 'end', 'action', 'set_variable', 'api_request', 'ai_router', 'ai_classifier', 'confidence_check', 'lead_score', 'knowledge_search'].includes(node.type)
         ? 'message'
         : 'text';
     this.selectedNode.set({
@@ -603,6 +711,39 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
 
   buttonText(node: FlowNode | null) {
     return this.nodeButtons(node).join('\n');
+  }
+
+  private buildButtonRouteRows(node: FlowNode | null) {
+    return this.nodeButtons(node).map(label => {
+      const targetKey = this.buttonTarget(label);
+      return {
+        label,
+        targetKey,
+        targetLabel: targetKey ? this.nodeLabel(targetKey) : 'Missing target',
+        missing: !targetKey
+      };
+    });
+  }
+
+  private buildConditionSummary(node: FlowNode | null) {
+    if (!node) return 'Configure a rule to route saved answers.';
+    const field = this.nodeConfigValue(node, 'field') || 'saved_variable';
+    const operator = this.conditionOperators.find(item => item.value === (this.nodeConfigValue(node, 'operator') || 'equals'))?.label || 'equals';
+    const needsValue = !['exists', 'not_exists'].includes(this.nodeConfigValue(node, 'operator') || 'equals');
+    const value = needsValue ? ` "${this.nodeConfigValue(node, 'value') || 'expected value'}"` : '';
+    return `If ${field} ${operator}${value}, use the True path. Otherwise use False.`;
+  }
+
+  private buildConditionRouteRows(node: FlowNode | null) {
+    return (['true', 'false'] as const).map(label => {
+      const targetKey = node ? this.conditionTarget(label) : '';
+      return {
+        label,
+        targetKey,
+        targetLabel: targetKey ? this.nodeLabel(targetKey) : 'Missing target',
+        missing: !targetKey
+      };
+    });
   }
 
   setButtonText(value: string) {
@@ -672,7 +813,18 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
   }
 
   blockTypesByCategory(category: string) {
-    return this.blockTypes.filter(item => item.category === category);
+    return this.blockTypes.filter(item => item.category === category && !item.hidden);
+  }
+
+  blockStatusLabel(type: string) {
+    const status = this.blockMeta(type).status;
+    if (status === 'ready') return 'Ready';
+    if (status === 'needs-config') return 'Needs config';
+    return 'Placeholder';
+  }
+
+  blockStatusClass(type: string) {
+    return `block-status-${this.blockMeta(type).status}`;
   }
 
   selectBlockType(type: string) {
@@ -845,7 +997,7 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
           : type === 'lead_score'
             ? { input_variables: ['user_question', 'user_email'], score_variable: 'lead_score', default_score: 50, message: 'Scoring this request.' }
           : type === 'meeting_scheduler'
-            ? { field: 'preferred_time', message: 'What meeting time works best?', timezone: 'local' }
+            ? { prompt: 'What meeting time works best?', field: 'preferred_time', timezone: 'local', success_message: 'Meeting preference saved.' }
           : type === 'collect_name'
             ? { prompt: 'What is your name?', field: 'user_name' }
           : type === 'collect_email'
@@ -853,7 +1005,7 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
           : type === 'collect_phone'
             ? { prompt: 'What phone number can we use?', field: 'user_phone', invalid_message: 'Please enter a valid phone number.' }
           : type === 'api_request'
-            ? { method: 'POST', url: '', headers: {}, body: {}, response_field: 'api_response', success_message: 'Request completed.', error_message: 'The request failed.' }
+            ? { method: 'POST', url: '', headers: {}, body: {}, timeout: 8, response_field: 'api_response', success_message: 'Request completed.', error_message: 'The request failed.' }
           : type === 'handoff'
             ? { message: 'A teammate will review this conversation.', department: 'Support', email_field: 'user_email', phone_field: 'user_phone', collect_email_if_missing: true }
           : type === 'end'
@@ -920,6 +1072,10 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
 
   @HostListener('document:keydown.escape')
   onEscapeKey() {
+    if (this.saveTemplateOpen()) {
+      this.closeSaveTemplate();
+      return;
+    }
     if (this.aiDraftConfirm()) {
       this.cancelAiDraftRegeneration();
       return;
@@ -1185,21 +1341,23 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
     this.createOrUpdateTransition(node.node_key, targetKey, buttonLabel);
   }
 
-  conditionTarget(label: 'true' | 'false') {
+  conditionTarget(label: string) {
     const node = this.selectedNode();
     if (!node) return '';
+    const normalizedLabel = label.toLowerCase() === 'true' ? 'true' : 'false';
 
     return this.transitions().find(transition =>
-      transition.source_node_key === node.node_key && (transition.label || '').toLowerCase() === label
+      transition.source_node_key === node.node_key && (transition.label || '').toLowerCase() === normalizedLabel
     )?.target_node_key || '';
   }
 
-  setConditionTarget(label: 'true' | 'false', targetKey: string) {
+  setConditionTarget(label: string, targetKey: string) {
     const node = this.selectedNode();
     if (!node) return;
+    const normalizedLabel = label.toLowerCase() === 'true' ? 'true' : 'false';
 
     const existing = this.transitions().find(transition =>
-      transition.source_node_key === node.node_key && (transition.label || '').toLowerCase() === label
+      transition.source_node_key === node.node_key && (transition.label || '').toLowerCase() === normalizedLabel
     );
 
     if (!targetKey) {
@@ -1207,7 +1365,7 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
       return;
     }
 
-    this.createOrUpdateTransition(node.node_key, targetKey, label);
+    this.createOrUpdateTransition(node.node_key, targetKey, normalizedLabel);
   }
 
   nodeLabel(nodeKey: string) {
@@ -1227,7 +1385,7 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
       ai_classifier: 'Classifies a user message into configured categories.',
       confidence_check: 'Stores or evaluates a confidence signal before the next step.',
       lead_score: 'Scores a lead using collected variables.',
-      meeting_scheduler: 'Collects a preferred meeting time for follow-up.',
+      meeting_scheduler: 'Collects a preferred meeting time for manager follow-up. It does not create calendar events.',
       action: 'Updates saved conversation data or hands off the conversation.',
       collect_name: 'Asks for the visitor name and saves it to a variable.',
       collect_email: 'Asks for an email address and validates the format before continuing.',
@@ -1243,6 +1401,7 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
   validateCurrentFlow() {
     const versionId = this.versionId();
     this.validationErrors.set([]);
+    this.validationDetails.set([]);
     if (!versionId) {
       this.validationErrors.set(['No draft version is available for this chatbot.']);
       return;
@@ -1251,10 +1410,77 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
     this.api.validateFlow(versionId).subscribe({
       next: result => {
         const errors = result?.errors || [];
+        this.validationDetails.set(result?.validation_errors || []);
         this.validationErrors.set(errors);
         if (!errors.length) this.message.set('Flow validation passed');
       },
-      error: err => this.validationErrors.set(this.extractValidationErrors(err, 'Could not validate this flow.'))
+      error: err => {
+        this.validationDetails.set([]);
+        this.validationErrors.set(this.extractValidationErrors(err, 'Could not validate this flow.'));
+      }
+    });
+  }
+
+  toggleQaMode() {
+    this.qaMode.update(value => !value);
+    if (this.qaMode()) {
+      this.inspectorCollapsed.set(false);
+      this.inspectorTab.set('qa');
+      this.validateCurrentFlow();
+      if (!this.previewSessionId()) {
+        this.startPreview();
+      }
+    } else if (this.inspectorTab() === 'qa') {
+      this.inspectorTab.set('settings');
+    }
+  }
+
+  qaStatusLabel() {
+    if (this.validationErrors().length) return 'Needs fixes';
+    if (this.previewLoading()) return 'Testing';
+    if (this.qaRuntimeState()) return 'Trace ready';
+    return 'Ready to test';
+  }
+
+  qaStatusClass() {
+    if (this.validationErrors().length) return 'qa-warning';
+    if (this.previewLoading()) return 'qa-info';
+    if (this.qaRuntimeState()) return 'qa-success';
+    return 'qa-neutral';
+  }
+
+  qaCurrentNodeLabel() {
+    const key = this.qaRuntimeState()?.current_node_key;
+    if (!key) return this.qaRuntimeState() ? 'Completed' : 'Not started';
+    return this.nodeLabel(key);
+  }
+
+  qaCurrentNodeType() {
+    const key = this.qaRuntimeState()?.current_node_key;
+    if (!key) return this.qaRuntimeState() ? 'end' : '-';
+    return this.nodes().find(node => node.node_key === key)?.type || 'unknown';
+  }
+
+  qaModeLabel() {
+    return String(this.qaRuntimeState()?.mode_used || '-').replace(/_/g, ' ');
+  }
+
+  qaVariables() {
+    const variables = this.qaRuntimeState()?.variables || {};
+    return Object.entries(variables)
+      .filter(([key, value]) => !key.startsWith('__') && value !== null && value !== undefined && String(value).trim())
+      .map(([key, value]) => ({ key, value: this.formatQaValue(value) }));
+  }
+
+  qaPathRows() {
+    return this.nodes().map(node => {
+      const outgoing = this.outgoing(node);
+      return {
+        node,
+        outgoing,
+        warnings: this.localNodeWarnings(node),
+        isCurrent: this.qaRuntimeState()?.current_node_key === node.node_key
+      };
     });
   }
 
@@ -1293,6 +1519,7 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
   goTestFlow() {
     const versionId = this.versionId();
     this.validationErrors.set([]);
+    this.validationDetails.set([]);
     if (!versionId) {
       this.validationErrors.set(['No draft version is available for this chatbot.']);
       return;
@@ -1301,17 +1528,24 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
     this.api.validateFlow(versionId).subscribe({
       next: result => {
         const errors = result?.errors || [];
+        this.validationDetails.set(result?.validation_errors || []);
         this.validationErrors.set(errors);
         if (!errors.length) {
           this.router.navigate(['/dashboard/projects', this.projectId, 'chatbots', this.chatbotId, 'flow', 'test']);
         }
       },
-      error: err => this.validationErrors.set(this.extractValidationErrors(err, 'Could not validate this flow.'))
+      error: err => {
+        this.validationDetails.set([]);
+        this.validationErrors.set(this.extractValidationErrors(err, 'Could not validate this flow.'));
+      }
     });
   }
 
   startPreview() {
     this.validationErrors.set([]);
+    this.validationDetails.set([]);
+    this.qaRuntimeState.set(null);
+    this.qaLastInput.set('');
     this.previewSessionId.set(undefined);
     this.previewMessages.set([]);
     this.previewLoading.set(true);
@@ -1336,6 +1570,7 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
   sendPreview(option?: string) {
     const text = option || this.previewInput.trim();
     if (!text) return;
+    this.qaLastInput.set(text === '__start__' ? 'Start session' : text);
 
     if (text !== '__start__') {
       this.previewMessages.update(messages => [...messages, { role: 'user', text }]);
@@ -1352,6 +1587,7 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
     }).subscribe({
       next: result => {
         this.previewSessionId.set(result.session_id);
+        this.updateQaRuntimeState(result);
         const botMessages = this.toBotMessages(result);
         this.previewMessages.update(messages => [...messages, ...botMessages]);
         this.previewLoading.set(false);
@@ -1412,6 +1648,25 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
     return text || 'Preview failed.';
   }
 
+  private updateQaRuntimeState(result: any) {
+    this.qaRuntimeState.set({
+      session_id: result.session_id || this.previewSessionId(),
+      current_node_key: result.current_node_key ?? null,
+      variables: result.variables || {},
+      mode_used: result.mode_used || 'flow',
+      sources: result.sources || []
+    });
+  }
+
+  private formatQaValue(value: unknown) {
+    if (typeof value === 'string') return value;
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+
   private collectVariableRows() {
     const rows = new Map<string, any>();
     const upsert = (name: string, node: FlowNode, type = 'text') => {
@@ -1467,6 +1722,6 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
   }
 
   isAdvancedPlaceholder(type: string) {
-    return ['ai_router', 'ai_classifier', 'confidence_check', 'lead_score', 'meeting_scheduler'].includes(type);
+    return ['ai_router', 'ai_classifier', 'confidence_check', 'lead_score'].includes(type);
   }
 }

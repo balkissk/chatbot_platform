@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 import { of } from 'rxjs';
+import { vi } from 'vitest';
 
 import { ApiService } from '../../services/api';
 import { TemplateSelectionComponent } from './template-selection.component';
@@ -8,8 +9,25 @@ import { TemplateSelectionComponent } from './template-selection.component';
 describe('TemplateSelectionComponent', () => {
   let fixture: ComponentFixture<TemplateSelectionComponent>;
   let component: TemplateSelectionComponent;
+  let getFlowTemplates: any;
 
   function createComponent(currentPurpose: string, persistedPurpose = 'employee_knowledge') {
+    const templateCatalog: Record<string, any[]> = {
+      customer_support: [
+        { key: 'customer_support_basic', name: 'Customer Support Basic', description: 'Basic support flow.' },
+        { key: 'customer_support_rag', name: 'Customer Support + RAG', description: 'Support flow with knowledge.' },
+        { key: 'customer_support_handoff', name: 'Customer Support + Human Handoff', description: 'Support flow with handoff.' },
+        { key: 'customer_support_ticket_creation', name: 'Customer Support + Ticket Creation', description: 'Support flow with ticket intake.' }
+      ],
+      lead_generation: [
+        { key: 'simple_lead_capture', name: 'Contact Capture', description: 'Capture contact details.' }
+      ],
+      employee_knowledge: [
+        { key: 'hr_knowledge_bot', name: 'HR Knowledge Bot', description: 'Answer HR questions.' }
+      ]
+    };
+    getFlowTemplates = vi.fn((filters: { purpose?: string }) => of(templateCatalog[filters.purpose || ''] || []));
+
     TestBed.configureTestingModule({
       imports: [TemplateSelectionComponent],
       providers: [
@@ -37,6 +55,7 @@ describe('TemplateSelectionComponent', () => {
               assistant_type: persistedPurpose,
               purpose: persistedPurpose
             }),
+            getFlowTemplates,
             getChatbotBuilder: () => of({}),
             applyFlowTemplate: () => of({})
           }
@@ -55,6 +74,7 @@ describe('TemplateSelectionComponent', () => {
     createComponent('lead_generation', 'employee_knowledge');
 
     expect(component.assistantTypeLabel()).toBe('Lead Generation');
+    expect(getFlowTemplates).toHaveBeenCalledWith({ purpose: 'lead_generation', exposed_only: true });
     expect(component.templates().map(template => template.name)).toContain('Contact Capture');
     expect(component.templates().map(template => template.name)).not.toContain('HR Knowledge Bot');
   });

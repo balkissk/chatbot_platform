@@ -10,7 +10,7 @@
 }
 
 .eyebrow {
-  color: #1677FF;
+  color: var(--brand-primary);
   font-size: 12px;
   font-weight: 700;
   margin: 0 0 4px;
@@ -83,8 +83,8 @@ input {
 }
 
 input:focus {
-  border-color: #1677FF;
-  box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.15);
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 3px rgba(24, 185, 168, 0.15);
   outline: none;
 }
 
@@ -123,8 +123,8 @@ input[readonly] {
 }
 
 button {
-  background: #1677FF;
-  border: 1px solid #1677FF;
+  background: var(--brand-primary);
+  border: 1px solid var(--brand-primary);
   border-radius: 10px;
   color: #fff;
   cursor: pointer;
@@ -137,8 +137,8 @@ button {
 }
 
 button:not(:disabled):hover {
-  background: #0B6BFF;
-  border-color: #0B6BFF;
+  background: var(--brand-primary-hover);
+  border-color: var(--brand-primary-hover);
   transform: translateY(-1px);
 }
 
@@ -214,4 +214,62 @@ small {
   .ghost-button {
     justify-self: start;
   }
+}
+
+.page-header {
+  background: linear-gradient(90deg, rgba(24, 185, 168, .08), transparent 56%), var(--surface-raised);
+  border-color: var(--border-default);
+  box-shadow: none;
+}
+
+.eyebrow {
+  color: var(--brand-primary-hover);
+  font-family: var(--font-mono);
+  letter-spacing: .08em;
+}
+
+h2,
+h3 {
+  color: var(--text-primary);
+  font-family: var(--font-display);
+}
+
+.subtitle,
+.panel-heading p,
+.muted,
+.meta-grid span {
+  color: var(--text-secondary);
+}
+
+.panel,
+.meta-grid div {
+  background: var(--surface-raised);
+  border-color: var(--border-default);
+  box-shadow: none;
+}
+
+input {
+  border-color: var(--border-default);
+  color: var(--text-primary);
+}
+
+input:focus {
+  border-color: var(--brand-primary);
+  box-shadow: var(--ds-ring);
+}
+
+button {
+  background: linear-gradient(135deg, var(--brand-primary-hover), var(--brand-primary));
+  border-color: var(--brand-primary);
+}
+
+button:not(:disabled):hover {
+  background: linear-gradient(135deg, #066c63, var(--brand-primary-hover));
+  border-color: var(--brand-primary-hover);
+}
+
+.ghost-button {
+  background: var(--surface-raised);
+  border-color: var(--border-default);
+  color: var(--text-primary);
 }

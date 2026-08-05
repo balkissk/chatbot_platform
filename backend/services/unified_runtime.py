@@ -1,6 +1,7 @@
 import logging
 import re
 import time
+import uuid
 from datetime import datetime
 
 from fastapi import HTTPException
@@ -13,7 +14,9 @@ from models.llm_config import LLMConfig
 from models.runtime_log import RuntimeLog
 from models.version import VersionChatbot
 from routes.chat_routes import add_message, build_rag_response, session_history
+from services.ai_provider import ai_provider_name
 from services.flow_runtime import execute_flow
+from services.runtime_contracts import sanitized_category_from_error
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +69,12 @@ def persist_runtime_log(
     status: str,
     rag_used: bool = False,
     response_time_ms: int | None = None,
+    execution_id: str | None = None,
+    execution_mode: str | None = None,
+    failure_category: str | None = None,
+    current_block: str | None = None,
+    retrieval_count: int | None = None,
+    provider: str | None = None,
     error_type: str | None = None,
     error_message: str | None = None,
     source: str | None = None,
@@ -78,9 +87,15 @@ def persist_runtime_log(
             project_id=chatbot.project_id if chatbot else None,
             user_id=session.user_id if session else None,
             channel=channel or "unknown",
+            execution_id=execution_id,
+            execution_mode=execution_mode,
             status=status,
             rag_used=rag_used,
             response_time_ms=response_time_ms,
+            failure_category=failure_category,
+            current_block=current_block,
+            retrieval_count=retrieval_count,
+            provider=provider,
             error_type=error_type,
             error_message=error_message,
             source=source,
@@ -216,10 +231,12 @@ def run_chatbot_message(
     session_id: int | str | None = None,
 ) -> dict:
     started_at = time.perf_counter()
+    execution_id = str(uuid.uuid4())
     chatbot = None
     version = None
     session = None
     rag_used = False
+    result = None
     try:
         chatbot = db.query(Chatbot).filter(Chatbot.id == chatbot_id).first()
         if not chatbot or not chatbot.is_active:
@@ -310,9 +327,15 @@ def run_chatbot_message(
             rag_used=rag_used,
             response_time_ms=response_time,
             source="unified_runtime",
+            execution_id=execution_id,
+            execution_mode=result.get("mode_used") if result else "flow",
+            current_block=result.get("current_node_key") if result else None,
+            retrieval_count=len(result.get("sources") or []) if result else None,
+            provider=ai_provider_name(),
         )
         return {
             **result,
+            "execution_id": execution_id,
             "session_id": session.id,
             "current_node_key": session.current_node_key,
             "variables": session.variables or {},
@@ -331,5 +354,9 @@ def run_chatbot_message(
             error_type=runtime_error_type(exc),
             error_message=sanitize_error_message(exc),
             source="unified_runtime",
+            execution_id=execution_id,
+            execution_mode="flow",
+            failure_category=sanitized_category_from_error(exc).value,
+            provider=ai_provider_name(),
         )
         raise

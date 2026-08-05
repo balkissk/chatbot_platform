@@ -35,7 +35,7 @@ describe('assistant purpose and template options', () => {
     const names = templatesForPurpose('Lead Generation').map(template => template.name);
     expect(names).toContain('Contact Capture');
     expect(names).toContain('Qualification Bot');
-    expect(names).toContain('Meeting Scheduler');
+    expect(names).toContain('Meeting Preference');
     expect(names).not.toContain('HR Knowledge Bot');
   });
 

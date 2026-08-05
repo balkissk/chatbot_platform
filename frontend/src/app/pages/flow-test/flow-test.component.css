@@ -13,7 +13,7 @@
 }
 
 .eyebrow {
-  color: #1677FF;
+  color: var(--brand-primary);
   font-size: 11px;
   font-weight: 800;
   margin: 0 0 5px;
@@ -83,7 +83,7 @@ button.secondary {
 
 .messages {
   background:
-    radial-gradient(circle at top left, rgba(22, 119, 255, .12), transparent 34%),
+    radial-gradient(circle at top left, rgba(24, 185, 168, .12), transparent 34%),
     #f8fbfc;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
@@ -117,10 +117,10 @@ button.secondary {
 
 .bubble.user {
   align-self: flex-end;
-  background: linear-gradient(135deg, #1677FF, #0B6BFF);
+  background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-hover));
   border-color: rgba(255, 255, 255, .45);
   border-radius: 14px 14px 6px 14px;
-  box-shadow: 0 12px 28px rgba(22, 119, 255, .24);
+  box-shadow: 0 12px 28px rgba(24, 185, 168, .24);
 }
 
 .bubble.user p,
@@ -199,9 +199,9 @@ button.secondary {
 }
 
 .quick-replies button {
-  background: #EAF3FF;
+  background: var(--brand-primary-soft);
   border: 1px solid #D5E6FF;
-  color: #1677FF;
+  color: var(--brand-primary);
   min-height: 34px;
   padding: 6px 10px;
 }
@@ -220,8 +220,8 @@ button.secondary {
 }
 
 .composer input:focus {
-  border-color: #1677FF;
-  box-shadow: 0 0 0 4px rgba(22, 119, 255, .16);
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 4px rgba(24, 185, 168, .16);
   outline: none;
 }
 
@@ -229,6 +229,60 @@ button.secondary {
   align-self: start;
   display: grid;
   gap: 10px;
+}
+
+.debug-card {
+  background: color-mix(in srgb, var(--surface-raised) 94%, var(--surface-subtle));
+  border: 1px solid var(--border-default);
+  border-radius: 14px;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.debug-card.quiet {
+  background: var(--surface-subtle);
+}
+
+.trace-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.trace-list div,
+.variable-list div {
+  align-items: center;
+  border-top: 1px solid var(--border-default);
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(84px, .75fr) minmax(0, 1fr);
+  padding-top: 8px;
+}
+
+.trace-list dt,
+.variable-list span {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.trace-list dd,
+.variable-list strong {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 750;
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.variable-list {
+  display: grid;
+  gap: 8px;
 }
 
 .error {
@@ -291,4 +345,61 @@ button.secondary {
   .test-shell {
     grid-template-columns: 1fr;
   }
+}
+
+.eyebrow {
+  color: var(--brand-primary-hover);
+  font-family: var(--font-mono);
+  letter-spacing: .08em;
+}
+
+h2,
+h3 {
+  color: var(--text-primary);
+  font-family: var(--font-display);
+}
+
+p,
+.empty,
+.sender-label,
+.source-row small {
+  color: var(--text-secondary);
+}
+
+button.secondary,
+.chat-panel,
+.notes,
+.bubble,
+.source-row {
+  background: var(--surface-raised);
+  border-color: var(--border-default);
+}
+
+.chat-header span,
+.quick-replies button {
+  background: var(--brand-primary-soft);
+  border-color: rgba(24, 185, 168, .28);
+  color: var(--brand-primary-hover);
+}
+
+.messages {
+  background:
+    radial-gradient(circle at top left, rgba(24, 185, 168, .12), transparent 34%),
+    var(--surface-warm);
+  border-color: var(--border-default);
+}
+
+.bubble.user {
+  background: linear-gradient(135deg, var(--brand-primary-hover), var(--brand-primary));
+  box-shadow: 0 12px 28px rgba(8, 122, 112, .2);
+}
+
+.composer input {
+  border-color: var(--border-default);
+  border-radius: var(--ds-radius);
+}
+
+.composer input:focus {
+  border-color: var(--brand-primary);
+  box-shadow: var(--ds-ring);
 }

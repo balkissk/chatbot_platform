@@ -1,47 +1,122 @@
 <main class="auth-page">
-  <section class="auth-panel">
-    <div>
-      <p class="eyebrow">Account setup</p>
-      <h1>Create access</h1>
-      <p class="subtitle">Managers build and test chatbots. End users only access the chat experience.</p>
-    </div>
+  <section class="auth-panel" aria-labelledby="register-title">
+    <header class="auth-header">
+      <a class="auth-brand" routerLink="/" aria-label="ChatBot Factory home">
+        <img src="/logo-navbar.png" alt="ChatBot Factory" width="232" height="70" decoding="async" fetchpriority="high">
+      </a>
+      <p class="eyebrow">CREATE YOUR WORKSPACE</p>
+      <h1 id="register-title">Create your account</h1>
+      <p class="subtitle">Set up your workspace and start building chatbot experiences.</p>
+    </header>
 
-    <form (ngSubmit)="register()" class="auth-form">
-      <label>
-        Name
-        <input [(ngModel)]="name" name="name" autocomplete="name" required>
-      </label>
+    <form (ngSubmit)="register()" class="auth-form" novalidate>
+      <div class="field">
+        <label for="register-name">Name</label>
+        <input
+          id="register-name"
+          #nameField="ngModel"
+          [(ngModel)]="name"
+          name="name"
+          autocomplete="name"
+          required
+          [attr.aria-invalid]="(nameField.invalid && (nameField.touched || submitted())) ? 'true' : null"
+          [attr.aria-describedby]="(nameField.invalid && (nameField.touched || submitted())) ? 'register-name-error' : null">
+        <p *ngIf="nameField.invalid && (nameField.touched || submitted())" id="register-name-error" class="field-error">Enter your name.</p>
+      </div>
 
-      <label>
-        Email
-        <input [(ngModel)]="email" name="email" type="email" autocomplete="email" required>
-      </label>
+      <div class="field">
+        <label for="register-email">Email</label>
+        <input
+          id="register-email"
+          #emailField="ngModel"
+          [(ngModel)]="email"
+          name="email"
+          type="email"
+          autocomplete="email"
+          required
+          [attr.aria-invalid]="(emailField.invalid && (emailField.touched || submitted())) ? 'true' : null"
+          [attr.aria-describedby]="(emailField.invalid && (emailField.touched || submitted())) ? 'register-email-error' : null">
+        <p *ngIf="emailField.invalid && (emailField.touched || submitted())" id="register-email-error" class="field-error">Enter your email address.</p>
+      </div>
 
-      <label>
-        Password
-        <input [(ngModel)]="password" name="password" type="password" autocomplete="new-password" required>
-      </label>
+      <div class="field">
+        <label for="register-password">Password</label>
+        <div class="password-control">
+          <input
+            id="register-password"
+            #passwordField="ngModel"
+            [(ngModel)]="password"
+            name="password"
+            [type]="showPassword() ? 'text' : 'password'"
+            autocomplete="new-password"
+            required
+            [attr.aria-invalid]="(passwordField.invalid && (passwordField.touched || submitted())) ? 'true' : null"
+            [attr.aria-describedby]="(passwordField.invalid && (passwordField.touched || submitted())) ? 'register-password-error' : null">
+          <button
+            class="password-toggle"
+            type="button"
+            [attr.aria-label]="showPassword() ? 'Hide password' : 'Show password'"
+            [attr.title]="showPassword() ? 'Hide password' : 'Show password'"
+            (click)="togglePasswordVisibility()">
+            <svg *ngIf="!showPassword()" lucideEye size="18" aria-hidden="true"></svg>
+            <svg *ngIf="showPassword()" lucideEyeOff size="18" aria-hidden="true"></svg>
+          </button>
+        </div>
+        <p *ngIf="passwordField.invalid && (passwordField.touched || submitted())" id="register-password-error" class="field-error">Enter a password.</p>
+      </div>
 
-      <label>
-        Role
-        <select [(ngModel)]="role" name="role">
-          <option value="manager">INSOMEA manager</option>
+      <div class="field">
+        <label for="register-confirm-password">Confirm password</label>
+        <div class="password-control">
+          <input
+            id="register-confirm-password"
+            #confirmPasswordField="ngModel"
+            [(ngModel)]="confirmPassword"
+            name="confirmPassword"
+            [type]="showConfirmPassword() ? 'text' : 'password'"
+            autocomplete="new-password"
+            required
+            [attr.aria-invalid]="((confirmPasswordField.invalid && (confirmPasswordField.touched || submitted())) || passwordMismatch()) ? 'true' : null"
+            [attr.aria-describedby]="((confirmPasswordField.invalid && (confirmPasswordField.touched || submitted())) || passwordMismatch()) ? 'register-confirm-password-error' : null">
+          <button
+            class="password-toggle"
+            type="button"
+            [attr.aria-label]="showConfirmPassword() ? 'Hide confirm password' : 'Show confirm password'"
+            [attr.title]="showConfirmPassword() ? 'Hide confirm password' : 'Show confirm password'"
+            (click)="toggleConfirmPasswordVisibility()">
+            <svg *ngIf="!showConfirmPassword()" lucideEye size="18" aria-hidden="true"></svg>
+            <svg *ngIf="showConfirmPassword()" lucideEyeOff size="18" aria-hidden="true"></svg>
+          </button>
+        </div>
+        <p *ngIf="confirmPasswordField.invalid && (confirmPasswordField.touched || submitted())" id="register-confirm-password-error" class="field-error">Confirm your password.</p>
+        <p *ngIf="passwordMismatch()" id="register-confirm-password-error" class="field-error">Passwords do not match.</p>
+      </div>
+
+      <div class="field">
+        <label for="register-role">Account type</label>
+        <select id="register-role" [(ngModel)]="role" name="role" aria-describedby="register-role-help">
+          <option value="manager">Workspace manager</option>
           <option value="end_user">Chat user</option>
-          <option value="admin">Admin</option>
         </select>
-      </label>
+        <p id="register-role-help" class="field-help">Choose workspace manager to create and manage chatbot projects.</p>
+      </div>
 
-      <p *ngIf="error()" class="error">{{ error() }}</p>
-      <div *ngIf="message()" class="success-block">
+      <p *ngIf="error()" class="auth-alert error" role="alert">{{ error() }}</p>
+      <div *ngIf="message()" class="success-block" role="status">
         <p class="success">{{ message() }}</p>
         <a *ngIf="registrationComplete()" class="login-link-button" routerLink="/login">Go to login</a>
       </div>
 
-      <button type="submit" [disabled]="loading() || !name || !email || !password">
+      <button class="auth-submit" type="submit" [disabled]="loading() || !name || !email || !password || !confirmPassword || passwordMismatch()">
         {{ loading() ? 'Creating account...' : 'Create account' }}
       </button>
 
-      <a routerLink="/login">Already have an account</a>
+      <p class="auth-switch">Already have an account? <a routerLink="/login">Sign in</a></p>
     </form>
+
+    <p class="secure-note">
+      <svg lucideLockKeyhole size="15" aria-hidden="true"></svg>
+      Secure workspace access
+    </p>
   </section>
 </main>

@@ -10,7 +10,7 @@ from database.db import Base
 from models.audit_log import AuditLog
 from models.chatbot import Chatbot
 from models.chatbot_schema import ChatbotCreate
-from models.flow import Flow, FlowNode
+from models.flow import Flow, FlowNode, FlowTransition
 from models.knowledge_schema import DocumentIngest
 from models.llm_config import LLMConfig
 from models.project import Project
@@ -49,7 +49,7 @@ class AuditLogTest(unittest.TestCase):
         project = Project(name="Project", description="", user_id=self.manager.id)
         self.db.add(project)
         self.db.commit()
-        chatbot = Chatbot(name="Bot", project_id=project.id, language="en", is_active=True)
+        chatbot = Chatbot(name="Bot", project_id=project.id, language="en", is_active=True, public_api_key="cp_test")
         self.db.add(chatbot)
         self.db.commit()
         version = VersionChatbot(chatbot_id=chatbot.id, version_number=1, status="draft", created_at=datetime.now(UTC).replace(tzinfo=None))
@@ -60,7 +60,11 @@ class AuditLogTest(unittest.TestCase):
         flow = Flow(version_id=version.id, name="Flow")
         self.db.add(flow)
         self.db.commit()
-        self.db.add(FlowNode(flow_id=flow.id, node_key="start", type="message", label="Start", config={"text": "Hello"}))
+        self.db.add_all([
+            FlowNode(flow_id=flow.id, node_key="start", type="message", label="Start", config={"text": "Hello"}),
+            FlowNode(flow_id=flow.id, node_key="end", type="end", label="End", config={"message": "Done"}),
+            FlowTransition(flow_id=flow.id, source_node_key="start", target_node_key="end", label="next"),
+        ])
         self.db.commit()
         return project, chatbot, version
 
@@ -95,7 +99,7 @@ class AuditLogTest(unittest.TestCase):
         self.assertEqual(self.latest_action().action, "VERSION_CREATED")
 
         with patch("routes.version_routes.validate_flow_version", return_value={"valid": True, "errors": []}):
-            publish_version(created["id"], db=self.db, current_user=self.manager)
+            publish_version(created["id"], confirm_warnings=True, db=self.db, current_user=self.manager)
         log = self.latest_action()
         self.assertEqual(log.action, "VERSION_PUBLISHED")
         self.assertEqual(log.resource_name, f"v{created['version_number']}")

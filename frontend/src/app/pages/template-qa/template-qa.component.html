@@ -1,0 +1,321 @@
+<section class="template-qa-page">
+  <header class="page-hero">
+    <div>
+      <p class="eyebrow">Template QA</p>
+      <h1>Template readiness</h1>
+      <p>Validate code-defined starter templates before they are used to create assistant draft flows.</p>
+    </div>
+    <button class="secondary-button" type="button" (click)="load()" [disabled]="loading()">
+      {{ loading() ? 'Refreshing...' : 'Refresh' }}
+    </button>
+  </header>
+
+  <section class="summary-grid" aria-label="Template QA summary">
+    <article>
+      <span>Total</span>
+      <strong>{{ summary().total || 0 }}</strong>
+    </article>
+    <article>
+      <span>Valid</span>
+      <strong>{{ summary().valid || 0 }}</strong>
+    </article>
+    <article>
+      <span>Warnings</span>
+      <strong>{{ summary().warning || 0 }}</strong>
+    </article>
+    <article>
+      <span>Invalid</span>
+      <strong>{{ summary().invalid || 0 }}</strong>
+    </article>
+    <article>
+      <span>Custom</span>
+      <strong>{{ summary().custom || 0 }}</strong>
+    </article>
+    <article>
+      <span>Mine</span>
+      <strong>{{ summary().mine || 0 }}</strong>
+    </article>
+  </section>
+
+  <section class="filter-card">
+    <label class="wide">
+      Search
+      <input [(ngModel)]="search" placeholder="Template key, name or block type" (keyup.enter)="applyFilters()">
+    </label>
+    <label>
+      Status
+      <select [(ngModel)]="status">
+        <option value="">All statuses</option>
+        <option value="valid">Valid</option>
+        <option value="warning">Warning</option>
+        <option value="invalid">Invalid</option>
+      </select>
+    </label>
+    <label>
+      Creation exposure
+      <select [(ngModel)]="exposure">
+        <option value="">All templates</option>
+        <option value="exposed">Shown in creation</option>
+        <option value="hidden">Backend only</option>
+      </select>
+    </label>
+    <label>
+      View
+      <select [(ngModel)]="ownershipView">
+        <option value="">All visible</option>
+        <option value="mine">My templates</option>
+        <option value="shared">Shared templates</option>
+        <option value="builtin">Built-in templates</option>
+      </select>
+    </label>
+    <button class="secondary-button" type="button" (click)="applyFilters()">Search</button>
+    <button class="ghost-button" type="button" (click)="resetFilters()">Reset</button>
+  </section>
+
+  <p *ngIf="error()" class="error-banner">{{ error() }}</p>
+
+  <section class="table-card">
+    <div class="table-header">
+      <div>
+        <p class="eyebrow">Readiness report</p>
+        <h2>{{ filteredItems().length }} templates</h2>
+      </div>
+      <span>{{ summary().hidden_block_templates || 0 }} use hidden blocks</span>
+    </div>
+
+    <p *ngIf="loading()" class="muted loading-state">Loading template QA report...</p>
+    <div *ngIf="!loading() && filteredItems().length === 0" class="empty-state">
+      <strong>No templates match these filters.</strong>
+      <p>Clear the filters or refresh the QA report.</p>
+    </div>
+
+    <div class="template-list" *ngIf="filteredItems().length">
+      <article *ngFor="let template of filteredItems()" class="template-row" [class.invalid]="template.status === 'invalid'" [class.warning]="template.status === 'warning'">
+        <header>
+          <div>
+            <p class="eyebrow">{{ template.key }}</p>
+            <h3>{{ template.name }}</h3>
+            <small>{{ ownershipLabel(template) }} · {{ exposedLabel(template) }}</small>
+          </div>
+          <div class="row-actions">
+            <span class="status-badge" [ngClass]="'status-' + template.status">{{ statusLabel(template.status) }}</span>
+            <button class="ghost-button" type="button" (click)="openTemplate(template.key)">Open</button>
+          </div>
+        </header>
+
+        <section class="metrics">
+          <div>
+            <span>Blocks</span>
+            <strong>{{ template.nodes_count }}</strong>
+          </div>
+          <div>
+            <span>Paths</span>
+            <strong>{{ template.transitions_count }}</strong>
+          </div>
+          <div>
+            <span>Errors</span>
+            <strong>{{ issueCount(template, 'error') }}</strong>
+          </div>
+          <div>
+            <span>Warnings</span>
+            <strong>{{ issueCount(template, 'warning') }}</strong>
+          </div>
+        </section>
+
+        <section class="block-strip">
+          <span *ngFor="let block of template.block_types">{{ block.type }} x{{ block.count }}</span>
+        </section>
+
+        <section class="issue-list" *ngIf="template.issues.length">
+          <div *ngFor="let issue of template.issues">
+            <span [class.error]="issue.severity === 'error'">{{ issue.severity }}</span>
+            <p>{{ issue.node_key ? (issue.node_key + ': ') : '' }}{{ issue.message }}</p>
+          </div>
+        </section>
+      </article>
+    </div>
+  </section>
+
+  <aside class="detail-panel" *ngIf="detail() || detailLoading() || detailError()" aria-label="Template detail">
+    <button class="close-button" type="button" (click)="closeDetail()" aria-label="Close template detail">x</button>
+
+    <p *ngIf="detailLoading()" class="muted loading-state">Loading template detail...</p>
+    <p *ngIf="detailError()" class="error-banner">{{ detailError() }}</p>
+
+    <ng-container *ngIf="detail() as selected">
+      <header class="detail-header">
+        <div>
+          <p class="eyebrow">{{ selected.source === 'custom' ? 'Manager template' : 'Built-in template' }}</p>
+          <h2>{{ selected.name }}</h2>
+          <p>{{ selected.description || 'Reusable assistant flow template.' }}</p>
+        </div>
+        <span class="status-badge" [ngClass]="'status-' + selected.status">{{ statusLabel(selected.status) }}</span>
+      </header>
+
+      <section class="detail-grid">
+        <div>
+          <span>Purpose</span>
+          <strong>{{ purposeLabel(selected.primary_purpose) }}</strong>
+        </div>
+        <div>
+          <span>Revision</span>
+          <strong>v{{ selectedRevision(selected) }} / v{{ latestRevision(selected) }}</strong>
+        </div>
+        <div>
+          <span>Blocks</span>
+          <strong>{{ selected.nodes_count }}</strong>
+        </div>
+        <div>
+          <span>Paths</span>
+          <strong>{{ selected.transitions_count }}</strong>
+        </div>
+        <div>
+          <span>Visibility</span>
+          <strong>{{ selected.exposed ? 'Creation' : 'Library only' }}</strong>
+        </div>
+      </section>
+
+      <section class="preview-panel revision-panel">
+        <div class="test-header">
+          <div>
+            <p class="eyebrow">Version history</p>
+            <h3>{{ selected.revisions?.length || 1 }} revisions</h3>
+          </div>
+          <small>Latest v{{ latestRevision(selected) }}</small>
+        </div>
+        <div class="revision-list">
+          <button
+            type="button"
+            *ngFor="let revision of selected.revisions"
+            [class.active]="revision.revision_number === selectedRevision(selected)"
+            (click)="openTemplate(selected.key, true, revision.revision_number)"
+          >
+            <span>v{{ revision.revision_number }}</span>
+            <strong>{{ revision.change_note || revision.name }}</strong>
+            <small>{{ revision.nodes_count }} blocks · {{ revision.transitions_count }} paths</small>
+          </button>
+        </div>
+      </section>
+
+      <form class="template-form" *ngIf="selected.can_edit" (ngSubmit)="saveDetail()">
+        <label>
+          Template name
+          <input [(ngModel)]="detailForm.name" name="template-name" required>
+        </label>
+        <label>
+          Purpose
+          <select [(ngModel)]="detailForm.purpose" name="template-purpose">
+            <option *ngFor="let option of purposeOptions" [value]="option.value">{{ option.label }}</option>
+          </select>
+        </label>
+        <label class="wide">
+          Description
+          <textarea rows="3" [(ngModel)]="detailForm.description" name="template-description"></textarea>
+        </label>
+        <label class="check-row">
+          <input type="checkbox" [(ngModel)]="detailForm.is_exposed" name="template-exposed">
+          Show in assistant creation
+        </label>
+        <label class="check-row">
+          <input type="checkbox" [(ngModel)]="detailForm.is_shared" name="template-shared">
+          Share with other managers
+        </label>
+        <p *ngIf="detailSuccess()" class="success-banner">{{ detailSuccess() }}</p>
+        <button class="secondary-button" type="submit" [disabled]="detailSaving() || !detailForm.name.trim()">
+          {{ detailSaving() ? 'Saving...' : 'Save template' }}
+        </button>
+      </form>
+
+      <section class="readonly-note" *ngIf="!selected.can_edit">
+        <strong>Read-only template</strong>
+        <p>Built-in templates can be inspected and applied, but their metadata is managed in code.</p>
+      </section>
+
+      <section class="preview-panel">
+        <p class="eyebrow">Flow preview</p>
+        <h3>{{ nodeTypeSummary(selected) || 'No blocks' }}</h3>
+        <div class="node-preview">
+          <article *ngFor="let node of selected.nodes">
+            <span>{{ node.type }}</span>
+            <strong>{{ node.label }}</strong>
+            <small>{{ node.key }}</small>
+          </article>
+        </div>
+      </section>
+
+      <section class="preview-panel">
+        <p class="eyebrow">Paths</p>
+        <div class="path-list" *ngIf="selected.transitions?.length; else noPaths">
+          <span *ngFor="let transition of selected.transitions">
+            {{ transition.source_node_key }} -> {{ transition.target_node_key }}
+            <em *ngIf="transition.label">({{ transition.label }})</em>
+          </span>
+        </div>
+        <ng-template #noPaths><p class="muted">No paths configured.</p></ng-template>
+      </section>
+
+      <section class="preview-panel test-panel">
+        <div class="test-header">
+          <div>
+            <p class="eyebrow">Runtime confidence</p>
+            <h3>Template test runner</h3>
+          </div>
+          <span class="status-badge" [ngClass]="testResult()?.status === 'failed' ? 'status-invalid' : 'status-valid'" *ngIf="testResult()">
+            {{ testResult()?.status }}
+          </span>
+        </div>
+
+        <div class="template-form">
+          <label>
+            Scenario name
+            <input [(ngModel)]="scenarioName" name="scenario-name">
+          </label>
+          <label>
+            Expected final node
+            <input [(ngModel)]="expectedFinalNode" name="expected-final-node" placeholder="Optional node key">
+          </label>
+          <label class="wide">
+            Test messages
+            <textarea rows="5" [(ngModel)]="scenarioMessages" name="scenario-messages" placeholder="One user message per line. Leave empty to auto-drive the first path."></textarea>
+          </label>
+          <label class="wide">
+            Expected variables JSON
+            <textarea rows="4" [(ngModel)]="expectedVariables" name="expected-variables" placeholder='{"user_email":"test@example.com"}'></textarea>
+          </label>
+        </div>
+
+        <div class="test-actions">
+          <button class="secondary-button" type="button" (click)="runTemplateTest(false)" [disabled]="testLoading()">
+            {{ testLoading() ? 'Running...' : 'Run ad hoc test' }}
+          </button>
+          <button class="ghost-button" type="button" (click)="runSavedTemplateTest()" [disabled]="testLoading()">
+            Run saved/default
+          </button>
+          <button class="ghost-button" type="button" *ngIf="selected.can_edit" (click)="runTemplateTest(true)" [disabled]="testLoading()">
+            Save scenario and run
+          </button>
+        </div>
+
+        <p *ngIf="testError()" class="error-banner">{{ testError() }}</p>
+
+        <div class="test-result" *ngIf="testResult() as result">
+          <div class="path-list">
+            <span *ngFor="let node of firstResultPath(result)">{{ node }}</span>
+          </div>
+          <section class="test-transcript" *ngFor="let scenario of result.results">
+            <header>
+              <strong>{{ scenario.name }}</strong>
+              <span class="status-badge" [ngClass]="scenario.status === 'failed' ? 'status-invalid' : 'status-valid'">{{ scenario.status }}</span>
+            </header>
+            <p class="error-banner" *ngIf="scenario.errors?.length">{{ scenario.errors.join(' ') }}</p>
+            <article *ngFor="let turn of scenario.transcript">
+              <small>{{ turn.input }}</small>
+              <p>{{ turn.response || 'No visible response' }}</p>
+              <em>{{ turn.mode_used }} · {{ turn.current_node_key || 'completed' }}</em>
+            </article>
+          </section>
+        </div>
+      </section>
+    </ng-container>
+  </aside>
+</section>

@@ -38,8 +38,8 @@ export class AuthService {
   ) {}
 
   get token() {
-    if (typeof localStorage === 'undefined') return null;
-    return localStorage.getItem(this.tokenKey);
+    const storage = this.safeLocalStorage();
+    return storage?.getItem(this.tokenKey) ?? null;
   }
 
   get isAuthenticated() {
@@ -64,23 +64,26 @@ export class AuthService {
   }
 
   saveSession(response: AuthResponse) {
-    if (typeof localStorage === 'undefined') return;
-    localStorage.setItem(this.tokenKey, response.access_token);
-    localStorage.setItem(this.userKey, JSON.stringify(response.user));
+    const storage = this.safeLocalStorage();
+    if (!storage) return;
+    storage.setItem(this.tokenKey, response.access_token);
+    storage.setItem(this.userKey, JSON.stringify(response.user));
     this.currentUser.set(response.user);
   }
 
   updateStoredUser(user: AuthUser) {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(this.userKey, JSON.stringify(user));
+    const storage = this.safeLocalStorage();
+    if (storage) {
+      storage.setItem(this.userKey, JSON.stringify(user));
     }
     this.currentUser.set(user);
   }
 
   logout() {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.removeItem(this.tokenKey);
-      localStorage.removeItem(this.userKey);
+    const storage = this.safeLocalStorage();
+    if (storage) {
+      storage.removeItem(this.tokenKey);
+      storage.removeItem(this.userKey);
     }
     this.currentUser.set(null);
     this.router.navigate(['/login']);
@@ -99,20 +102,22 @@ export class AuthService {
   }
 
   private readStoredUser(): AuthUser | null {
-    if (typeof localStorage === 'undefined') return null;
-    const rawUser = localStorage.getItem(this.userKey);
+    const storage = this.safeLocalStorage();
+    if (!storage) return null;
+    const rawUser = storage.getItem(this.userKey);
     if (!rawUser) return null;
 
     try {
       return JSON.parse(rawUser);
     } catch {
-      localStorage.removeItem(this.userKey);
+      storage.removeItem(this.userKey);
       return null;
     }
   }
 
   private restoreSession() {
-    if (typeof localStorage === 'undefined' || this.currentUser()) return;
+    const storage = this.safeLocalStorage();
+    if (!storage || this.currentUser()) return;
 
     const storedUser = this.readStoredUser();
     if (storedUser) {
@@ -125,9 +130,21 @@ export class AuthService {
 
     const user = this.readUserFromToken(token);
     if (user) {
-      localStorage.setItem(this.userKey, JSON.stringify(user));
+      storage.setItem(this.userKey, JSON.stringify(user));
       this.currentUser.set(user);
     }
+  }
+
+  private safeLocalStorage(): Storage | null {
+    if (typeof localStorage === 'undefined') return null;
+    if (
+      typeof localStorage.getItem !== 'function' ||
+      typeof localStorage.setItem !== 'function' ||
+      typeof localStorage.removeItem !== 'function'
+    ) {
+      return null;
+    }
+    return localStorage;
   }
 
   private readUserFromToken(token: string): AuthUser | null {

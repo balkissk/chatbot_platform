@@ -1,8 +1,9 @@
-import { CommonModule } from '@angular/common';
-import { Component, HostListener, OnInit, signal } from '@angular/core';
+import { CommonModule, DOCUMENT } from '@angular/common';
+import { Component, HostListener, Inject, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, NavigationEnd, Router, RouterModule } from '@angular/router';
 import {
   LucideBell,
+  LucideBarChart3,
   LucideBot,
   LucideChevronDown,
   LucideChevronRight,
@@ -15,9 +16,12 @@ import {
   LucideMoon,
   LucidePanelLeftClose,
   LucidePanelLeftOpen,
+  LucideRocket,
   LucideScrollText,
   LucideSearch,
   LucideSettings,
+  LucideSlidersHorizontal,
+  LucideSun,
   LucideUser,
   LucideWorkflow
 } from '@lucide/angular';
@@ -38,6 +42,7 @@ type Breadcrumb = {
     CommonModule,
     RouterModule,
     LucideBell,
+    LucideBarChart3,
     LucideBot,
     LucideChevronDown,
     LucideChevronRight,
@@ -50,9 +55,12 @@ type Breadcrumb = {
     LucideMoon,
     LucidePanelLeftClose,
     LucidePanelLeftOpen,
+    LucideRocket,
     LucideScrollText,
     LucideSearch,
     LucideSettings,
+    LucideSlidersHorizontal,
+    LucideSun,
     LucideUser,
     LucideWorkflow,
     ToastOutletComponent
@@ -65,7 +73,8 @@ export class DashboardLayoutComponent implements OnInit {
     public auth: AuthService,
     private api: ApiService,
     private route: ActivatedRoute,
-    private router: Router
+    private router: Router,
+    @Inject(DOCUMENT) private readonly document: Document
   ) {}
 
   navCollapsed = false;
@@ -74,27 +83,45 @@ export class DashboardLayoutComponent implements OnInit {
   chatbotId = signal<number | null>(null);
   projectName = signal('');
   chatbotName = signal('');
+  darkMode = signal(false);
   breadcrumbs = signal<Breadcrumb[]>([]);
   projectNavExpanded = signal(true);
+  assistantNavExpanded = signal(true);
 
   private readonly navStorageKey = 'managerSidebarCollapsed';
+  private readonly themeStorageKey = 'chatbotFactoryLandingTheme';
   private activeProjectNavId: number | null = null;
+  private drawerReturnFocus: HTMLElement | null = null;
 
   ngOnInit() {
+    this.restoreThemePreference();
     this.restoreNavPreference();
     this.updateRouteContext();
     this.router.events.pipe(filter(event => event instanceof NavigationEnd)).subscribe(() => this.updateRouteContext());
   }
 
   toggleNav() {
+    const willOpen = this.navCollapsed;
+    if (willOpen && typeof document !== 'undefined') {
+      this.drawerReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    }
     this.navCollapsed = !this.navCollapsed;
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem(this.navStorageKey, String(this.navCollapsed));
+    }
+    if (willOpen && typeof window !== 'undefined' && window.matchMedia?.('(max-width: 991px)').matches) {
+      window.setTimeout(() => this.focusFirstNavItem(), 0);
     }
   }
 
   toggleUserMenu() {
     this.userMenuOpen = !this.userMenuOpen;
+  }
+
+  toggleTheme() {
+    this.darkMode.update(isDark => !isDark);
+    this.safeLocalStorage()?.setItem(this.themeStorageKey, this.darkMode() ? 'dark' : 'light');
+    this.updateThemeClass();
   }
 
   closeUserMenu() {
@@ -105,6 +132,39 @@ export class DashboardLayoutComponent implements OnInit {
     this.projectNavExpanded.update(expanded => !expanded);
   }
 
+  toggleAssistantNav() {
+    this.assistantNavExpanded.update(expanded => !expanded);
+  }
+
+  closeNavDrawer() {
+    if (typeof window !== 'undefined' && window.matchMedia?.('(max-width: 991px)').matches) {
+      this.navCollapsed = true;
+      this.drawerReturnFocus?.focus();
+      this.drawerReturnFocus = null;
+    }
+  }
+
+  trapNavDrawerFocus(event: Event) {
+    if (typeof window === 'undefined' || !window.matchMedia?.('(max-width: 991px)').matches || this.navCollapsed) return;
+    const keyboardEvent = event as KeyboardEvent;
+    const nav = document.querySelector('.pcoded-navbar') as HTMLElement | null;
+    if (!nav) return;
+    const focusable = Array.from(
+      nav.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])')
+    );
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement as HTMLElement | null;
+    if (keyboardEvent.shiftKey && active === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!keyboardEvent.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
   @HostListener('document:click', ['$event'])
   onDocumentClick(event: MouseEvent) {
     if (!this.userMenuOpen) return;
@@ -112,6 +172,12 @@ export class DashboardLayoutComponent implements OnInit {
     if (target instanceof Element && !target.closest('.profile-menu')) {
       this.closeUserMenu();
     }
+  }
+
+  @HostListener('document:keydown.escape')
+  onEscape() {
+    this.closeUserMenu();
+    this.closeNavDrawer();
   }
 
   greeting() {
@@ -147,21 +213,72 @@ export class DashboardLayoutComponent implements OnInit {
     return this.projectName() || 'All projects';
   }
 
+  assistantLabel() {
+    return this.chatbotName() || 'Assistant';
+  }
+
   topbarPrimaryLabel() {
-    if (this.router.url.includes('/dashboard/projects')) return 'Projects';
+    if (this.chatbotId()) return 'Assistant';
+    if (this.projectId()) return 'Project';
+    if (this.router.url.includes('/dashboard/projects')) return 'Workspace';
     if (this.router.url.includes('/dashboard/profile')) return 'Profile';
     return this.auth.currentUser()?.role === 'admin' ? 'Admin' : 'Workspace';
   }
 
   topbarSecondaryLabel() {
     if (this.router.url === '/dashboard/projects') return 'All Projects';
+    if (this.chatbotId()) return this.assistantLabel();
     if (this.projectId()) return this.workspaceLabel();
     return this.displayRole();
   }
 
+  assistantPanelLink(mode: 'deploy' | 'settings') {
+    const projectId = this.projectId();
+    return projectId ? ['/dashboard/projects', projectId, 'chatbots'] : ['/dashboard/projects'];
+  }
+
+  assistantPanelQueryParams(mode: 'deploy' | 'settings') {
+    return { mode, chatbot_id: this.chatbotId() };
+  }
+
+  private focusFirstNavItem() {
+    const nav = document.querySelector('.pcoded-navbar') as HTMLElement | null;
+    const firstItem = nav?.querySelector<HTMLElement>('a[href], button:not([disabled])');
+    firstItem?.focus();
+  }
+
   private restoreNavPreference() {
+    if (typeof window !== 'undefined' && window.matchMedia?.('(max-width: 991px)').matches) {
+      this.navCollapsed = true;
+      return;
+    }
     if (typeof localStorage === 'undefined') return;
     this.navCollapsed = localStorage.getItem(this.navStorageKey) === 'true';
+  }
+
+  private restoreThemePreference() {
+    const savedTheme = this.safeLocalStorage()?.getItem(this.themeStorageKey);
+    const prefersDark = typeof window !== 'undefined'
+      ? window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false
+      : false;
+    this.darkMode.set(savedTheme ? savedTheme === 'dark' : prefersDark);
+    this.updateThemeClass();
+  }
+
+  private updateThemeClass() {
+    this.document.documentElement.classList.toggle('landing-dark-mode', this.darkMode());
+    this.document.documentElement.classList.toggle('dark-mode', this.darkMode());
+  }
+
+  private safeLocalStorage(): Storage | null {
+    if (typeof localStorage === 'undefined') return null;
+    if (
+      typeof localStorage.getItem !== 'function' ||
+      typeof localStorage.setItem !== 'function'
+    ) {
+      return null;
+    }
+    return localStorage;
   }
 
   private updateRouteContext() {
@@ -176,6 +293,7 @@ export class DashboardLayoutComponent implements OnInit {
       this.projectName.set('');
       this.chatbotName.set('');
       this.activeProjectNavId = null;
+      this.assistantNavExpanded.set(true);
       this.breadcrumbs.set(this.baseBreadcrumbs());
       return;
     }
@@ -197,6 +315,7 @@ export class DashboardLayoutComponent implements OnInit {
     });
 
     if (chatbotId) {
+      this.assistantNavExpanded.set(true);
       this.api.getChatbot(chatbotId).subscribe({
         next: chatbot => {
           this.chatbotName.set(chatbot?.name || 'Assistant');
@@ -228,7 +347,7 @@ export class DashboardLayoutComponent implements OnInit {
     ];
 
     if (this.router.url.includes('/chatbots')) {
-      crumbs.push({ label: 'Chatbot Lifecycle', link: ['/dashboard/projects', projectId, 'chatbots'] });
+      crumbs.push({ label: 'Assistants', link: ['/dashboard/projects', projectId, 'chatbots'] });
     }
 
     if (!chatbotId && this.router.url.includes('/analytics')) {
@@ -241,10 +360,12 @@ export class DashboardLayoutComponent implements OnInit {
 
     if (chatbotId) {
       crumbs.push({ label: this.chatbotName() || 'Assistant' });
-      if (this.router.url.includes('/flow')) crumbs.push({ label: this.router.url.includes('/flow/test') ? 'Test Flow' : 'Flow Builder' });
-      else if (this.router.url.includes('/knowledge')) crumbs.push({ label: 'Knowledge Base' });
+      if (this.router.url.includes('/flow')) crumbs.push({ label: this.router.url.includes('/flow/test') ? 'Test' : 'Flow Builder' });
+      else if (this.router.url.includes('/knowledge')) crumbs.push({ label: 'Knowledge' });
       else if (this.router.url.includes('/versions')) crumbs.push({ label: 'Versions' });
+      else if (this.router.url.includes('/evaluations')) crumbs.push({ label: 'Evaluations' });
       else if (this.router.url.includes('/analytics')) crumbs.push({ label: 'Analytics' });
+      else if (this.router.url.includes('/collected-data')) crumbs.push({ label: 'Collected data' });
       else if (this.router.url.includes('/conversations')) crumbs.push({ label: 'Conversations' });
       else if (this.router.url.includes('/templates')) crumbs.push({ label: 'Templates' });
       else if (this.router.url.includes('/ai-generator')) crumbs.push({ label: 'AI Generator' });
@@ -255,6 +376,7 @@ export class DashboardLayoutComponent implements OnInit {
 
   private baseBreadcrumbs(): Breadcrumb[] {
     if (this.router.url.includes('/dashboard/profile')) return [{ label: 'Profile' }];
+    if (this.router.url.includes('/dashboard/template-qa')) return [{ label: 'Template QA' }];
     return [];
   }
 

@@ -1,5 +1,5 @@
 <div class="pcoded-shell" [class.navbar-collapsed]="navCollapsed">
-  <nav class="pcoded-navbar menu-light" aria-label="Workspace navigation">
+  <nav class="pcoded-navbar menu-light" aria-label="Workspace navigation" [attr.aria-hidden]="navCollapsed ? 'true' : null" (keydown.tab)="trapNavDrawerFocus($event)">
     <div class="navbar-wrapper">
       <div class="navbar-content">
         <div class="side-profile">
@@ -35,8 +35,8 @@
           </li>
           <li *ngIf="auth.currentUser()?.role === 'admin'" class="nav-item">
             <a routerLink="/admin/chatbots" routerLinkActive="active">
-              <span class="pcoded-micon">C</span>
-              <span class="pcoded-mtext">Chatbots</span>
+              <span class="pcoded-micon">A</span>
+              <span class="pcoded-mtext">Assistants</span>
             </a>
           </li>
           <li class="pcoded-menu-caption" *ngIf="auth.currentUser()?.role === 'admin'"><label>Monitoring</label></li>
@@ -74,6 +74,12 @@
             </a>
           </li>
           <li *ngIf="auth.currentUser()?.role === 'admin'" class="nav-item">
+            <a routerLink="/dashboard/template-qa" routerLinkActive="active">
+              <span class="pcoded-micon">T</span>
+              <span class="pcoded-mtext">Template QA</span>
+            </a>
+          </li>
+          <li *ngIf="auth.currentUser()?.role === 'admin'" class="nav-item">
             <a routerLink="/dashboard/profile" routerLinkActive="active">
               <span class="pcoded-micon">U</span>
               <span class="pcoded-mtext">Profile</span>
@@ -87,12 +93,18 @@
               <span class="pcoded-mtext">Projects</span>
             </a>
           </li>
+          <li *ngIf="auth.currentUser()?.role !== 'admin'" class="nav-item">
+            <a routerLink="/dashboard/template-qa" routerLinkActive="active" #managerTemplateQa="routerLinkActive" [attr.aria-current]="managerTemplateQa.isActive ? 'page' : null" aria-label="Template QA" title="Template QA">
+              <span class="pcoded-micon">T</span>
+              <span class="pcoded-mtext">Template QA</span>
+            </a>
+          </li>
           <ng-container *ngIf="auth.currentUser()?.role !== 'admin' && projectId() as pid">
             <li class="pcoded-menu-caption"><label>Project</label></li>
             <li class="nav-item project-nav-parent">
               <button
                 type="button"
-                class="project-toggle"
+                class="context-toggle project-toggle secondary"
                 [attr.aria-expanded]="projectNavExpanded()"
                 [attr.aria-label]="(projectNavExpanded() ? 'Collapse project navigation for ' : 'Expand project navigation for ') + workspaceLabel()"
                 [title]="workspaceLabel()"
@@ -101,7 +113,10 @@
                   <svg *ngIf="!projectNavExpanded()" lucideChevronRight size="15" aria-hidden="true"></svg>
                   <svg *ngIf="projectNavExpanded()" lucideChevronDown size="15" aria-hidden="true"></svg>
                 </span>
-                <span class="pcoded-mtext">{{ workspaceLabel() }}</span>
+                <span class="context-copy">
+                  <span class="context-kicker">Active project</span>
+                  <span class="pcoded-mtext">{{ workspaceLabel() }}</span>
+                </span>
               </button>
             </li>
             <li class="project-subnav" [class.collapsed]="!projectNavExpanded()">
@@ -118,44 +133,108 @@
                     <span class="pcoded-mtext">Assistants</span>
                   </a>
                 </li>
-                <li class="nav-item" *ngIf="chatbotId() as cid">
-                  <a [routerLink]="['/dashboard/projects', pid, 'chatbots', cid, 'knowledge']" routerLinkActive="active" #assistantKnowledge="routerLinkActive" [attr.aria-current]="assistantKnowledge.isActive ? 'page' : null" aria-label="Knowledge Base" title="Knowledge Base">
-                    <span class="pcoded-micon"><svg lucideDatabase size="16" aria-hidden="true"></svg></span>
-                    <span class="pcoded-mtext">Knowledge Base</span>
-                  </a>
-                </li>
-                <li class="nav-item" *ngIf="chatbotId() as cid">
-                  <a [routerLink]="['/dashboard/projects', pid, 'chatbots', cid, 'flow']" routerLinkActive="active" #assistantFlow="routerLinkActive" [attr.aria-current]="assistantFlow.isActive ? 'page' : null" aria-label="Flow Builder" title="Flow Builder">
-                    <span class="pcoded-micon"><svg lucideWorkflow size="16" aria-hidden="true"></svg></span>
-                    <span class="pcoded-mtext">Flow Builder</span>
-                  </a>
-                </li>
-                <li class="nav-item" *ngIf="chatbotId() as cid">
-                  <a [routerLink]="['/dashboard/projects', pid, 'chatbots', cid, 'flow', 'test']" routerLinkActive="active" #assistantTest="routerLinkActive" [attr.aria-current]="assistantTest.isActive ? 'page' : null" aria-label="Test Flow" title="Test Flow">
-                    <span class="pcoded-micon"><svg lucideMessageSquareText size="16" aria-hidden="true"></svg></span>
-                    <span class="pcoded-mtext">Test Flow</span>
-                  </a>
-                </li>
-                <li class="nav-item" *ngIf="chatbotId() as cid">
-                  <a [routerLink]="['/dashboard/projects', pid, 'chatbots', cid, 'versions']" routerLinkActive="active" #assistantVersions="routerLinkActive" [attr.aria-current]="assistantVersions.isActive ? 'page' : null" aria-label="Versions" title="Versions">
-                    <span class="pcoded-micon"><svg lucideGitBranch size="16" aria-hidden="true"></svg></span>
-                    <span class="pcoded-mtext">Versions</span>
-                  </a>
-                </li>
-                <li class="nav-item" *ngIf="chatbotId() as cid">
-                  <a [routerLink]="['/dashboard/projects', pid, 'chatbots', cid, 'conversations']" routerLinkActive="active" #assistantLogs="routerLinkActive" [attr.aria-current]="assistantLogs.isActive ? 'page' : null" aria-label="Runtime Logs" title="Runtime Logs">
-                    <span class="pcoded-micon"><svg lucideScrollText size="16" aria-hidden="true"></svg></span>
-                    <span class="pcoded-mtext">Runtime Logs</span>
-                  </a>
-                </li>
-                <li class="nav-item" *ngIf="!chatbotId()">
+                <li class="nav-item">
                   <a [routerLink]="['/dashboard/projects', pid, 'settings']" routerLinkActive="active" #projectSettings="routerLinkActive" [attr.aria-current]="projectSettings.isActive ? 'page' : null" aria-label="Project Settings" title="Project Settings">
                     <span class="pcoded-micon"><svg lucideSettings size="16" aria-hidden="true"></svg></span>
-                    <span class="pcoded-mtext">Settings</span>
+                    <span class="pcoded-mtext">Project settings</span>
                   </a>
                 </li>
               </ul>
             </li>
+          </ng-container>
+
+          <ng-container *ngIf="auth.currentUser()?.role !== 'admin' && projectId() as pid">
+            <ng-container *ngIf="chatbotId() as cid">
+              <li class="pcoded-menu-caption"><label>Assistant</label></li>
+              <li class="nav-item project-nav-parent">
+                <button
+                  type="button"
+                  class="context-toggle assistant-toggle secondary"
+                  [attr.aria-expanded]="assistantNavExpanded()"
+                  [attr.aria-label]="(assistantNavExpanded() ? 'Collapse assistant navigation for ' : 'Expand assistant navigation for ') + assistantLabel()"
+                  [title]="assistantLabel()"
+                  (click)="toggleAssistantNav()">
+                  <span class="pcoded-micon">
+                    <svg *ngIf="!assistantNavExpanded()" lucideChevronRight size="15" aria-hidden="true"></svg>
+                    <svg *ngIf="assistantNavExpanded()" lucideChevronDown size="15" aria-hidden="true"></svg>
+                  </span>
+                  <span class="context-copy">
+                    <span class="context-kicker">Active assistant</span>
+                    <span class="pcoded-mtext">{{ assistantLabel() }}</span>
+                  </span>
+                </button>
+              </li>
+              <li class="project-subnav assistant-subnav" [class.collapsed]="!assistantNavExpanded()">
+                <ul>
+                  <li class="nav-item">
+                    <a [routerLink]="['/dashboard/projects', pid, 'chatbots', cid]" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }" #assistantOverview="routerLinkActive" [attr.aria-current]="assistantOverview.isActive ? 'page' : null" aria-label="Assistant overview" title="Assistant overview">
+                      <span class="pcoded-micon"><svg lucideLayoutDashboard size="16" aria-hidden="true"></svg></span>
+                      <span class="pcoded-mtext">Overview</span>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a [routerLink]="['/dashboard/projects', pid, 'chatbots', cid, 'flow']" routerLinkActive="active" #assistantFlow="routerLinkActive" [attr.aria-current]="assistantFlow.isActive ? 'page' : null" aria-label="Flow Builder" title="Flow Builder">
+                      <span class="pcoded-micon"><svg lucideWorkflow size="16" aria-hidden="true"></svg></span>
+                      <span class="pcoded-mtext">Flow Builder</span>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a [routerLink]="['/dashboard/projects', pid, 'chatbots', cid, 'knowledge']" routerLinkActive="active" #assistantKnowledge="routerLinkActive" [attr.aria-current]="assistantKnowledge.isActive ? 'page' : null" aria-label="Knowledge" title="Knowledge">
+                      <span class="pcoded-micon"><svg lucideDatabase size="16" aria-hidden="true"></svg></span>
+                      <span class="pcoded-mtext">Knowledge</span>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a [routerLink]="['/dashboard/projects', pid, 'chatbots', cid, 'flow', 'test']" routerLinkActive="active" #assistantTest="routerLinkActive" [attr.aria-current]="assistantTest.isActive ? 'page' : null" aria-label="Test assistant" title="Test assistant">
+                      <span class="pcoded-micon"><svg lucideMessageSquareText size="16" aria-hidden="true"></svg></span>
+                      <span class="pcoded-mtext">Test</span>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a [routerLink]="['/dashboard/projects', pid, 'chatbots', cid, 'versions']" routerLinkActive="active" #assistantVersions="routerLinkActive" [attr.aria-current]="assistantVersions.isActive ? 'page' : null" aria-label="Versions" title="Versions">
+                      <span class="pcoded-micon"><svg lucideGitBranch size="16" aria-hidden="true"></svg></span>
+                      <span class="pcoded-mtext">Versions</span>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a [routerLink]="['/dashboard/projects', pid, 'chatbots', cid, 'evaluations']" routerLinkActive="active" #assistantEvaluations="routerLinkActive" [attr.aria-current]="assistantEvaluations.isActive ? 'page' : null" aria-label="Evaluations" title="Evaluations">
+                      <span class="pcoded-micon"><svg lucideBarChart3 size="16" aria-hidden="true"></svg></span>
+                      <span class="pcoded-mtext">Evaluations</span>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a [routerLink]="['/dashboard/projects', pid, 'chatbots', cid, 'conversations']" routerLinkActive="active" #assistantConversations="routerLinkActive" [attr.aria-current]="assistantConversations.isActive ? 'page' : null" aria-label="Conversations" title="Conversations">
+                      <span class="pcoded-micon"><svg lucideScrollText size="16" aria-hidden="true"></svg></span>
+                      <span class="pcoded-mtext">Conversations</span>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a [routerLink]="['/dashboard/projects', pid, 'chatbots', cid, 'collected-data']" routerLinkActive="active" #assistantCollectedData="routerLinkActive" [attr.aria-current]="assistantCollectedData.isActive ? 'page' : null" aria-label="Collected data" title="Collected data">
+                      <span class="pcoded-micon"><svg lucideDatabase size="16" aria-hidden="true"></svg></span>
+                      <span class="pcoded-mtext">Collected data</span>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a [routerLink]="['/dashboard/projects', pid, 'chatbots', cid, 'analytics']" routerLinkActive="active" #assistantAnalytics="routerLinkActive" [attr.aria-current]="assistantAnalytics.isActive ? 'page' : null" aria-label="Analytics" title="Analytics">
+                      <span class="pcoded-micon"><svg lucideBarChart3 size="16" aria-hidden="true"></svg></span>
+                      <span class="pcoded-mtext">Analytics</span>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a [routerLink]="['/dashboard/projects', pid, 'chatbots', cid, 'deployment']" routerLinkActive="active" #assistantDeployment="routerLinkActive" [attr.aria-current]="assistantDeployment.isActive ? 'page' : null" aria-label="Deployment" title="Deployment">
+                      <span class="pcoded-micon"><svg lucideRocket size="16" aria-hidden="true"></svg></span>
+                      <span class="pcoded-mtext">Deployment</span>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a [routerLink]="['/dashboard/projects', pid, 'chatbots', cid, 'settings']" routerLinkActive="active" #assistantSettings="routerLinkActive" [attr.aria-current]="assistantSettings.isActive ? 'page' : null" aria-label="Assistant settings" title="Assistant settings">
+                      <span class="pcoded-micon"><svg lucideSlidersHorizontal size="16" aria-hidden="true"></svg></span>
+                      <span class="pcoded-mtext">Assistant settings</span>
+                    </a>
+                  </li>
+                </ul>
+              </li>
+            </ng-container>
           </ng-container>
           <li class="pcoded-menu-caption" *ngIf="auth.currentUser()?.role !== 'admin'"><label>Account</label></li>
           <li *ngIf="auth.currentUser()?.role !== 'admin'" class="nav-item">
@@ -175,7 +254,7 @@
         <span class="logo-thumb">C</span>
         <span class="logo-main">ChatBot Factory</span>
       </a>
-      <button class="mobile-menu menu-button" type="button" title="Toggle sidebar" [attr.aria-label]="navCollapsed ? 'Expand sidebar' : 'Collapse sidebar'" (click)="toggleNav()">
+      <button class="mobile-menu menu-button" type="button" title="Toggle sidebar" [attr.aria-label]="navCollapsed ? 'Open navigation' : 'Close navigation'" [attr.aria-expanded]="!navCollapsed" (click)="toggleNav()">
         <svg *ngIf="!navCollapsed" lucidePanelLeftClose size="17" aria-hidden="true"></svg>
         <svg *ngIf="navCollapsed" lucidePanelLeftOpen size="17" aria-hidden="true"></svg>
       </button>
@@ -189,15 +268,22 @@
       </div>
       <label class="topbar-search">
         <svg lucideSearch size="15" aria-hidden="true"></svg>
-        <input type="search" placeholder="Search projects, assistants, knowledge..." aria-label="Global search">
+        <input type="search" placeholder="Search projects, assistants and knowledge" aria-label="Global search">
       </label>
       <div class="navbar-nav ms-auto topbar-actions">
         <button class="notification-button menu-button" type="button" aria-label="Notifications" title="Notifications">
           <svg lucideBell size="18" aria-hidden="true"></svg>
           <span class="notification-dot" aria-hidden="true"></span>
         </button>
-        <button class="notification-button menu-button" type="button" aria-label="Dark mode" title="Dark mode">
-          <svg lucideMoon size="17" aria-hidden="true"></svg>
+        <button
+          class="notification-button menu-button theme-toggle"
+          type="button"
+          [attr.aria-label]="darkMode() ? 'Switch to light mode' : 'Switch to dark mode'"
+          [attr.title]="darkMode() ? 'Switch to light mode' : 'Switch to dark mode'"
+          [attr.aria-pressed]="darkMode()"
+          (click)="toggleTheme()">
+          <svg *ngIf="!darkMode()" lucideMoon size="17" aria-hidden="true"></svg>
+          <svg *ngIf="darkMode()" lucideSun size="17" aria-hidden="true"></svg>
         </button>
         <button class="notification-button menu-button" type="button" aria-label="Settings" title="Settings" routerLink="/dashboard/profile">
           <svg lucideSettings size="17" aria-hidden="true"></svg>
@@ -266,5 +352,6 @@
       </div>
     </div>
   </main>
+  <button class="nav-backdrop menu-button" type="button" aria-label="Close navigation" *ngIf="navCollapsed === false" (click)="closeNavDrawer()"></button>
   <app-toast-outlet></app-toast-outlet>
 </div>

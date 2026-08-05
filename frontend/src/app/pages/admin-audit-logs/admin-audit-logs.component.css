@@ -6,7 +6,9 @@
 }
 
 .eyebrow {
-  color: #1677FF;
+  color: var(--brand-primary-hover);
+  font-family: var(--font-mono);
+  letter-spacing: .08em;
   font-size: 12px;
   font-weight: 700;
   margin: 0 0 4px;
@@ -20,9 +22,9 @@ h2 {
 .toolbar,
 .table-panel,
 .pager {
-  background: #fff;
-  border: 1px solid #d8e8eb;
-  border-radius: 8px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--ds-radius);
   margin-bottom: 16px;
   padding: 16px;
 }
@@ -44,18 +46,18 @@ label {
 
 input,
 select {
-  border: 1px solid #bfd5dc;
-  border-radius: 6px;
-  color: #1f2937;
+  border: 1px solid var(--border-default);
+  border-radius: var(--ds-radius);
+  color: var(--text-primary);
   font: inherit;
   min-height: 38px;
   padding: 8px 10px;
 }
 
 button {
-  background: #1677FF;
-  border: 1px solid #1677FF;
-  border-radius: 6px;
+  background: linear-gradient(135deg, var(--brand-primary-hover), var(--brand-primary));
+  border: 1px solid var(--brand-primary);
+  border-radius: var(--ds-radius);
   color: #fff;
   cursor: pointer;
   font: inherit;
@@ -65,8 +67,8 @@ button {
 }
 
 button.secondary {
-  background: #fff;
-  color: #1677FF;
+  background: var(--surface-raised);
+  color: var(--brand-primary-hover);
 }
 
 button:disabled {
@@ -98,9 +100,9 @@ th {
 
 .role,
 .status {
-  background: #EAF3FF;
-  border-radius: 999px;
-  color: #1677FF;
+  background: var(--brand-primary-soft);
+  border-radius: var(--ds-radius-sm);
+  color: var(--brand-primary-hover);
   display: inline-block;
   font-size: 12px;
   font-weight: 700;

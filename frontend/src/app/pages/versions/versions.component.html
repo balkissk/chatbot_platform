@@ -1,7 +1,8 @@
 <div class="page-header">
   <div>
-    <p class="eyebrow">Chatbot {{ chatbotId }}</p>
+    <p class="eyebrow">Assistant {{ chatbotId }}</p>
     <h2>Versions</h2>
+    <p class="muted">Configure instructions, review knowledge and test a selected assistant version.</p>
   </div>
 
   <div class="actions">
@@ -20,10 +21,70 @@
 
 <section *ngIf="!loading() && versions().length === 0" class="empty-state">
   <h3>No versions yet</h3>
-  <p>Create a version before uploading knowledge or testing the chatbot.</p>
+  <p>Create a version before uploading knowledge or testing the assistant.</p>
 </section>
 
-<section *ngIf="!loading() && versions().length > 0" class="version-grid">
+<section *ngIf="selectedVersion() as selected" class="version-identity">
+  <div>
+    <p class="eyebrow">Selected Version</p>
+    <h3>Version {{ selected.version_number }}</h3>
+    <div class="identity-meta">
+      <span class="status-badge" [class.status-published]="selected.status === 'published'" [class.status-archived]="selected.status === 'archived'">{{ selected.status }}</span>
+      <span *ngIf="selected.is_active" class="status-badge active-badge">active</span>
+      <span>Created {{ selected.created_at | date:'mediumDate' }}</span>
+      <span *ngIf="selected.published_at">Published {{ selected.published_at | date:'medium' }}</span>
+    </div>
+  </div>
+  <div class="identity-actions">
+    <button class="secondary" type="button" (click)="runSmokeTest()" [disabled]="smokeLoading() || actionId() === selected.id">
+      {{ smokeLoading() ? 'Testing...' : 'Test assistant before publish' }}
+    </button>
+    <button (click)="publish(selected.id)" [disabled]="selected.status === 'published' || actionId() === selected.id">
+      {{ actionId() === selected.id ? 'Working...' : 'Publish' }}
+    </button>
+    <button class="secondary" (click)="duplicate(selected.id)" [disabled]="actionId() === selected.id">Duplicate</button>
+    <button class="secondary" (click)="archive(selected.id)" [disabled]="selected.status === 'archived' || actionId() === selected.id">Archive</button>
+  </div>
+</section>
+
+<section *ngIf="selectedVersionId()" class="panel readiness-panel">
+  <div class="panel-header">
+    <div>
+      <p class="eyebrow">Publication readiness</p>
+      <h3>Test assistant before publish</h3>
+    </div>
+    <button class="secondary" type="button" (click)="loadReadiness()" [disabled]="readinessLoading()">
+      {{ readinessLoading() ? 'Checking...' : 'Refresh checks' }}
+    </button>
+  </div>
+
+  <p *ngIf="smokeMessage()" class="success">{{ smokeMessage() }}</p>
+  <p *ngIf="readinessLoading()" class="muted">Checking real assistant state...</p>
+
+  <div *ngIf="readiness() as report" class="readiness-summary">
+    <span>{{ report.summary?.passed || 0 }} passed</span>
+    <span>{{ report.summary?.warnings || 0 }} warnings</span>
+    <span>{{ report.summary?.blocked || 0 }} blocked</span>
+  </div>
+
+  <div *ngIf="readiness() as report" class="readiness-list">
+    <article *ngFor="let check of report.checks" class="readiness-row" [ngClass]="readinessStatusClass(check.status)">
+      <div>
+        <strong>{{ check.label }}</strong>
+        <p>{{ check.message }}</p>
+      </div>
+      <span>{{ check.status }}</span>
+    </article>
+  </div>
+</section>
+
+<nav *ngIf="selectedVersionId()" class="config-tabs" aria-label="Version configuration sections">
+  <a href="#instructions">Instructions</a>
+  <a href="#knowledge-snapshot">Knowledge snapshot</a>
+  <a href="#test-version">Test version</a>
+</nav>
+
+<section *ngIf="!loading() && versions().length > 0" class="version-grid" aria-label="Version history">
   <article
     *ngFor="let v of versions()"
     class="version-card"
@@ -43,16 +104,7 @@
 
     <div class="card-actions">
       <button class="secondary" (click)="selectVersion(v.id)" [disabled]="selectedVersionId() === v.id">
-        Manage RAG
-      </button>
-      <button (click)="publish(v.id)" [disabled]="v.status === 'published' || actionId() === v.id">
-        Publish
-      </button>
-      <button class="secondary" (click)="duplicate(v.id)" [disabled]="actionId() === v.id">
-        Duplicate
-      </button>
-      <button class="secondary" (click)="archive(v.id)" [disabled]="v.status === 'archived' || actionId() === v.id">
-        Archive
+        Select
       </button>
       <button class="danger" (click)="deleteVersion(v)" [disabled]="actionId() === v.id || v.is_active || v.status === 'published'">
         Delete
@@ -62,7 +114,7 @@
 </section>
 
 <section *ngIf="selectedVersionId()" class="manager-grid">
-  <section class="panel ai-panel">
+  <section id="instructions" class="panel ai-panel">
     <div class="panel-header">
       <div>
         <p class="eyebrow">AI Instructions</p>
@@ -117,13 +169,13 @@
     </div>
   </section>
 
-  <section class="panel">
+  <section id="knowledge-snapshot" class="panel knowledge-panel">
     <div class="panel-header">
       <div>
         <p class="eyebrow">RAG</p>
         <h3>Knowledge Base</h3>
       </div>
-      <span>Version {{ selectedVersionId() }}</span>
+      <button class="secondary" type="button" [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId, 'knowledge']">Open Knowledge Base</button>
     </div>
 
     <label class="file-control">
@@ -132,7 +184,7 @@
         accept=".txt,.md,.csv,.json"
         (change)="onFileSelected($event)"
         [disabled]="uploadLoading()">
-      <span>{{ uploadLoading() ? 'Uploading...' : 'Upload text file' }}</span>
+      <span>{{ uploadLoading() ? 'Uploading...' : 'Upload version document' }}</span>
     </label>
 
     <p *ngIf="selectedFileName" class="muted">Selected: {{ selectedFileName }}</p>
@@ -151,7 +203,7 @@
     </div>
   </section>
 
-  <section class="panel">
+  <section id="test-version" class="panel test-panel">
     <div class="panel-header">
       <div>
         <p class="eyebrow">Test</p>
@@ -165,7 +217,7 @@
       placeholder="Ask a question from the uploaded knowledge base"></textarea>
 
     <button (click)="askChatbot()" [disabled]="chatLoading() || !chatQuestion.trim()">
-      {{ chatLoading() ? 'Asking...' : 'Ask Chatbot' }}
+      {{ chatLoading() ? 'Asking...' : 'Ask assistant' }}
     </button>
 
     <p *ngIf="chatError()" class="error">{{ chatError() }}</p>
@@ -175,13 +227,13 @@
       <div *ngFor="let answer of chatMessages()" class="answer-bubble">
         <p>{{ answer.text }}</p>
         <div class="quick-replies" *ngIf="answer.options?.length">
-          <button type="button" *ngFor="let option of answer.options" (click)="askOption(option)">
+          <button class="secondary" type="button" *ngFor="let option of answer.options" (click)="askOption(option)">
             {{ option }}
           </button>
         </div>
       </div>
       <div class="quick-replies" *ngIf="chatMessages().length === 0 && chatOptions().length > 0">
-        <button type="button" *ngFor="let option of chatOptions()" (click)="askOption(option)">
+        <button class="secondary" type="button" *ngFor="let option of chatOptions()" (click)="askOption(option)">
           {{ option }}
         </button>
       </div>

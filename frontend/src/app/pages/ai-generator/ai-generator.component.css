@@ -8,7 +8,7 @@
 .setup-card {
   background:
     linear-gradient(145deg, rgba(255, 255, 255, .98), rgba(255, 255, 255, .9)),
-    radial-gradient(circle at top right, rgba(22, 119, 255, .16), transparent 34%);
+    radial-gradient(circle at top right, rgba(24, 185, 168, .16), transparent 34%);
   border: 1px solid #ddeeee;
   border-radius: 24px;
   box-shadow: 0 16px 42px rgba(24, 59, 74, .07);
@@ -41,9 +41,9 @@
 
 .card-heading span {
   align-items: center;
-  background: linear-gradient(135deg, #1677FF, #0B6BFF);
+  background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-hover));
   border-radius: 18px;
-  box-shadow: 0 10px 24px rgba(22, 119, 255, .24);
+  box-shadow: 0 10px 24px rgba(24, 185, 168, .24);
   color: #fff;
   display: flex;
   font-weight: 900;
@@ -72,8 +72,8 @@ textarea {
 }
 
 textarea:focus {
-  border-color: #1677FF;
-  box-shadow: 0 0 0 4px rgba(22, 119, 255, .16);
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 4px rgba(24, 185, 168, .16);
   outline: none;
 }
 
@@ -128,10 +128,10 @@ button:not(:disabled):hover {
 }
 
 .primary {
-  background: linear-gradient(135deg, #1677FF, #0B6BFF);
+  background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-hover));
   border: 1px solid rgba(255, 255, 255, .35);
   border-radius: 18px;
-  box-shadow: 0 10px 24px rgba(22, 119, 255, .25), inset 0 1px 0 rgba(255, 255, 255, .35);
+  box-shadow: 0 10px 24px rgba(24, 185, 168, .25), inset 0 1px 0 rgba(255, 255, 255, .35);
   color: #fff;
   min-height: 48px;
   padding: 12px 24px;
@@ -258,4 +258,69 @@ button:not(:disabled):hover {
   .summary-grid {
     grid-template-columns: 1fr;
   }
+}
+
+.setup-page {
+  color: var(--text-primary);
+}
+
+.setup-header,
+.setup-card {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, .98), rgba(255, 255, 255, .9)),
+    radial-gradient(circle at top right, rgba(24, 185, 168, .14), transparent 34%);
+  border-color: var(--border-default);
+  border-radius: var(--ds-radius-lg);
+  box-shadow: none;
+}
+
+.card-heading span,
+.primary {
+  background: linear-gradient(135deg, var(--brand-primary-hover), var(--brand-primary));
+  box-shadow: 0 10px 24px rgba(8, 122, 112, .2);
+}
+
+.eyebrow {
+  color: var(--brand-primary-hover);
+  font-family: var(--font-mono);
+}
+
+h2,
+h3 {
+  color: var(--text-primary);
+  font-family: var(--font-display);
+}
+
+.muted,
+small,
+.muted-list span,
+.summary-grid span,
+.summary-section > span,
+.explanation span {
+  color: var(--text-secondary);
+}
+
+textarea {
+  border-color: var(--border-default);
+}
+
+textarea:focus {
+  border-color: var(--brand-primary);
+  box-shadow: var(--ds-ring);
+}
+
+.secondary,
+.preview-list span,
+.summary-grid div,
+.summary-section,
+.explanation,
+.summary-tags small {
+  background: var(--surface-raised);
+  border-color: var(--border-default);
+  color: var(--text-primary);
+}
+
+.summary-grid strong,
+.explanation p {
+  color: var(--text-primary);
 }

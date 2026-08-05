@@ -40,7 +40,7 @@
 .workspace-hero {
   align-items: center;
   background:
-    radial-gradient(circle at 82% 52%, rgba(22, 119, 255, 0.14), rgba(22, 119, 255, 0.055) 35%, transparent 58%),
+    radial-gradient(circle at 82% 52%, rgba(24, 185, 168, 0.14), rgba(24, 185, 168, 0.055) 35%, transparent 58%),
     linear-gradient(112deg, #fff 0%, #f8fbff 47%, #eaf4ff 100%);
   display: grid;
   gap: 18px;
@@ -149,10 +149,10 @@
 
 .workspace-create-button {
   align-items: center;
-  background: #1677ff;
+  background: var(--brand-primary);
   border: 0;
   border-radius: 18px;
-  box-shadow: 0 3px 10px rgba(22, 119, 255, 0.18);
+  box-shadow: 0 3px 10px rgba(24, 185, 168, 0.18);
   color: #fff;
   cursor: pointer;
   display: inline-flex;
@@ -167,7 +167,7 @@
 
 .workspace-create-button:hover {
   background: #0b6bff;
-  box-shadow: 0 4px 12px rgba(22, 119, 255, 0.22);
+  box-shadow: 0 4px 12px rgba(24, 185, 168, 0.22);
   transform: translateY(-1px);
 }
 
@@ -189,7 +189,7 @@
 }
 
 .hero-illustration::before {
-  background: radial-gradient(circle, rgba(22, 119, 255, 0.15), rgba(22, 119, 255, 0.05) 48%, transparent 72%);
+  background: radial-gradient(circle, rgba(24, 185, 168, 0.15), rgba(24, 185, 168, 0.05) 48%, transparent 72%);
   border-radius: 999px;
   content: "";
   filter: blur(5px);
@@ -257,14 +257,14 @@
 }
 
 .workspace-search-box:focus-within {
-  border-color: rgba(22, 119, 255, 0.46);
-  box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.1);
+  border-color: rgba(24, 185, 168, 0.46);
+  box-shadow: 0 0 0 3px rgba(24, 185, 168, 0.1);
 }
 
 .clear-button {
   background: transparent;
   border: 0;
-  color: #1677ff;
+  color: var(--brand-primary);
   cursor: pointer;
   font-size: 11px;
   font-weight: 800;
@@ -356,9 +356,9 @@
 }
 
 .view-toggle button.active {
-  background: #eaf3ff;
+  background: var(--brand-primary-soft);
   border-color: #d5e6ff;
-  color: #1677ff;
+  color: var(--brand-primary);
 }
 
 .view-toggle button:not(.active) {
@@ -416,7 +416,7 @@
 
 .project-avatar {
   align-items: center;
-  background: linear-gradient(135deg, #1677ff, #5b5ceb);
+  background: linear-gradient(135deg, var(--brand-primary), #5b5ceb);
   border-radius: 9px;
   color: #fff;
   display: flex;
@@ -492,7 +492,7 @@
 
 .project-menu-button:hover {
   background: #f8fbff;
-  color: #1677ff;
+  color: var(--brand-primary);
 }
 
 .project-description {
@@ -522,7 +522,7 @@
 }
 
 .project-metrics svg {
-  color: #1677ff;
+  color: var(--brand-primary);
   grid-row: 1 / 3;
   height: 13px;
   margin-top: 1px;
@@ -582,7 +582,7 @@
 }
 
 .activity-row svg {
-  color: #1677ff;
+  color: var(--brand-primary);
   height: 12px;
   width: 12px;
 }
@@ -631,7 +631,7 @@
 .activity-dot {
   background: currentColor;
   border-radius: 999px;
-  color: #1677ff;
+  color: var(--brand-primary);
   height: 7px;
   justify-self: center;
   width: 7px;
@@ -662,7 +662,7 @@
 .workspace-open-button {
   background: #f1f6ff;
   border: 1px solid #dbeafe;
-  color: #1677ff;
+  color: var(--brand-primary);
   flex: 1;
   width: 100%;
 }
@@ -677,7 +677,7 @@
 .workspace-open-button:hover,
 .workspace-table-open-button:hover {
   background: #eef5ff;
-  border-color: rgba(22, 119, 255, 0.3);
+  border-color: rgba(24, 185, 168, 0.3);
 }
 
 .ready-card .workspace-open-button {
@@ -700,7 +700,7 @@
 .workspace-table-open-button {
   background: #f8fbff;
   border: 1px solid #dbeafe;
-  color: #1677ff;
+  color: var(--brand-primary);
 }
 
 .workspace-health-card,
@@ -728,7 +728,7 @@
 
 .title-icon {
   align-items: center;
-  color: #1677ff;
+  color: var(--brand-primary);
   display: flex;
   height: 18px;
   justify-content: center;
@@ -745,7 +745,7 @@
 }
 
 .title-icon.purple {
-  color: #1677ff;
+  color: var(--brand-primary);
 }
 
 .title-icon.indigo {
@@ -755,7 +755,7 @@
 .side-link,
 .side-action {
   align-items: center;
-  color: #1677ff;
+  color: var(--brand-primary);
   display: inline-flex;
   font-size: 10.5px;
   font-weight: 850;
@@ -834,7 +834,7 @@
 }
 
 .timeline-row .activity-dot {
-  color: #1677ff;
+  color: var(--brand-primary);
 }
 
 .timeline-row.green .activity-dot {
@@ -874,7 +874,7 @@
 }
 
 .insight-row.blue svg {
-  color: #1677ff;
+  color: var(--brand-primary);
 }
 
 .insight-row.green svg {
@@ -899,7 +899,7 @@
 .insight-row em {
   background: #eef5ff;
   border-radius: 999px;
-  color: #1677ff;
+  color: var(--brand-primary);
   font-size: 9.5px;
   font-style: normal;
   font-weight: 850;
@@ -916,7 +916,7 @@
 .insight-row.warning em,
 .insight-row.danger em {
   background: #eef5ff;
-  color: #1677ff;
+  color: var(--brand-primary);
 }
 
 .side-empty {
@@ -969,7 +969,7 @@
   align-items: center;
   background: #edf6ff;
   border-radius: 10px;
-  color: #1677ff;
+  color: var(--brand-primary);
   display: flex;
   flex: 0 0 40px;
   font-weight: 900;
@@ -1115,7 +1115,7 @@
 }
 
 .eyebrow {
-  color: #1677ff;
+  color: var(--brand-primary);
   font-size: 10.5px;
   font-weight: 850;
   letter-spacing: 0;

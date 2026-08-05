@@ -2,7 +2,7 @@ import secrets
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 from database.db import SessionLocal
@@ -349,6 +349,68 @@ def serialize_conversation_summary(session: ConversationSession, messages: list[
         "created_at": session.created_at,
         "updated_at": session.updated_at,
     }
+
+
+def collected_field_type(name: str, value) -> str:
+    key = name.lower()
+    if "email" in key or (isinstance(value, str) and "@" in value and "." in value):
+        return "email"
+    if "phone" in key or "tel" in key:
+        return "phone"
+    if "meeting" in key or "time" in key or "schedule" in key or "appointment" in key:
+        return "meeting"
+    if "name" in key:
+        return "name"
+    if "choice" in key or "intent" in key or "route" in key or "segment" in key:
+        return "selection"
+    return "custom"
+
+
+def collected_field_label(name: str) -> str:
+    labels = {
+        "user_name": "Name",
+        "name": "Name",
+        "user_email": "Email",
+        "email": "Email",
+        "user_phone": "Phone",
+        "phone": "Phone",
+        "preferred_time": "Meeting preference",
+        "preferred_meeting_time": "Meeting preference",
+        "meeting_time": "Meeting preference",
+        "intent": "Selected intent",
+        "route": "Route",
+    }
+    return labels.get(name, name.replace("_", " ").strip().title())
+
+
+def is_manager_visible_variable(name: str, value) -> bool:
+    if not name or name.startswith("__"):
+        return False
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, dict)):
+        return bool(value)
+    return True
+
+
+def serialize_collected_value(value) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (int, float, bool)):
+        return str(value)
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value[:6])
+    if isinstance(value, dict):
+        return ", ".join(f"{key}: {item}" for key, item in list(value.items())[:6])
+    return str(value)
+
+
+def normalize_follow_up_status(value: str | None) -> str:
+    normalized = (value or "new").strip().lower().replace(" ", "_")
+    allowed = {"new", "followed_up", "scheduled", "closed"}
+    return normalized if normalized in allowed else "new"
 
 
 def date_series(days: int = 14) -> list[datetime.date]:
@@ -1021,6 +1083,123 @@ def get_chatbot_unanswered_questions(
 ):
     chatbot = get_accessible_chatbot(db, id, current_user)
     return unanswered_question_rows(db, chatbot.id)
+
+
+@router.get("/chatbots/{id}/collected-data")
+def get_chatbot_collected_data(
+    id: int,
+    search: str | None = None,
+    field_type: str | None = None,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "manager"))
+):
+    chatbot = get_accessible_chatbot(db, id, current_user)
+    sessions = db.query(ConversationSession).filter(
+        ConversationSession.chatbot_id == chatbot.id
+    ).order_by(ConversationSession.updated_at.desc()).limit(500).all()
+    session_ids = [session.id for session in sessions]
+    message_counts = dict(db.query(
+        ConversationMessage.session_id,
+        func.count(ConversationMessage.id)
+    ).filter(
+        ConversationMessage.session_id.in_(session_ids)
+    ).group_by(ConversationMessage.session_id).all()) if session_ids else {}
+    ranked_user_messages = db.query(
+        ConversationMessage.session_id.label("session_id"),
+        ConversationMessage.content.label("content"),
+        func.row_number().over(
+            partition_by=ConversationMessage.session_id,
+            order_by=ConversationMessage.created_at.desc()
+        ).label("row_number")
+    ).filter(
+        ConversationMessage.session_id.in_(session_ids),
+        ConversationMessage.role == "user"
+    ).subquery()
+    last_user_messages = dict(db.query(
+        ranked_user_messages.c.session_id,
+        ranked_user_messages.c.content
+    ).filter(ranked_user_messages.c.row_number == 1).all()) if session_ids else {}
+    rows: list[dict] = []
+    normalized_search = (search or "").strip().lower()
+    normalized_type = (field_type or "").strip().lower()
+
+    for session in sessions:
+        variables = session.variables or {}
+        for name, value in variables.items():
+            if not is_manager_visible_variable(str(name), value):
+                continue
+            value_text = serialize_collected_value(value)
+            item_type = collected_field_type(str(name), value)
+            if normalized_type and item_type != normalized_type:
+                continue
+            haystack = f"{name} {collected_field_label(str(name))} {value_text} {session.id}".lower()
+            if normalized_search and normalized_search not in haystack:
+                continue
+
+            rows.append({
+                "session_id": session.id,
+                "chatbot_id": chatbot.id,
+                "version_id": session.version_id,
+                "field": str(name),
+                "label": collected_field_label(str(name)),
+                "type": item_type,
+                "value": value_text,
+                "channel": session_channel(session),
+                "message_count": message_counts.get(session.id, 0),
+                "last_user_message": last_user_messages.get(session.id, ""),
+                "follow_up_status": normalize_follow_up_status(variables.get("__manager_status")),
+                "manager_note": variables.get("__manager_note") or "",
+                "created_at": session.created_at,
+                "updated_at": session.updated_at,
+            })
+
+    rows.sort(key=lambda item: item["updated_at"] or datetime.min, reverse=True)
+    summary = Counter(item["type"] for item in rows)
+    return {
+        "items": rows[offset:offset + limit],
+        "total": len(rows),
+        "summary": {
+            "contacts": summary.get("email", 0) + summary.get("phone", 0) + summary.get("name", 0),
+            "meeting_preferences": summary.get("meeting", 0),
+            "selections": summary.get("selection", 0),
+            "custom_fields": summary.get("custom", 0),
+        }
+    }
+
+
+@router.patch("/chatbots/{id}/conversations/{session_id}/follow-up")
+def update_conversation_follow_up(
+    id: int,
+    session_id: int,
+    payload: dict = Body(default_factory=dict),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "manager"))
+):
+    chatbot = get_accessible_chatbot(db, id, current_user)
+    session = db.query(ConversationSession).filter(
+        ConversationSession.id == session_id,
+        ConversationSession.chatbot_id == chatbot.id
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    variables = session.variables or {}
+    variables["__manager_status"] = normalize_follow_up_status(str(payload.get("status") or "new"))
+    note = str(payload.get("note") or "").strip()
+    variables["__manager_note"] = note[:1000]
+    variables["__manager_updated_at"] = datetime.utcnow().isoformat()
+    variables["__manager_updated_by"] = current_user.id
+    session.variables = variables
+    db.commit()
+
+    return {
+        "session_id": session.id,
+        "follow_up_status": variables["__manager_status"],
+        "manager_note": variables["__manager_note"],
+        "updated_at": variables["__manager_updated_at"],
+    }
 
 
 @router.get("/chatbots/{id}/conversations/{session_id}")

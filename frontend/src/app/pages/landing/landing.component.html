@@ -1,200 +1,407 @@
-<main class="astroplate-page">
-  <header class="site-header">
-    <a class="logo" routerLink="/" aria-label="ChatBot Factory home">
-      <img class="logo-image" src="/logo-navbar.png" alt="ChatBot Factory" width="232" height="70" decoding="async" fetchpriority="high">
-    </a>
+<main class="landing-page" [class.dark-mode]="darkMode()">
+  <header class="site-header" [class.raised]="headerRaised()">
+    <div class="header-inner">
+      <a class="brand" routerLink="/" aria-label="ChatBot Factory home" (click)="closeMobileMenu()">
+        <img src="/logo-navbar.png" alt="ChatBot Factory" width="232" height="70" decoding="async" fetchpriority="high">
+      </a>
 
-    <nav class="main-nav" aria-label="Landing navigation">
-      <a href="#home">Home</a>
-      <a href="#included">About</a>
-      <a href="#features">Elements</a>
-      <a href="#testimonials">Pages v</a>
-    </nav>
+      <nav class="desktop-nav" aria-label="Landing navigation">
+        <a href="#product">Product</a>
+        <a href="#features">Features</a>
+        <a href="#how-it-works">How it works</a>
+        <a routerLink="/privacy-policy">Documentation</a>
+      </nav>
 
-    <div class="header-actions">
-      <button class="icon-button" type="button" aria-label="Search">
-        <span></span>
-      </button>
-      <span class="divider"></span>
-      <button class="theme-toggle" type="button" aria-label="Theme switcher">
-        <span>*</span>
-      </button>
-      <a class="outline-button" routerLink="/login">Login</a>
-      <a class="solid-button header-register" routerLink="/register">Register</a>
+      <div class="header-actions">
+        <button
+          class="theme-button"
+          type="button"
+          [attr.aria-label]="darkMode() ? 'Switch to light mode' : 'Switch to dark mode'"
+          [attr.title]="darkMode() ? 'Switch to light mode' : 'Switch to dark mode'"
+          (click)="toggleTheme()">
+          <svg *ngIf="!darkMode()" lucideMoon size="18" aria-hidden="true"></svg>
+          <svg *ngIf="darkMode()" lucideSun size="18" aria-hidden="true"></svg>
+        </button>
+        <a class="ghost-button" routerLink="/login">Sign in</a>
+        <a class="primary-button" routerLink="/register">
+          <span>Start building</span>
+          <svg lucideArrowRight size="17" aria-hidden="true"></svg>
+        </a>
+        <button
+          class="mobile-menu-button"
+          type="button"
+          aria-label="Toggle navigation menu"
+          [attr.aria-expanded]="mobileMenuOpen()"
+          aria-controls="mobile-navigation"
+          (click)="toggleMobileMenu()">
+          <svg *ngIf="!mobileMenuOpen()" lucideMenu size="22" aria-hidden="true"></svg>
+          <svg *ngIf="mobileMenuOpen()" lucideX size="22" aria-hidden="true"></svg>
+        </button>
+      </div>
     </div>
+
+    <nav id="mobile-navigation" class="mobile-nav" *ngIf="mobileMenuOpen()" aria-label="Mobile landing navigation">
+      <a href="#product" (click)="closeMobileMenu()">Product</a>
+      <a href="#features" (click)="closeMobileMenu()">Features</a>
+      <a href="#how-it-works" (click)="closeMobileMenu()">How it works</a>
+      <a routerLink="/privacy-policy" (click)="closeMobileMenu()">Documentation</a>
+      <a routerLink="/login" (click)="closeMobileMenu()">Sign in</a>
+      <a class="primary-button mobile-primary" routerLink="/register" (click)="closeMobileMenu()">Start building</a>
+    </nav>
   </header>
 
-  <section id="home" class="hero">
-    <div class="hero-copy">
-      <h1>The Ultimate Platform You Need To Build Your ChatBot Project</h1>
-      <p>
-        ChatBot Factory is a SaaS workspace for INSOMEA teams to create chatbot projects,
-        manage knowledge bases, test flows, and deploy assistants faster.
-      </p>
-    </div>
-
-    <div class="hero-art">
-      <img class="hero-image" src="/astroplate-banner.webp" alt="ChatBot Factory builder illustration" width="1220" height="773" decoding="async" fetchpriority="high">
-    </div>
-  </section>
-
-  <section id="included" class="split-section split-included">
-    <div class="image-mosaic" aria-hidden="true">
-      <img src="/astroplate-service-1.webp" alt="" loading="lazy" decoding="async">
-      <img src="/astroplate-service-2.webp" alt="" loading="lazy" decoding="async">
-      <img src="/astroplate-service-3.webp" alt="" loading="lazy" decoding="async">
-      <img src="/astroplate-service-1.webp" alt="" loading="lazy" decoding="async">
-    </div>
-
-    <div class="section-copy">
-      <h2>What's Included in ChatBot Factory</h2>
-      <p>
-        A complete internal platform for teams that need reliable chatbot creation,
-        publishing, and monitoring without jumping between many tools.
-      </p>
-
-      <ul class="check-list">
-        <li>Project spaces for clients, campaigns, and internal assistants</li>
-        <li>Chatbot flow builder with test pages and version management</li>
-        <li>Knowledge base support for retrieval-augmented answers</li>
-        <li>Public chat links for quick deployment and demonstrations</li>
-        <li>Admin pages for users, conversations, and operational visibility</li>
-        <li>Role-based access for managers, admins, and chat users</li>
-      </ul>
-    </div>
-  </section>
-
-  <section id="features" class="split-section split-features">
-    <div class="section-copy">
-      <h2>Discover the Key Features Of Our ChatBot Builder</h2>
-      <p>
-        The platform gives your team the core pieces required to move from an idea
-        to a deployed conversational assistant with a controlled workflow.
-      </p>
-
-      <ul class="check-list">
-        <li>No-code project setup for creating and organizing chatbot work</li>
-        <li>Customizable flows, documents, versions, and deployment settings</li>
-        <li>UI built for managers who need to test before publishing</li>
-      </ul>
-
-    </div>
-
-    <div class="feature-art" aria-hidden="true">
-      <img src="/astroplate-service-2.webp" alt="" loading="lazy" decoding="async">
-      <img src="/astroplate-service-1.webp" alt="" loading="lazy" decoding="async">
-      <img src="/astroplate-service-3.webp" alt="" loading="lazy" decoding="async">
-      <img src="/astroplate-service-1.webp" alt="" loading="lazy" decoding="async">
-    </div>
-  </section>
-
-  <section class="split-section split-reasons">
-    <div class="reason-art" aria-hidden="true">
-      <img src="/astroplate-service-3.webp" alt="" loading="lazy" decoding="async">
-    </div>
-
-    <div class="section-copy">
-      <h2>The Top Reasons to Choose ChatBot Factory for Your Next Project</h2>
-      <p>
-        Build chatbot experiences with clearer ownership, reusable knowledge, and
-        a simpler route from draft to published version.
-      </p>
-
-      <ul class="check-list">
-        <li>Keep projects, chatbots, documents, and versions connected</li>
-        <li>Test the user experience before exposing the public chat link</li>
-        <li>Give admins the visibility needed to manage teams and usage</li>
-        <li>Use one focused Angular application for daily chatbot operations</li>
-      </ul>
-    </div>
-  </section>
-
-  <section id="testimonials" class="testimonials">
-    <div class="center-heading">
-      <h2>What Users Are Saying About ChatBot Factory</h2>
-      <p>
-        Teams need a clear place to design, validate, and publish chatbot work.
-        These examples show the value the product should communicate.
-      </p>
-    </div>
-
-    <div class="testimonial-grid">
-      <article>
-        <span class="quote">"</span>
-        <p>
-          The builder gives our managers one place to organize chatbot projects,
-          test conversations, and prepare versions before launch.
+  <section class="hero" id="product" aria-labelledby="hero-title">
+    <div class="container hero-grid">
+      <div class="hero-copy reveal">
+        <p class="badge">
+          <svg lucideBot size="16" aria-hidden="true"></svg>
+          AI chatbot workspace for teams
         </p>
-        <div class="person">
-          <img src="/astroplate-avatar.webp" alt="User avatar" loading="lazy" decoding="async">
-          <div>
-            <strong>Project Manager</strong>
-            <span>INSOMEA Team</span>
+        <h1 id="hero-title">Build, test and deploy AI chatbots from one workspace</h1>
+        <p class="hero-text">
+          Create chatbot flows, connect knowledge bases, collaborate with your team and publish production-ready assistants without switching between multiple tools.
+        </p>
+        <div class="hero-actions">
+          <a class="primary-button large" routerLink="/register">
+            <span>Start building</span>
+            <svg lucideArrowRight size="18" aria-hidden="true"></svg>
+          </a>
+          <a class="secondary-button large" href="#showcase">
+            <svg lucidePlay size="18" aria-hidden="true"></svg>
+            <span>View live demo</span>
+          </a>
+        </div>
+        <ul class="supporting-points" aria-label="Core workspace capabilities">
+          <li><svg lucideCheck size="15" aria-hidden="true"></svg>Knowledge bases</li>
+          <li><svg lucideCheck size="15" aria-hidden="true"></svg>Flow testing</li>
+          <li><svg lucideCheck size="15" aria-hidden="true"></svg>Team collaboration</li>
+        </ul>
+      </div>
+
+      <div class="hero-preview reveal" aria-label="ChatBot Factory product preview">
+        <div class="browser-frame">
+          <div class="browser-bar" aria-hidden="true">
+            <span></span><span></span><span></span>
+            <strong>factory.app/workspace</strong>
+          </div>
+          <div class="product-ui">
+            <aside class="mock-sidebar">
+              <div class="mock-logo">C</div>
+              <nav aria-label="Preview workspace navigation">
+                <span><svg lucideBookOpen size="14" aria-hidden="true"></svg>Projects</span>
+                <span class="active"><svg lucideWorkflow size="14" aria-hidden="true"></svg>Flow</span>
+                <span><svg lucideDatabase size="14" aria-hidden="true"></svg>Knowledge</span>
+                <span><svg lucideGitBranch size="14" aria-hidden="true"></svg>Versions</span>
+                <span><svg lucideBarChart3 size="14" aria-hidden="true"></svg>Analytics</span>
+              </nav>
+            </aside>
+            <section class="mock-workspace">
+              <div class="mock-topline">
+                <div>
+                  <span>Customer Support Bot</span>
+                  <strong>Flow Builder</strong>
+                </div>
+                <div class="mock-actions" aria-hidden="true">
+                  <span>BUILD</span>
+                  <span>TEST</span>
+                  <span>DEPLOY</span>
+                </div>
+              </div>
+              <div class="mock-canvas">
+                <div class="workflow-line" aria-hidden="true"></div>
+                <article class="flow-node start">
+                  <small>Start</small>
+                  <strong>Welcome message</strong>
+                </article>
+                <article class="flow-node question">
+                  <small>Intent</small>
+                  <strong>Find account help</strong>
+                </article>
+                <article class="flow-node knowledge">
+                  <small>RAG</small>
+                  <strong>Search policies.pdf</strong>
+                </article>
+                <article class="flow-node publish">
+                  <small>Deploy</small>
+                  <strong>Public chat link</strong>
+                </article>
+              </div>
+              <div class="mock-inspector">
+                <div>
+                  <span>Readiness</span>
+                  <strong>Ready to publish</strong>
+                </div>
+                <div>
+                  <span>Sources</span>
+                  <strong>18 documents</strong>
+                </div>
+                <div>
+                  <span>Version</span>
+                  <strong>v4 active</strong>
+                </div>
+              </div>
+            </section>
           </div>
         </div>
-      </article>
-
-      <article>
-        <span class="quote">"</span>
-        <p>
-          Knowledge base management makes the assistant easier to control because
-          answers can be connected to approved documents.
-        </p>
-        <div class="person">
-          <img src="/astroplate-avatar.webp" alt="User avatar" loading="lazy" decoding="async">
-          <div>
-            <strong>Content Lead</strong>
-            <span>Support Operations</span>
-          </div>
-        </div>
-      </article>
-
-      <article>
-        <span class="quote">"</span>
-        <p>
-          Public chat pages and versions make demos cleaner. We can show clients
-          the latest stable chatbot without exposing builder pages.
-        </p>
-        <div class="person">
-          <img src="/astroplate-avatar.webp" alt="User avatar" loading="lazy" decoding="async">
-          <div>
-            <strong>Delivery Lead</strong>
-            <span>Client Projects</span>
-          </div>
-        </div>
-      </article>
-    </div>
-
-    <div class="slider-dots" aria-hidden="true">
-      <span></span>
-      <span></span>
-      <span class="active"></span>
-      <span></span>
+        <img class="astronaut" src="/astroplate-cta.webp" alt="" aria-hidden="true" loading="eager" fetchpriority="high" decoding="async">
+      </div>
     </div>
   </section>
 
-  <section class="cta-section">
-    <img src="/astroplate-cta.webp" alt="Chatbot launch illustration" loading="lazy" decoding="async">
-    <div>
-      <h2>Ready to build your next chatbot project?</h2>
-      <p>
-        Open the workspace and continue creating, testing, and publishing your
-        chatbot experiences with ChatBot Factory.
-      </p>
+  <section class="capability-strip" aria-label="Platform capabilities">
+    <div class="container strip-grid">
+      <span><svg lucideBookOpen size="18" aria-hidden="true"></svg>Documents and knowledge</span>
+      <span><svg lucideWorkflow size="18" aria-hidden="true"></svg>Visual conversation flows</span>
+      <span><svg lucideMessageSquareText size="18" aria-hidden="true"></svg>Assistant testing</span>
+      <span><svg lucideUsers size="18" aria-hidden="true"></svg>Admin visibility</span>
+    </div>
+  </section>
+
+  <section class="section benefits" aria-labelledby="benefits-title">
+    <div class="container">
+      <div class="section-heading">
+        <p class="eyebrow">Primary benefits</p>
+        <h2 id="benefits-title">Move chatbot work from draft to launch with fewer handoffs</h2>
+      </div>
+      <div class="benefit-grid">
+        <article class="benefit-card">
+          <span class="card-icon"><svg lucideRocket size="22" aria-hidden="true"></svg></span>
+          <h3>Build faster</h3>
+          <p>Design chatbot flows, organize projects and reuse components in a focused builder workspace.</p>
+        </article>
+        <article class="benefit-card">
+          <span class="card-icon"><svg lucideBrainCircuit size="22" aria-hidden="true"></svg></span>
+          <h3>Answer from trusted knowledge</h3>
+          <p>Connect documents and knowledge sources for retrieval-augmented responses grounded in approved content.</p>
+        </article>
+        <article class="benefit-card">
+          <span class="card-icon"><svg lucideShieldCheck size="22" aria-hidden="true"></svg></span>
+          <h3>Publish with confidence</h3>
+          <p>Test, version and validate assistants before exposing a public chat experience.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="showcase" id="showcase" aria-labelledby="showcase-title">
+    <div class="container showcase-grid">
+      <div class="showcase-copy">
+        <p class="eyebrow">Product showcase</p>
+        <h2 id="showcase-title">One workspace connects the full chatbot lifecycle</h2>
+        <p>
+          ChatBot Factory keeps projects, flow design, knowledge uploads, testing, versions and operational visibility close together so teams can move with shared context.
+        </p>
+        <div class="showcase-tabs" aria-label="Workspace areas">
+          <span>Projects</span>
+          <span>Flow builder</span>
+          <span>Knowledge</span>
+          <span>Testing</span>
+          <span>Analytics</span>
+        </div>
+      </div>
+      <div class="showcase-panel" aria-label="Workspace dashboard preview">
+        <div class="panel-top">
+          <div>
+            <span>Workspace</span>
+            <strong>Manage your AI Workspaces</strong>
+          </div>
+          <button type="button" tabindex="-1">New Project</button>
+        </div>
+        <div class="metric-row">
+          <span><strong>Projects</strong>Organize workspaces</span>
+          <span><strong>Assistants</strong>Build chatbot flows</span>
+          <span><strong>Documents</strong>Ground responses</span>
+          <span><strong>Versions</strong>Publish safely</span>
+        </div>
+        <div class="workspace-cards">
+          <article>
+            <span class="status ready">Ready</span>
+            <h3>Client Help Center</h3>
+            <p>Support assistant with policy knowledge and published version.</p>
+          </article>
+          <article>
+            <span class="status draft">Draft</span>
+            <h3>HR Onboarding</h3>
+            <p>Internal answers connected to onboarding documents.</p>
+          </article>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section features" id="features" aria-labelledby="features-title">
+    <div class="container">
+      <div class="section-heading compact">
+        <p class="eyebrow">Features</p>
+        <h2 id="features-title">Everything needed to operate reliable assistants</h2>
+      </div>
+      <div class="feature-grid">
+        <article class="feature-card feature-flow" tabindex="0">
+          <div class="feature-copy">
+            <span class="tech-label">BUILD</span>
+            <h3>Visual flow builder</h3>
+            <p>Create and validate conversation paths in the dedicated builder.</p>
+          </div>
+          <div class="mini-flow" aria-hidden="true">
+            <span>Start</span>
+            <span>Question</span>
+            <span>Knowledge</span>
+            <span>Reply</span>
+          </div>
+        </article>
+        <article class="feature-card feature-knowledge" tabindex="0">
+          <div class="feature-copy">
+            <span class="tech-label">SOURCE</span>
+            <h3>Knowledge bases</h3>
+            <p>Upload documents, inspect chunks and monitor indexing readiness.</p>
+          </div>
+          <div class="file-stack" aria-hidden="true">
+            <span>policies.pdf <b>indexed</b></span>
+            <span>support.md <b>ready</b></span>
+            <span>faq.csv <b>queued</b></span>
+          </div>
+        </article>
+        <article class="feature-card feature-test" tabindex="0">
+          <div class="feature-copy">
+            <span class="tech-label">TEST</span>
+            <h3>Testing workspace</h3>
+            <p>Ask questions and test flow behavior before a version is published.</p>
+          </div>
+          <div class="chat-mini" aria-hidden="true">
+            <span>How do I reset access?</span>
+            <strong>Answer drafted from approved sources.</strong>
+          </div>
+        </article>
+        <article class="feature-card feature-version" tabindex="0">
+          <div class="feature-copy">
+            <span class="tech-label">VERSION</span>
+            <h3>Version management</h3>
+            <p>Create, duplicate, archive and publish assistant versions with control.</p>
+          </div>
+          <div class="version-pills" aria-hidden="true">
+            <span>v1 archived</span>
+            <span>v2 draft</span>
+            <span>v3 active</span>
+          </div>
+        </article>
+        <article class="feature-card feature-roles" tabindex="0">
+          <div class="feature-copy">
+            <span class="tech-label">ACCESS</span>
+            <h3>Role access</h3>
+            <p>Keep managers, builders and administrators aligned with role-aware routes.</p>
+          </div>
+          <div class="role-badges" aria-hidden="true">
+            <span>Manager</span>
+            <span>Admin</span>
+            <span>Chat user</span>
+          </div>
+        </article>
+        <article class="feature-card feature-publish" tabindex="0">
+          <div class="feature-copy">
+            <span class="tech-label">DEPLOY</span>
+            <h3>Publishing and operational visibility</h3>
+            <p>Publish a validated version, expose the public chat route and review platform activity.</p>
+          </div>
+          <div class="publish-panel" aria-hidden="true">
+            <span class="status ready">Published</span>
+            <strong>/public-chat/:chatbotId</strong>
+            <small>Conversations and runtime logs remain visible to administrators.</small>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section steps" id="how-it-works" aria-labelledby="steps-title">
+    <div class="container">
+      <div class="section-heading">
+        <p class="eyebrow">How it works</p>
+        <h2 id="steps-title">Launch in three controlled steps</h2>
+      </div>
+      <div class="step-list">
+        <article>
+          <span>01</span>
+          <h3>Create a project</h3>
+          <p>Configure the chatbot, team and environment.</p>
+        </article>
+        <article>
+          <span>02</span>
+          <h3>Add knowledge and flows</h3>
+          <p>Upload documents and design the conversation logic.</p>
+        </article>
+        <article>
+          <span>03</span>
+          <h3>Test and publish</h3>
+          <p>Validate responses, create a version and deploy the public assistant.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section roles" aria-labelledby="roles-title">
+    <div class="container roles-grid">
+      <div>
+        <p class="eyebrow">Use cases</p>
+        <h2 id="roles-title">Built for the teams running chatbot operations</h2>
+      </div>
+      <div class="role-cards">
+        <article><h3>Managers</h3><p>Organize projects, teams and publishing workflows.</p></article>
+        <article><h3>Chatbot builders</h3><p>Create knowledge, flows, tests and versions.</p></article>
+        <article><h3>Administrators</h3><p>Manage users, roles, conversations and platform visibility.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="final-cta" aria-labelledby="cta-title">
+    <div class="container cta-card">
+      <div>
+        <p class="eyebrow">Get started</p>
+        <h2 id="cta-title">Ready to launch your next chatbot?</h2>
+        <p>Create a workspace, connect your knowledge and test your assistant from one focused platform.</p>
+        <div class="cta-actions">
+          <a class="primary-button large" routerLink="/register">Create workspace</a>
+          <a class="secondary-button large" routerLink="/login">Sign in</a>
+        </div>
+      </div>
+      <div class="mini-product" aria-hidden="true">
+        <img src="/astroplate-cta.webp" alt="" loading="lazy" decoding="async">
+        <div>
+          <span>Published</span>
+          <strong>Public assistant link is ready</strong>
+        </div>
+      </div>
     </div>
   </section>
 
   <footer class="footer">
-    <a class="logo" routerLink="/">
-      <img class="logo-image" src="/logo-navbar.png" alt="ChatBot Factory" width="232" height="70" loading="lazy" decoding="async">
-    </a>
-
-    <nav aria-label="Footer navigation">
-      <a href="#features">Elements</a>
-      <a routerLink="/login">Login</a>
-      <a routerLink="/register">Register</a>
-    </nav>
-
-    <p>Designed for INSOMEA chatbot operations.</p>
+    <div class="container footer-grid">
+      <div class="footer-brand">
+        <a class="brand" routerLink="/" aria-label="ChatBot Factory home">
+          <img src="/logo-navbar.png" alt="ChatBot Factory" width="232" height="70" loading="lazy" decoding="async">
+        </a>
+        <p>Build and manage reliable AI assistants.</p>
+      </div>
+      <nav aria-label="Product links">
+        <h2>Product</h2>
+        <a href="#features">Features</a>
+        <a href="#showcase">Knowledge bases</a>
+        <a href="#showcase">Testing</a>
+        <a href="#how-it-works">Publishing</a>
+      </nav>
+      <nav aria-label="Resource links">
+        <h2>Resources</h2>
+        <a routerLink="/privacy-policy">Documentation</a>
+        <a routerLink="/privacy-policy">Support</a>
+      </nav>
+      <nav aria-label="Account links">
+        <h2>Account</h2>
+        <a routerLink="/login">Sign in</a>
+        <a routerLink="/register">Register</a>
+      </nav>
+    </div>
+    <div class="container footer-bottom">
+      <span>Copyright 2026 ChatBot Factory.</span>
+      <a routerLink="/privacy-policy">Privacy</a>
+    </div>
   </footer>
 </main>

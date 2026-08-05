@@ -2,18 +2,21 @@ import { CommonModule } from '@angular/common';
 import { Component, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
+import { LucideEye, LucideEyeOff, LucideLockKeyhole } from '@lucide/angular';
 import { AuthService } from '../../services/auth';
 
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule],
+  imports: [CommonModule, FormsModule, RouterModule, LucideEye, LucideEyeOff, LucideLockKeyhole],
   templateUrl: './login.component.html',
   styleUrls: ['./login.component.css']
 })
 export class LoginComponent {
   email = '';
   password = '';
+  showPassword = signal(false);
+  submitted = signal(false);
   error = signal('');
   message = signal('');
   loading = signal(false);
@@ -24,6 +27,11 @@ export class LoginComponent {
   ) {}
 
   login() {
+    this.submitted.set(true);
+    if (!this.email || !this.password || this.loading()) {
+      return;
+    }
+
     this.loading.set(true);
     this.error.set('');
     this.message.set('');
@@ -38,5 +46,9 @@ export class LoginComponent {
         this.loading.set(false);
       }
     });
+  }
+
+  togglePasswordVisibility() {
+    this.showPassword.update(show => !show);
   }
 }

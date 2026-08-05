@@ -4,7 +4,7 @@
       <span class="lifecycle-header-icon"><svg lucideBot size="18" aria-hidden="true"></svg></span>
       <div>
         <p class="eyebrow">{{ project()?.name || ('Project ' + projectId) }}</p>
-        <h2>Chatbot lifecycle</h2>
+        <h2>Assistants</h2>
         <p class="muted">Create, configure, publish, and deploy assistants for this workspace.</p>
       </div>
     </div>
@@ -16,7 +16,7 @@
       </button>
       <button class="lifecycle-create-button" type="button" (click)="openWizard()" [disabled]="isArchivedProject()">
         <svg lucidePlus size="14" aria-hidden="true"></svg>
-        <span>Create Chatbot</span>
+        <span>Create assistant</span>
       </button>
     </div>
   </header>
@@ -59,15 +59,15 @@
 
   <section *ngIf="!loading() && chatbots().length === 0" class="empty-state">
     <div class="empty-icon">CB</div>
-    <h3>No chatbots in this project</h3>
-    <p>Create a draft chatbot, then continue directly into the Flow Builder.</p>
+    <h3>No assistants in this project</h3>
+    <p>Create a draft assistant, then continue directly into the Flow Builder.</p>
     <button class="lifecycle-create-button" type="button" (click)="openWizard()" [disabled]="isArchivedProject()">
       <svg lucidePlus size="14" aria-hidden="true"></svg>
-      <span>Create Chatbot</span>
+      <span>Create assistant</span>
     </button>
   </section>
 
-  <section *ngIf="loading() && chatbots().length === 0" class="assistant-grid skeleton-grid" aria-label="Loading chatbots">
+  <section *ngIf="loading() && chatbots().length === 0" class="assistant-grid skeleton-grid" aria-label="Loading assistants">
     <article class="assistant-card skeleton-card" *ngFor="let item of [1, 2, 3, 4]">
       <span></span>
       <span></span>
@@ -75,14 +75,14 @@
     </article>
   </section>
 
-  <p *ngIf="refreshing() && chatbots().length > 0" class="muted inline-status">Refreshing chatbots...</p>
+  <p *ngIf="refreshing() && chatbots().length > 0" class="muted inline-status">Refreshing assistants...</p>
 
   <section *ngIf="chatbots().length > 0" class="assistant-grid" [class.refreshing]="refreshing()">
     <article *ngFor="let bot of pagedChatbots(); let i = index" class="assistant-card">
       <div class="assistant-card-header">
         <div class="assistant-avatar" [ngClass]="assistantAvatarClass(i)">{{ (bot.name || 'C').slice(0, 1).toUpperCase() }}</div>
         <div class="assistant-identity">
-          <strong>{{ bot.name || ('Chatbot ' + bot.id) }}</strong>
+          <strong>{{ bot.name || ('Assistant ' + bot.id) }}</strong>
           <span class="assistant-status" [class.live]="assistantLifecycleStatus(bot) === 'live'" [class.draft]="assistantLifecycleStatus(bot) === 'draft'" [class.attention]="assistantLifecycleStatus(bot) === 'attention'">
             {{ assistantStatusLabel(bot) }}
           </span>
@@ -110,11 +110,16 @@
         <span><svg lucideClock3 size="13" aria-hidden="true"></svg>{{ assistantUpdatedLabel(bot) }}</span>
       </div>
 
-      <button class="assistant-open-button" type="button" (click)="openPanel(bot, 'overview')">
-        <svg lucideGrid2X2 size="14" aria-hidden="true"></svg>
-        <span>Open Assistant</span>
-        <svg lucideArrowRight size="14" aria-hidden="true"></svg>
-      </button>
+      <div class="assistant-card-actions">
+        <button class="assistant-open-button" type="button" [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id]">
+          <span>Open assistant</span>
+          <svg lucideArrowRight size="14" aria-hidden="true"></svg>
+        </button>
+        <button class="assistant-info-button" type="button" (click)="openPanel(bot, 'overview')" aria-label="View assistant info">
+          <svg lucideGrid2X2 size="14" aria-hidden="true"></svg>
+          <span>Info</span>
+        </button>
+      </div>
     </article>
   </section>
 
@@ -141,26 +146,49 @@
     id="assistant-actions-menu"
     class="action-popover"
     role="menu"
+    aria-label="Assistant actions"
     [style.top.px]="actionMenuPosition().top"
     [style.left.px]="actionMenuPosition().left"
     (click)="$event.stopPropagation()">
-    <button *ngIf="!isArchivedProject()" type="button" role="menuitem" [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'flow']" (click)="closeActionMenu()">
-      Flow Builder
-    </button>
-    <button *ngIf="!isArchivedProject()" type="button" role="menuitem" [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'knowledge']" (click)="closeActionMenu()">
-      Knowledge Base
-    </button>
-    <button type="button" role="menuitem" [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'versions']" (click)="closeActionMenu()">
-      Versions
-    </button>
-    <button type="button" role="menuitem" [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'analytics']" (click)="closeActionMenu()">
-      Analytics
-    </button>
-    <button type="button" role="menuitem" [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'conversations']" (click)="closeActionMenu()">
-      Conversations
-    </button>
-    <button *ngIf="!isArchivedProject()" type="button" role="menuitem" (click)="openPanel(bot, 'deploy')">Deploy</button>
-    <button *ngIf="!isArchivedProject()" type="button" role="menuitem" (click)="openPanel(bot, 'settings')">Settings</button>
+    <div class="menu-group" role="group" aria-label="Build">
+      <span class="menu-group-label">Build</span>
+      <button *ngIf="!isArchivedProject()" type="button" role="menuitem" [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'flow']" (click)="closeActionMenu()">
+        <span class="menu-icon">FL</span>
+        <span>Flow Builder</span>
+      </button>
+      <button *ngIf="!isArchivedProject()" type="button" role="menuitem" [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'knowledge']" (click)="closeActionMenu()">
+        <span class="menu-icon">KB</span>
+        <span>Knowledge</span>
+      </button>
+      <button type="button" role="menuitem" [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'versions']" (click)="closeActionMenu()">
+        <span class="menu-icon">V</span>
+        <span>Versions</span>
+      </button>
+    </div>
+
+    <div class="menu-group" role="group" aria-label="Operate">
+      <span class="menu-group-label">Operate</span>
+      <button type="button" role="menuitem" [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'conversations']" (click)="closeActionMenu()">
+        <span class="menu-icon">CH</span>
+        <span>Conversations</span>
+      </button>
+      <button type="button" role="menuitem" [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'analytics']" (click)="closeActionMenu()">
+        <span class="menu-icon">AN</span>
+        <span>Analytics</span>
+      </button>
+      <button *ngIf="!isArchivedProject()" type="button" role="menuitem" [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'deployment']" (click)="closeActionMenu()">
+        <span class="menu-icon">DP</span>
+        <span>Deploy</span>
+      </button>
+    </div>
+
+    <div class="menu-group" role="group" aria-label="Manage">
+      <span class="menu-group-label">Manage</span>
+      <button *ngIf="!isArchivedProject()" type="button" role="menuitem" [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'settings']" (click)="closeActionMenu()">
+        <span class="menu-icon">ST</span>
+        <span>Settings</span>
+      </button>
+    </div>
   </div>
 </div>
 
@@ -171,51 +199,72 @@
   (finishWizard)="finishWizard($event)">
 </app-assistant-creation-wizard>
 
-<section *ngIf="detailsLoading() || selectedDetails()" class="details-overlay">
-  <div class="details-modal">
-    <button class="close-button" (click)="closeDetails()">x</button>
-    <p *ngIf="detailsLoading()" class="muted">Loading chatbot...</p>
+<section *ngIf="detailsLoading() || selectedDetails()" class="details-overlay assistant-info-overlay">
+  <div class="details-modal assistant-info-modal">
+    <button class="close-button" type="button" aria-label="Close assistant info" (click)="closeDetails()">x</button>
+    <p *ngIf="detailsLoading()" class="muted">Loading assistant...</p>
 
     <ng-container *ngIf="selectedDetails() as details">
-      <p class="eyebrow">{{ details.project?.name }}</p>
-
       <ng-container [ngSwitch]="detailsMode()">
-        <section *ngSwitchCase="'overview'" class="modal-section">
-          <div class="overview-header">
-            <div>
+        <section *ngSwitchCase="'overview'" class="modal-section assistant-info-panel">
+          <header class="info-hero">
+            <div class="info-avatar">{{ (details.name || 'A').slice(0, 1).toUpperCase() }}</div>
+            <div class="info-title">
+              <p class="eyebrow">{{ details.project?.name || 'Project workspace' }}</p>
               <h2>{{ details.name }}</h2>
-              <div class="overview-badges">
-                <span class="overview-badge category">{{ assistantPurposeLabel(details.purpose || details.assistant_type) }}</span>
-                <span class="overview-badge" [class.draft]="!details.is_active">{{ details.is_active ? 'Active' : 'Draft' }}</span>
-              </div>
+              <p>{{ details.description || 'No description has been added yet.' }}</p>
             </div>
-          </div>
+            <span class="assistant-status" [class.live]="details.is_active" [class.draft]="!details.is_active">
+              {{ details.is_active ? 'Live' : 'Draft' }}
+            </span>
+          </header>
 
-          <p class="overview-description">{{ details.description || 'No description' }}</p>
-
-          <div class="overview-definition-list">
-            <div>
-              <span>Status</span>
-              <strong>{{ details.is_active ? 'Active' : 'Draft' }}</strong>
-            </div>
-            <div>
+          <div class="info-metrics">
+            <article>
+              <span>Purpose</span>
+              <strong>{{ assistantPurposeLabel(details.purpose || details.assistant_type) }}</strong>
+            </article>
+            <article>
               <span>Language</span>
               <strong>{{ assistantLanguageLabel(details.language) }}</strong>
-            </div>
-            <div>
+            </article>
+            <article>
               <span>Channel</span>
               <strong>{{ assistantChannelLabel(details.channel) }}</strong>
-            </div>
-            <div>
-              <span>Creation Method</span>
+            </article>
+            <article>
+              <span>Creation</span>
               <strong>{{ assistantCreationLabel(details.build_method || details.creation_mode) }}</strong>
-            </div>
+            </article>
           </div>
 
-          <div class="overview-date-row">
+          <section class="info-workflow" aria-label="Assistant workflow shortcuts">
+            <a [routerLink]="['/dashboard/projects', projectId, 'chatbots', details.id]" (click)="closeDetails()">
+              <span>OV</span>
+              <strong>Overview</strong>
+              <small>Open workspace</small>
+            </a>
+            <a [routerLink]="['/dashboard/projects', projectId, 'chatbots', details.id, 'flow']" (click)="closeDetails()">
+              <span>FL</span>
+              <strong>Flow</strong>
+              <small>Build logic</small>
+            </a>
+            <a [routerLink]="['/dashboard/projects', projectId, 'chatbots', details.id, 'knowledge']" (click)="closeDetails()">
+              <span>KB</span>
+              <strong>Knowledge</strong>
+              <small>Manage sources</small>
+            </a>
+            <a [routerLink]="['/dashboard/projects', projectId, 'chatbots', details.id, 'settings']" (click)="closeDetails()">
+              <span>ST</span>
+              <strong>Settings</strong>
+              <small>Edit profile</small>
+            </a>
+          </section>
+
+          <footer class="info-footer">
             <span>Created {{ details.created_at | date:'mediumDate' }}</span>
             <span>Updated {{ (details.updated_at || details.created_at) | date:'mediumDate' }}</span>
-          </div>
+          </footer>
         </section>
 
         <section *ngSwitchCase="'deploy'" class="deploy-panel channels-deploy">
@@ -232,7 +281,7 @@
 
           <div class="architecture-note">
             <strong>Flow Builder</strong>
-            <span>Unified Chatbot Runtime</span>
+            <span>Unified Assistant Runtime</span>
             <span>Channel Adapters</span>
             <em>Public Chat / Web Widget / REST API</em>
           </div>

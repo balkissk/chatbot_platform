@@ -46,7 +46,7 @@ def _is_silent_input(node: FlowNode) -> bool:
 
 
 def _is_user_input_node(node: FlowNode) -> bool:
-    return node.type in {"question", "buttons", "collect_name", "collect_email", "collect_phone"}
+    return node.type in {"question", "buttons", "collect_name", "collect_email", "collect_phone", "meeting_scheduler"}
 
 
 def _string_items(value) -> list[str]:
@@ -105,7 +105,6 @@ ADVANCED_PLACEHOLDER_TYPES = {
     "knowledge_search",
     "confidence_check",
     "lead_score",
-    "meeting_scheduler",
 }
 
 

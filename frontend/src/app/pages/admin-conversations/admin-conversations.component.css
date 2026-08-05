@@ -12,7 +12,7 @@
 }
 
 .eyebrow {
-  color: #1677FF;
+  color: var(--brand-primary);
   font-size: 12px;
   font-weight: 700;
   margin: 0 0 4px;
@@ -43,7 +43,7 @@ input {
 }
 
 button {
-  background: #1677FF;
+  background: var(--brand-primary);
   border: 0;
   border-radius: 6px;
   color: white;
@@ -87,7 +87,7 @@ button.secondary {
 }
 
 .session-row.selected {
-  border-color: #1677FF;
+  border-color: var(--brand-primary);
 }
 
 .session-row p,
@@ -97,9 +97,9 @@ button.secondary {
 }
 
 .session-row span {
-  background: #EAF3FF;
+  background: var(--brand-primary-soft);
   border-radius: 999px;
-  color: #1677FF;
+  color: var(--brand-primary);
   padding: 4px 8px;
 }
 
@@ -124,7 +124,7 @@ button.secondary {
 }
 
 .message span {
-  color: #1677FF;
+  color: var(--brand-primary);
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
@@ -154,4 +154,40 @@ button.secondary {
     align-items: stretch;
     flex-direction: column;
   }
+}
+
+.eyebrow {
+  color: var(--brand-primary-hover);
+  font-family: var(--font-mono);
+  letter-spacing: .08em;
+}
+
+button,
+.primary {
+  background: linear-gradient(135deg, var(--brand-primary-hover), var(--brand-primary));
+  border-color: var(--brand-primary);
+}
+
+input:focus,
+select:focus {
+  border-color: var(--brand-primary);
+  box-shadow: var(--ds-ring);
+}
+
+.session-row.selected {
+  border-color: var(--brand-primary);
+  box-shadow: inset 4px 0 0 var(--brand-primary);
+}
+
+.session-row span,
+.message span {
+  background: var(--brand-primary-soft);
+  border-radius: var(--ds-radius-sm);
+  color: var(--brand-primary-hover);
+}
+
+.options,
+.sources {
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
 }
