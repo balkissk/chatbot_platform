@@ -6,7 +6,7 @@ name: Build and deploy Node.js app to Azure Web App - chatbot-factory-frontend-b
 on:
   push:
     branches:
-      - main
+      - master
     paths:
       - 'frontend/**'
       - '.github/workflows/*frontend*'
