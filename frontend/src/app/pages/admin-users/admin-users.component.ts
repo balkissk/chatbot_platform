@@ -25,6 +25,7 @@ export class AdminUsersComponent implements OnInit {
   formSubmitted = signal(false);
   selectedUser = signal<any | null>(null);
   confirmAction = signal<{ user: any; status: UserStatus } | null>(null);
+  deleteConfirmation = signal<any | null>(null);
   openMenuId = signal<number | undefined>(undefined);
 
   search = '';
@@ -36,7 +37,6 @@ export class AdminUsersComponent implements OnInit {
   newUser = {
     name: '',
     email: '',
-    password: '',
     role: 'manager'
   };
   private isBrowser: boolean;
@@ -99,8 +99,8 @@ export class AdminUsersComponent implements OnInit {
 
   createUser() {
     this.formSubmitted.set(true);
-    if (!this.newUser.name.trim() || !this.newUser.email.trim() || !this.newUser.password.trim()) {
-      this.createError.set('Name, email, and password are required');
+    if (!this.newUser.name.trim() || !this.newUser.email.trim()) {
+      this.createError.set('Name and email are required');
       return;
     }
 
@@ -110,7 +110,6 @@ export class AdminUsersComponent implements OnInit {
     this.http.post<any>(`${this.baseUrl}/auth/users`, {
       name: this.newUser.name.trim(),
       email: this.newUser.email.trim(),
-      password: this.newUser.password,
       role: this.newUser.role
     }).subscribe({
       next: () => {
@@ -132,6 +131,11 @@ export class AdminUsersComponent implements OnInit {
     this.confirmAction.set({ user, status });
   }
 
+  askDeleteUser(user: any) {
+    this.openMenuId.set(undefined);
+    this.deleteConfirmation.set(user);
+  }
+
   closeConfirmation() {
     if (this.actionId()) return;
     this.confirmAction.set(null);
@@ -141,6 +145,32 @@ export class AdminUsersComponent implements OnInit {
     const action = this.confirmAction();
     if (!action) return;
     this.setStatus(action.user, action.status);
+  }
+
+  closeDeleteConfirmation() {
+    if (this.actionId()) return;
+    this.deleteConfirmation.set(null);
+  }
+
+  confirmDeleteUser() {
+    const user = this.deleteConfirmation();
+    if (!user) return;
+
+    this.actionId.set(user.id);
+    this.error.set('');
+
+    this.http.delete<any>(`${this.baseUrl}/auth/users/${user.id}`).subscribe({
+      next: () => {
+        this.actionId.set(undefined);
+        this.deleteConfirmation.set(null);
+        this.loadUsers();
+      },
+      error: err => {
+        this.error.set(err.error?.detail || 'Could not delete user');
+        this.actionId.set(undefined);
+        this.deleteConfirmation.set(null);
+      }
+    });
   }
 
   setStatus(user: any, status: UserStatus) {
@@ -269,7 +299,7 @@ export class AdminUsersComponent implements OnInit {
       .join('') || 'U';
   }
 
-  fieldInvalid(field: 'name' | 'email' | 'password') {
+  fieldInvalid(field: 'name' | 'email') {
     return this.formSubmitted() && !String(this.newUser[field] || '').trim();
   }
 
@@ -287,7 +317,6 @@ export class AdminUsersComponent implements OnInit {
     this.newUser = {
       name: '',
       email: '',
-      password: '',
       role: 'manager'
     };
   }

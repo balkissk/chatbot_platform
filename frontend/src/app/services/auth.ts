@@ -22,6 +22,10 @@ interface RegisterResponse {
   user: AuthUser;
 }
 
+interface MessageResponse {
+  message: string;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -60,6 +64,17 @@ export class AuthService {
       email,
       password,
       role
+    });
+  }
+
+  forgotPassword(email: string) {
+    return this.http.post<MessageResponse>(`${this.baseUrl}/auth/forgot-password`, { email });
+  }
+
+  resetPassword(token: string, newPassword: string) {
+    return this.http.post<MessageResponse>(`${this.baseUrl}/auth/reset-password`, {
+      token,
+      new_password: newPassword
     });
   }
 

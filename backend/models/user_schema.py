@@ -10,9 +10,31 @@ class UserCreate(BaseModel):
     role: str = "end_user"
 
 
+class AdminUserCreate(BaseModel):
+    name: str
+    email: str
+    role: str = "end_user"
+
+
 class UserLogin(BaseModel):
     email: str
     password: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, value: str) -> str:
+        if len(value) < 8:
+            raise ValueError("New password must be at least 8 characters")
+        return value
 
 
 class UserResponse(BaseModel):

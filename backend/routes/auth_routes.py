@@ -1,16 +1,22 @@
-from datetime import datetime
+from datetime import datetime, timedelta
+from email.message import EmailMessage
+import hashlib
+import os
+import secrets
+import smtplib
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session
 
 from models.chatbot import Chatbot
 from models.project import Project
 from models.user import User
 from models.user_schema import (
-    RegistrationResponse,
+    AdminUserCreate,
+    ForgotPasswordRequest,
+    ResetPasswordRequest,
     TokenResponse,
-    UserCreate,
     UserListResponse,
     UserLogin,
     UserPasswordUpdate,
@@ -19,6 +25,7 @@ from models.user_schema import (
     UserStatsResponse,
     UserStatusUpdate,
 )
+from config.settings import get_settings
 from services.auth import (
     create_access_token,
     get_current_user,
@@ -31,6 +38,78 @@ from services.auth import (
 from services.audit import record_audit_log
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
+PASSWORD_RESET_RESPONSE = "If an account exists for that email, a password reset link has been sent."
+PASSWORD_RESET_TOKEN_MINUTES = 60
+
+
+def hash_reset_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def send_password_reset_email(email: str, reset_link: str) -> None:
+    smtp_host = os.getenv("SMTP_HOST")
+    smtp_from = os.getenv("SMTP_FROM") or os.getenv("SMTP_USERNAME")
+    if not smtp_host or not smtp_from:
+        return
+
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    smtp_username = os.getenv("SMTP_USERNAME")
+    smtp_password = os.getenv("SMTP_PASSWORD")
+    use_tls = os.getenv("SMTP_USE_TLS", "true").strip().lower() != "false"
+
+    message = EmailMessage()
+    message["Subject"] = "Reset your ChatBot Factory password"
+    message["From"] = smtp_from
+    message["To"] = email
+    message.set_content(
+        "Use the link below to reset your ChatBot Factory password. "
+        f"This link expires in {PASSWORD_RESET_TOKEN_MINUTES} minutes.\n\n{reset_link}"
+    )
+
+    with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as smtp:
+        if use_tls:
+            smtp.starttls()
+        if smtp_username and smtp_password:
+            smtp.login(smtp_username, smtp_password)
+        smtp.send_message(message)
+
+
+def send_account_setup_email(email: str, reset_link: str) -> None:
+    smtp_host = os.getenv("SMTP_HOST")
+    smtp_from = os.getenv("SMTP_FROM") or os.getenv("SMTP_USERNAME")
+    if not smtp_host or not smtp_from:
+        return
+
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    smtp_username = os.getenv("SMTP_USERNAME")
+    smtp_password = os.getenv("SMTP_PASSWORD")
+    use_tls = os.getenv("SMTP_USE_TLS", "true").strip().lower() != "false"
+
+    message = EmailMessage()
+    message["Subject"] = "Welcome to ChatBot Factory - Set up your account"
+    message["From"] = smtp_from
+    message["To"] = email
+    message.set_content(
+        "An account has been created for you on ChatBot Factory.\n"
+        "Use the link below to set your password and access your account.\n"
+        f"The link expires in {PASSWORD_RESET_TOKEN_MINUTES} minutes.\n\n"
+        f"Set your password: {reset_link}"
+    )
+
+    with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as smtp:
+        if use_tls:
+            smtp.starttls()
+        if smtp_username and smtp_password:
+            smtp.login(smtp_username, smtp_password)
+        smtp.send_message(message)
+
+
+def create_password_reset_link(user: User, db: Session) -> str:
+    raw_token = secrets.token_urlsafe(32)
+    user.password_reset_token = hash_reset_token(raw_token)
+    user.password_reset_expires_at = datetime.utcnow() + timedelta(minutes=PASSWORD_RESET_TOKEN_MINUTES)
+    db.commit()
+    return f"{get_settings().frontend_base_url}/reset-password?token={raw_token}"
 
 
 def serialize_user(user: User, project_count: int | None = None, chatbot_count: int | None = None) -> UserResponse:
@@ -98,35 +177,42 @@ def serialize_users_with_counts(db: Session, users: list[User]) -> list[UserResp
     ]
 
 
-@router.post("/register", response_model=RegistrationResponse)
-def register(payload: UserCreate, db: Session = Depends(get_db)):
-    existing_user = db.query(User).filter(User.email == payload.email).first()
-    if existing_user:
-        raise HTTPException(status_code=400, detail="Email already exists")
+def user_dependency_summary(db: Session, user_id: int) -> list[str]:
+    dependencies: list[str] = []
 
-    role = normalize_role(payload.role)
-    if role == "admin":
-        admin_exists = db.query(User).filter(User.role == "admin").first()
-        if admin_exists:
-            raise HTTPException(status_code=403, detail="Admin registration is closed")
+    project_count = db.query(Project.id).filter(Project.user_id == user_id).count()
+    if project_count:
+        dependencies.append(f"{project_count} project(s)")
 
-    user = User(
-        name=payload.name,
-        email=payload.email,
-        password_hash=hash_password(payload.password),
-        role=role,
-        status="active",
-        email_verified_at=datetime.utcnow()
-    )
+    rows = db.execute(
+        text(
+            """
+            SELECT tc.table_name, kcu.column_name
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu
+              ON tc.constraint_name = kcu.constraint_name
+             AND tc.constraint_schema = kcu.constraint_schema
+            JOIN information_schema.constraint_column_usage ccu
+              ON ccu.constraint_name = tc.constraint_name
+             AND ccu.constraint_schema = tc.constraint_schema
+            WHERE tc.constraint_type = 'FOREIGN KEY'
+              AND ccu.table_name = 'users'
+              AND ccu.column_name = 'id'
+            """
+        )
+    ).fetchall()
 
-    db.add(user)
-    db.commit()
-    db.refresh(user)
+    for table_name, column_name in rows:
+        if table_name == "audit_logs" and column_name == "actor_user_id":
+            continue
+        count = db.execute(
+            text(f'SELECT COUNT(*) FROM "{table_name}" WHERE "{column_name}" = :user_id'),
+            {"user_id": user_id},
+        ).scalar() or 0
+        if count:
+            dependencies.append(f"{count} {table_name} record(s)")
 
-    return RegistrationResponse(
-        message="Account created. You can now sign in.",
-        user=serialize_user(user)
-    )
+    return dependencies
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -147,6 +233,51 @@ def login(payload: UserLogin, db: Session = Depends(get_db)):
         access_token=create_access_token(user),
         user=serialize_user(user)
     )
+
+
+@router.post("/forgot-password")
+def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    email = payload.email.strip().lower()
+    user = db.query(User).filter(func.lower(User.email) == email).first()
+
+    if user and user.status == "active":
+        reset_link = create_password_reset_link(user, db)
+        try:
+            send_password_reset_email(user.email, reset_link)
+        except Exception:
+            pass
+
+    return {"message": PASSWORD_RESET_RESPONSE}
+
+
+@router.post("/reset-password")
+def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)):
+    token_hash = hash_reset_token(payload.token)
+    user = db.query(User).filter(User.password_reset_token == token_hash).first()
+
+    if (
+        not user
+        or not user.password_reset_expires_at
+        or user.password_reset_expires_at < datetime.utcnow()
+        or user.status != "active"
+    ):
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+
+    user.password_hash = hash_password(payload.new_password)
+    user.password_reset_token = None
+    user.password_reset_expires_at = None
+    db.commit()
+
+    record_audit_log(
+        db,
+        actor=user,
+        action="PASSWORD_RESET",
+        resource_type="user",
+        resource_id=user.id,
+        resource_name=user.name,
+    )
+
+    return {"message": "Password reset successfully. You can now sign in."}
 
 
 @router.get("/me", response_model=UserResponse)
@@ -267,7 +398,7 @@ def list_users(
 
 @router.post("/users", response_model=UserResponse)
 def create_user(
-    payload: UserCreate,
+    payload: AdminUserCreate,
     current_user: User = Depends(require_roles("admin")),
     db: Session = Depends(get_db)
 ):
@@ -278,7 +409,7 @@ def create_user(
     user = User(
         name=payload.name,
         email=payload.email,
-        password_hash=hash_password(payload.password),
+        password_hash=hash_password(secrets.token_urlsafe(32)),
         role=normalize_role(payload.role),
         status="active",
         email_verified_at=datetime.utcnow()
@@ -287,6 +418,12 @@ def create_user(
     db.add(user)
     db.commit()
     db.refresh(user)
+
+    reset_link = create_password_reset_link(user, db)
+    try:
+        send_account_setup_email(user.email, reset_link)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="User created, but setup email could not be sent") from exc
 
     record_audit_log(
         db,
@@ -340,6 +477,32 @@ def update_user_status(
         )
 
     return serialize_user(user)
+
+
+@router.delete("/users/{user_id}")
+def delete_user(
+    user_id: int,
+    current_user: User = Depends(require_roles("admin")),
+    db: Session = Depends(get_db)
+):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account")
+
+    dependencies = user_dependency_summary(db, user.id)
+    if dependencies:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot delete this user because related data exists: {', '.join(dependencies)}."
+        )
+
+    db.delete(user)
+    db.commit()
+
+    return {"message": "User deleted"}
 
 
 def normalize_status(status: str) -> str:

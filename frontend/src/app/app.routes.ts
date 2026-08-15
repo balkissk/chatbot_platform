@@ -16,10 +16,16 @@ export const routes: Routes = [
         .then(m => m.LoginComponent)
   },
   {
-    path: 'register',
+    path: 'forgot-password',
     loadComponent: () =>
-      import('./pages/register/register.component')
-        .then(m => m.RegisterComponent)
+      import('./pages/forgot-password/forgot-password.component')
+        .then(m => m.ForgotPasswordComponent)
+  },
+  {
+    path: 'reset-password',
+    loadComponent: () =>
+      import('./pages/reset-password/reset-password.component')
+        .then(m => m.ResetPasswordComponent)
   },
   {
     path: 'privacy-policy',

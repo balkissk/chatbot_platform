@@ -158,6 +158,13 @@
                   >
                     Activate user
                   </button>
+                  <button
+                    type="button"
+                    [disabled]="actionId() === user.id"
+                    (click)="askDeleteUser(user)"
+                  >
+                    Delete user
+                  </button>
                 </div>
               </div>
             </td>
@@ -203,11 +210,6 @@
         <small *ngIf="fieldInvalid('email')">Email is required.</small>
       </label>
       <label>
-        <span>Password</span>
-        <input name="password" type="password" [(ngModel)]="newUser.password" autocomplete="new-password" [class.invalid]="fieldInvalid('password')" />
-        <small *ngIf="fieldInvalid('password')">Password is required.</small>
-      </label>
-      <label>
         <span>Role</span>
         <select name="role" [(ngModel)]="newUser.role">
           <option value="manager">Manager</option>
@@ -245,6 +247,31 @@
       <span>Last login <strong>{{ selectedUser()?.last_login_at ? (selectedUser()?.last_login_at | date:'medium') : 'Never signed in' }}</strong></span>
       <span *ngIf="selectedUser()?.project_count !== undefined">Project count <strong>{{ selectedUser()?.project_count }}</strong></span>
       <span *ngIf="selectedUser()?.chatbot_count !== undefined">Chatbot count <strong>{{ selectedUser()?.chatbot_count }}</strong></span>
+    </div>
+  </section>
+</div>
+
+<div class="modal-backdrop" *ngIf="deleteConfirmation()" role="dialog" aria-modal="true" aria-labelledby="delete-user-title">
+  <section class="modal-card confirm-modal">
+    <div class="modal-header">
+      <div>
+        <p class="eyebrow">PERMANENT ACTION</p>
+        <h3 id="delete-user-title">Delete this user?</h3>
+      </div>
+      <button type="button" class="close-button" aria-label="Close delete confirmation" (click)="closeDeleteConfirmation()">x</button>
+    </div>
+    <p>This permanently removes the account only if no related platform data exists.</p>
+    <strong>{{ deleteConfirmation()?.name }} - {{ deleteConfirmation()?.email }}</strong>
+    <div class="modal-actions">
+      <button type="button" class="secondary-action" (click)="closeDeleteConfirmation()" [disabled]="!!actionId()">Cancel</button>
+      <button
+        type="button"
+        class="primary-action danger"
+        (click)="confirmDeleteUser()"
+        [disabled]="actionId() === deleteConfirmation()?.id"
+      >
+        {{ actionId() === deleteConfirmation()?.id ? 'Deleting...' : 'Delete User' }}
+      </button>
     </div>
   </section>
 </div>

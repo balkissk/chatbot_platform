@@ -28,6 +28,7 @@
       <div class="field">
         <div class="label-row">
           <label for="login-password">Password</label>
+          <a routerLink="/forgot-password">Forgot password?</a>
         </div>
         <div class="password-control">
           <input
@@ -60,7 +61,6 @@
         {{ loading() ? 'Signing in...' : 'Sign in' }}
       </button>
 
-      <p class="auth-switch">New to ChatBot Factory? <a routerLink="/register">Create an account</a></p>
     </form>
 
     <p class="secure-note">
