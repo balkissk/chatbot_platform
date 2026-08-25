@@ -16,7 +16,7 @@ from models.llm_config import LLMConfig
 from models.project import Project
 from models.project_schema import ProjectCreate
 from models.user import User
-from models.user_schema import UserCreate, UserStatusUpdate
+from models.user_schema import AdminUserCreate, UserStatusUpdate
 from models.version import VersionChatbot
 from models.version_schema import VersionCreate
 from routes.admin_analytics_routes import analytics_audit_logs, dashboard_overview_payload, recent_activity
@@ -121,7 +121,7 @@ class AuditLogTest(unittest.TestCase):
 
     def test_user_disable_creates_audit_log(self):
         created = create_user(
-            UserCreate(name="Manager 2", email="m2@example.com", password="password123", role="manager"),
+            AdminUserCreate(name="Manager 2", email="m2@example.com", role="manager"),
             current_user=self.admin,
             db=self.db,
         )
@@ -145,7 +145,7 @@ class AuditLogTest(unittest.TestCase):
 
     def test_audit_metadata_does_not_contain_secrets_or_messages(self):
         create_user(
-            UserCreate(name="Secret User", email="secret@example.com", password="password123", role="manager"),
+            AdminUserCreate(name="Secret User", email="secret@example.com", role="manager"),
             current_user=self.admin,
             db=self.db,
         )

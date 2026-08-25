@@ -1,20 +1,18 @@
 import { HttpInterceptorFn } from '@angular/common/http';
+import { inject } from '@angular/core';
+import { catchError, throwError } from 'rxjs';
+
+import { AuthService } from './auth';
 
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
-  if (typeof localStorage === 'undefined') {
-    return next(req);
-  }
-
-  const token = localStorage.getItem('chatbot_factory_token');
-
-  if (!token) {
-    return next(req);
-  }
-
-  return next(req.clone({
-    setHeaders: {
-      Authorization: `Bearer ${token}`
-    }
-  }));
+  const auth = inject(AuthService);
+  return next(req.clone({ withCredentials: true })).pipe(
+    catchError(error => {
+      if (error.status === 401 && error.error?.detail === 'Token expired') {
+        auth.expireSession();
+      }
+      return throwError(() => error);
+    })
+  );
 };

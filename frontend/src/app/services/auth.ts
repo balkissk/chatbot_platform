@@ -12,8 +12,6 @@ export interface AuthUser {
 }
 
 interface AuthResponse {
-  access_token: string;
-  token_type: string;
   user: AuthUser;
 }
 
@@ -31,7 +29,6 @@ interface MessageResponse {
 })
 export class AuthService {
   private baseUrl = apiBaseUrl();
-  private tokenKey = 'chatbot_factory_token';
   private userKey = 'chatbot_factory_user';
 
   currentUser = signal<AuthUser | null>(this.readStoredUser());
@@ -41,21 +38,17 @@ export class AuthService {
     private router: Router
   ) {}
 
-  get token() {
-    const storage = this.safeLocalStorage();
-    return storage?.getItem(this.tokenKey) ?? null;
-  }
-
   get isAuthenticated() {
     this.restoreSession();
-    return !!this.token && !!this.currentUser();
+    return !!this.currentUser();
   }
 
   login(email: string, password: string) {
-    return this.http.post<AuthResponse>(`${this.baseUrl}/auth/login`, {
-      email,
-      password
-    });
+    return this.http.post<AuthResponse>(
+      `${this.baseUrl}/auth/login`,
+      { email, password },
+      { withCredentials: true }
+    );
   }
 
   register(name: string, email: string, password: string, role: string) {
@@ -68,20 +61,24 @@ export class AuthService {
   }
 
   forgotPassword(email: string) {
-    return this.http.post<MessageResponse>(`${this.baseUrl}/auth/forgot-password`, { email });
+    return this.http.post<MessageResponse>(
+      `${this.baseUrl}/auth/forgot-password`,
+      { email },
+      { withCredentials: true }
+    );
   }
 
   resetPassword(token: string, newPassword: string) {
-    return this.http.post<MessageResponse>(`${this.baseUrl}/auth/reset-password`, {
-      token,
-      new_password: newPassword
-    });
+    return this.http.post<MessageResponse>(
+      `${this.baseUrl}/auth/reset-password`,
+      { token, new_password: newPassword },
+      { withCredentials: true }
+    );
   }
 
   saveSession(response: AuthResponse) {
     const storage = this.safeLocalStorage();
     if (!storage) return;
-    storage.setItem(this.tokenKey, response.access_token);
     storage.setItem(this.userKey, JSON.stringify(response.user));
     this.currentUser.set(response.user);
   }
@@ -95,13 +92,32 @@ export class AuthService {
   }
 
   logout() {
+    this.http.post<MessageResponse>(`${this.baseUrl}/auth/logout`, {}, { withCredentials: true }).subscribe({
+      next: () => this.clearLocalSession(),
+      error: () => this.clearLocalSession()
+    });
+  }
+
+  expireSession() {
     const storage = this.safeLocalStorage();
     if (storage) {
-      storage.removeItem(this.tokenKey);
       storage.removeItem(this.userKey);
+      storage.removeItem('chatbot_factory_token');
+      storage.setItem('chatbot_factory_session_message', 'Your session has expired. Please sign in again.');
     }
     this.currentUser.set(null);
-    this.router.navigate(['/login']);
+    if (this.router.url !== '/login') {
+      this.router.navigate(['/login']);
+    }
+  }
+
+  consumeSessionMessage() {
+    const storage = this.safeLocalStorage();
+    if (!storage) return '';
+
+    const message = storage.getItem('chatbot_factory_session_message') || '';
+    storage.removeItem('chatbot_factory_session_message');
+    return message;
   }
 
   hasRole(roles: string[]) {
@@ -137,17 +153,17 @@ export class AuthService {
     const storedUser = this.readStoredUser();
     if (storedUser) {
       this.currentUser.set(storedUser);
-      return;
     }
+  }
 
-    const token = this.token;
-    if (!token) return;
-
-    const user = this.readUserFromToken(token);
-    if (user) {
-      storage.setItem(this.userKey, JSON.stringify(user));
-      this.currentUser.set(user);
+  private clearLocalSession() {
+    const storage = this.safeLocalStorage();
+    if (storage) {
+      storage.removeItem(this.userKey);
+      storage.removeItem('chatbot_factory_token');
     }
+    this.currentUser.set(null);
+    this.router.navigate(['/login']);
   }
 
   private safeLocalStorage(): Storage | null {
@@ -162,24 +178,4 @@ export class AuthService {
     return localStorage;
   }
 
-  private readUserFromToken(token: string): AuthUser | null {
-    try {
-      const payloadValue = token.split('.')[1];
-      const base64 = payloadValue.replace(/-/g, '+').replace(/_/g, '/');
-      const paddedBase64 = base64.padEnd(base64.length + (-base64.length % 4), '=');
-      const payload = JSON.parse(atob(paddedBase64));
-      if (!payload?.sub || !payload?.email || !payload?.role) return null;
-      if (!['admin', 'manager', 'end_user'].includes(payload.role)) return null;
-
-      return {
-        id: Number(payload.sub),
-        name: payload.email,
-        email: payload.email,
-        role: payload.role as AuthUser['role'],
-        status: 'active'
-      };
-    } catch {
-      return null;
-    }
-  }
 }

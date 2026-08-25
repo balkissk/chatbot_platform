@@ -4,10 +4,10 @@ import os
 import secrets
 import time
 from typing import Any
+from typing import Annotated
 
 import jwt
-from fastapi import Depends, HTTPException
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi import Cookie, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from config.settings import load_environment
@@ -22,9 +22,9 @@ if not JWT_SECRET:
         raise RuntimeError("JWT_SECRET is required in production.")
     JWT_SECRET = secrets.token_urlsafe(32)
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-JWT_EXPIRES_SECONDS = 60 * 60 * 24
+JWT_EXPIRES_SECONDS = 15 * 60
+AUTH_COOKIE_NAME = "chatbot_factory_session"
 ALLOWED_ROLES = {"admin", "manager", "end_user"}
-security = HTTPBearer()
 
 def get_db():
     db = SessionLocal()
@@ -63,6 +63,18 @@ def verify_password(password: str, password_hash: str) -> bool:
     return hmac.compare_digest(actual_digest, expected_digest)
 
 
+def validate_password_policy(password: str) -> str:
+    if len(password) < 8:
+        raise ValueError("Password must be at least 8 characters")
+    if not any(char.isupper() for char in password):
+        raise ValueError("Password must include at least one uppercase letter")
+    if not any(char.islower() for char in password):
+        raise ValueError("Password must include at least one lowercase letter")
+    if not any(char.isdigit() for char in password):
+        raise ValueError("Password must include at least one number")
+    return password
+
+
 def create_access_token(user: User) -> str:
     payload = {
         "sub": str(user.id),
@@ -72,6 +84,28 @@ def create_access_token(user: User) -> str:
     }
 
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def set_auth_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        key=AUTH_COOKIE_NAME,
+        value=token,
+        max_age=JWT_EXPIRES_SECONDS,
+        httponly=True,
+        secure=ENVIRONMENT == "production",
+        samesite="lax",
+        path="/",
+    )
+
+
+def clear_auth_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=AUTH_COOKIE_NAME,
+        httponly=True,
+        secure=ENVIRONMENT == "production",
+        samesite="lax",
+        path="/",
+    )
 
 
 def decode_token(token: str) -> dict[str, Any]:
@@ -92,10 +126,13 @@ def normalize_role(role: str) -> str:
 
 
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    session_token: Annotated[str | None, Cookie(alias=AUTH_COOKIE_NAME)] = None,
     db: Session = Depends(get_db)
 ) -> User:
-    payload = decode_token(credentials.credentials)
+    if not session_token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    payload = decode_token(session_token)
     user = db.query(User).filter(User.id == int(payload["sub"])).first()
 
     if not user or user.status != "active":
@@ -109,7 +146,7 @@ def require_roles(*roles: str):
 
     def dependency(current_user: User = Depends(get_current_user)) -> User:
         if current_user.role not in allowed:
-            raise HTTPException(status_code=403, detail="Forbidden")
+            raise HTTPException(status_code=403, detail="You do not have permission to access this resource.")
         return current_user
 
     return dependency

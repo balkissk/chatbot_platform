@@ -2,13 +2,13 @@ import { CommonModule } from '@angular/common';
 import { Component, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
-import { LucideEye, LucideEyeOff, LucideLockKeyhole } from '@lucide/angular';
+import { LucideEye, LucideEyeOff, LucideKeyRound, LucideLockKeyhole } from '@lucide/angular';
 import { AuthService } from '../../services/auth';
 
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, LucideEye, LucideEyeOff, LucideLockKeyhole],
+  imports: [CommonModule, FormsModule, RouterModule, LucideEye, LucideEyeOff, LucideKeyRound, LucideLockKeyhole],
   templateUrl: './login.component.html',
   styleUrls: ['./login.component.css']
 })
@@ -24,7 +24,9 @@ export class LoginComponent {
   constructor(
     private auth: AuthService,
     private router: Router
-  ) {}
+  ) {
+    this.message.set(this.auth.consumeSessionMessage());
+  }
 
   login() {
     this.submitted.set(true);

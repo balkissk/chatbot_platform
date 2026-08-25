@@ -18,6 +18,7 @@ export class ForgotPasswordComponent {
   error = signal('');
   message = signal('');
   loading = signal(false);
+  sent = signal(false);
 
   constructor(private auth: AuthService) {}
 
@@ -30,10 +31,12 @@ export class ForgotPasswordComponent {
     this.loading.set(true);
     this.error.set('');
     this.message.set('');
+    this.sent.set(false);
 
     this.auth.forgotPassword(this.email).subscribe({
       next: response => {
-        this.message.set(response.message);
+        this.message.set(response.message || 'If an account exists for this email, a password reset link has been sent.');
+        this.sent.set(true);
         this.loading.set(false);
       },
       error: err => {

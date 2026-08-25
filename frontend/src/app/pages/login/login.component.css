@@ -18,9 +18,9 @@
   --brand-teal: #19c3b1;
   --brand-teal-dark: #087f75;
   --brand-cyan: #72e4da;
-  --ink-deep: #081a2f;
-  --ink: #12263f;
-  --muted: #5f7084;
+  --ink-deep: #061526;
+  --ink: #0b1f35;
+  --muted: #4d6075;
   --surface: rgba(255, 255, 255, .94);
   --surface-muted: #f3f8f8;
   --line: rgba(8, 26, 47, .12);
@@ -93,15 +93,45 @@
 .auth-brand {
   align-items: center;
   display: inline-flex;
+  flex-shrink: 0;
+  gap: 5px;
+  justify-content: flex-start;
   justify-self: start;
   margin-bottom: 4px;
+  text-decoration: none;
+  white-space: nowrap;
 }
 
 .auth-brand img {
   display: block;
-  height: 42px;
+  flex: 0 0 49px;
+  height: 62px;
+  max-height: 62px;
+  max-width: 49px;
+  min-height: 62px;
+  min-width: 49px;
   object-fit: contain;
-  width: auto;
+  width: 49px;
+}
+
+.auth-brand-text {
+  align-items: baseline;
+  display: inline-flex;
+  font-family: FactoryDisplay, Urbanist, Outfit, ui-sans-serif, system-ui, sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  gap: 4px;
+  line-height: 1;
+}
+
+.auth-brand-chatbot {
+  color: var(--ink-deep);
+  font-weight: inherit;
+}
+
+.auth-brand-factory {
+  color: var(--brand-teal);
+  font-weight: inherit;
 }
 
 .eyebrow {
@@ -114,7 +144,7 @@
 }
 
 h1 {
-  color: var(--ink);
+  color: var(--ink-deep);
   font-family: FactoryDisplay, Urbanist, Outfit, ui-sans-serif, system-ui, sans-serif;
   font-size: clamp(30px, 4vw, 36px);
   font-weight: 900;
@@ -143,26 +173,59 @@ h1 {
 .label-row {
   align-items: center;
   display: flex;
+  gap: 12px;
   justify-content: space-between;
 }
 
+.forgot-password-link {
+  align-items: center;
+  border-radius: 999px;
+  color: var(--brand-teal-dark);
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 850;
+  gap: 6px;
+  line-height: 1;
+  padding: 5px 7px;
+  text-decoration: none;
+  transition: background .16s ease, color .16s ease, box-shadow .16s ease;
+  white-space: nowrap;
+}
+
+.forgot-password-link svg {
+  opacity: .76;
+}
+
+.forgot-password-link:hover,
+.forgot-password-link:focus-visible {
+  background: rgba(25, 195, 177, .1);
+  box-shadow: 0 0 0 3px rgba(25, 195, 177, .12);
+  color: var(--brand-teal-dark);
+  outline: 0;
+}
+
 label {
-  color: var(--ink);
+  color: var(--ink-deep);
   font-size: 13px;
   font-weight: 800;
 }
 
 input,
 select {
-  background: color-mix(in srgb, var(--surface) 82%, #ffffff);
-  border: 1px solid var(--line);
+  background: #f8fafc !important;
+  border: 1.5px solid #cbd5e1;
   border-radius: 12px;
-  color: var(--ink);
+  color: #0f172a;
   font-size: 15px;
   height: 50px;
   outline: 0;
   padding: 0 13px;
   width: 100%;
+}
+
+input::placeholder,
+select::placeholder {
+  color: #94a3b8;
 }
 
 select {
@@ -179,22 +242,23 @@ select {
 input:focus,
 select:focus,
 .password-control:focus-within {
-  border-color: var(--brand-teal);
-  box-shadow: 0 0 0 4px rgba(25, 195, 177, .16);
+  border-color: #0f9f92;
+  box-shadow: 0 0 0 3px rgba(15, 159, 146, .10);
 }
 
-input[aria-invalid="true"] {
-  border-color: rgba(220, 38, 38, .72);
+.auth-page input[aria-invalid="true"] {
+  background: #f8fafc !important;
+  border: 1.5px solid #dc2626 !important;
 }
 
-input[aria-invalid="true"]:focus {
-  box-shadow: 0 0 0 4px rgba(220, 38, 38, .12);
+.auth-page input[aria-invalid="true"]:focus {
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, .10) !important;
 }
 
 .password-control {
   align-items: center;
-  background: color-mix(in srgb, var(--surface) 82%, #ffffff);
-  border: 1px solid var(--line);
+  background: #f8fafc !important;
+  border: 1.5px solid #cbd5e1;
   border-radius: 12px;
   display: flex;
   height: 50px;
@@ -214,21 +278,36 @@ input[aria-invalid="true"]:focus {
   box-shadow: none;
 }
 
+.auth-page .password-control:has(input[aria-invalid="true"]) {
+  background: #f8fafc !important;
+  border: 1.5px solid #dc2626 !important;
+}
+
+.auth-page .password-control:has(input[aria-invalid="true"]:focus) {
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, .10) !important;
+}
+
 .password-toggle {
+  align-items: center;
   background: transparent !important;
   border: 0 !important;
-  border-radius: 10px !important;
+  border-radius: 9px !important;
   box-shadow: none !important;
-  color: var(--muted) !important;
-  flex: 0 0 42px;
-  height: 42px !important;
-  min-height: 42px !important;
+  color: #475569 !important;
+  display: inline-flex;
+  flex: 0 0 38px;
+  height: 38px !important;
+  justify-content: center;
+  margin-right: 5px;
+  min-height: 38px !important;
   padding: 0 !important;
+  transition: background .16s ease, color .16s ease, box-shadow .16s ease;
 }
 
 .password-toggle:hover,
 .password-toggle:focus-visible {
-  background: rgba(25, 195, 177, .1) !important;
+  background: rgba(15, 159, 146, .08) !important;
+  box-shadow: none !important;
   color: var(--brand-teal-dark) !important;
   outline: 0;
   transform: none;
@@ -382,8 +461,17 @@ input[aria-invalid="true"]:focus {
   }
 
   .auth-brand img {
-    height: 38px;
-    max-width: 180px;
+    flex-basis: 49px;
+    height: 62px;
+    max-height: 62px;
+    max-width: 49px;
+    min-height: 62px;
+    min-width: 49px;
+    width: 49px;
+  }
+
+  .auth-brand-text {
+    font-size: 17px;
   }
 }
 

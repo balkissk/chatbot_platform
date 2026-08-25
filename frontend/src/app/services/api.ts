@@ -551,15 +551,12 @@ export class ApiService {
 
   async chatStream(data: any, onEvent: (event: any) => void) {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    const token = this.authToken();
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
 
     const requestDispatchedAt = Date.now();
     const response = await fetch(`${this.baseUrl}/chat/stream`, {
       method: 'POST',
       headers,
+      credentials: 'include',
       body: JSON.stringify({
         ...data,
         client_request_dispatched_at_ms: requestDispatchedAt
@@ -769,19 +766,19 @@ export class ApiService {
   }
 
   private ensureCacheScope() {
-    const token = this.authToken();
-    if (token !== this.cacheToken) {
-      this.cacheToken = token;
+    const sessionScope = this.sessionScope();
+    if (sessionScope !== this.cacheToken) {
+      this.cacheToken = sessionScope;
       this.clearProjectCaches();
       this.clearChatbotCaches();
     }
   }
 
-  private authToken() {
+  private sessionScope() {
     if (typeof localStorage === 'undefined' || typeof localStorage.getItem !== 'function') {
       return '';
     }
-    return localStorage.getItem('chatbot_factory_token') || '';
+    return localStorage.getItem('chatbot_factory_user') || '';
   }
 
 }

@@ -109,7 +109,9 @@ PORT=8080
 
 The Angular SSR server serves `/config.js` dynamically from these values, so the frontend does not need local API URLs baked into the bundle.
 
-`FRONTEND_BASE_URL` and `BACKEND_BASE_URL` are used by deployment features to generate public chat links, widget scripts, and REST API URLs. In local development use `FRONTEND_BASE_URL=http://localhost:4200` and `BACKEND_BASE_URL=http://127.0.0.1:8000`.
+`FRONTEND_BASE_URL` is used by the backend to generate absolute frontend links, including password reset links. `FRONTEND_URL` and `ALLOWED_ORIGINS` are CORS inputs and should not be treated as the password reset link source. In local development use `FRONTEND_BASE_URL=http://localhost:4200`; in production set it in Azure App Service application settings to the deployed frontend URL.
+
+`BACKEND_BASE_URL` is used by deployment features to generate widget scripts and REST API URLs. In local development use `BACKEND_BASE_URL=http://127.0.0.1:8000`.
 
 ## Docker Build Examples
 

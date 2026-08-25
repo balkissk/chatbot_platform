@@ -49,9 +49,9 @@
   align-items: center;
   display: inline-flex;
   height: var(--ga-header-height);
-  padding: 0 12px;
+  padding: 0 44px 0 12px;
   position: relative;
-  width: var(--ga-menu-width);
+  width: 260px;
 }
 
 .mobile-menu {
@@ -82,10 +82,12 @@
 .b-brand {
   align-items: center;
   color: var(--ga-text);
-  display: flex;
+  display: inline-flex;
+  flex-shrink: 0;
   font-weight: 700;
-  gap: 8px;
+  gap: 5px;
   text-decoration: none;
+  white-space: nowrap;
 }
 
 .logo-thumb,
@@ -104,19 +106,36 @@
 }
 
 .logo-thumb {
-  background: linear-gradient(135deg, var(--ga-primary-dark), var(--ga-primary));
-  border: 1px solid rgba(24, 185, 168, .38);
-  color: #fff;
-  height: 28px;
-  width: 28px;
+  border-radius: 0;
+  display: block;
+  flex: 0 0 36px;
+  height: 46px;
+  max-height: 46px;
+  max-width: 36px;
+  min-height: 46px;
+  min-width: 36px;
+  object-fit: contain;
+  width: 36px;
 }
 
 .logo-main {
   color: var(--ga-text);
-  font-size: 13px;
-  font-weight: 900;
+  display: inline-flex;
+  font-family: FactoryDisplay, Urbanist, Outfit, ui-sans-serif, system-ui, sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  gap: 3px;
+  line-height: 1;
   letter-spacing: 0;
   white-space: nowrap;
+}
+
+.logo-factory {
+  color: var(--ga-primary);
+}
+
+.logo-main span {
+  font-weight: inherit;
 }
 
 .navbar-collapse {

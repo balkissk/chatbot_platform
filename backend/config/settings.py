@@ -64,6 +64,17 @@ def _database_url_from_parts(environment: str) -> str:
     return url
 
 
+def _frontend_base_url(environment: str) -> str:
+    configured = os.getenv("FRONTEND_BASE_URL")
+    if configured:
+        return configured.rstrip("/")
+
+    if environment == "production":
+        raise RuntimeError("FRONTEND_BASE_URL is required in production.")
+
+    return "http://localhost:4200"
+
+
 @dataclass(frozen=True)
 class Settings:
     environment: str
@@ -75,7 +86,7 @@ class Settings:
 def get_settings() -> Settings:
     environment = load_environment()
     database_url = os.getenv("DATABASE_URL") or _database_url_from_parts(environment)
-    frontend_base_url = (os.getenv("FRONTEND_BASE_URL") or "http://localhost:4200").rstrip("/")
+    frontend_base_url = _frontend_base_url(environment)
     backend_base_url = (os.getenv("BACKEND_BASE_URL") or os.getenv("API_BASE_URL") or "http://127.0.0.1:8000").rstrip("/")
     return Settings(
         environment=environment,

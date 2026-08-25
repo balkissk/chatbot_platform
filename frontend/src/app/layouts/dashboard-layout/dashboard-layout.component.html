@@ -250,9 +250,12 @@
 
   <header class="navbar pcoded-header">
     <div class="m-header">
-      <a [routerLink]="auth.currentUser()?.role === 'admin' ? '/admin/dashboard' : '/dashboard/projects'" class="b-brand">
-        <span class="logo-thumb">C</span>
-        <span class="logo-main">ChatBot Factory</span>
+      <a [routerLink]="auth.currentUser()?.role === 'admin' ? '/admin/dashboard' : '/dashboard/projects'" class="b-brand" aria-label="ChatBot Factory home">
+        <img class="logo-thumb" src="/chatbot-factory-logo-cropped.png" alt="" width="194" height="246" decoding="async">
+        <span class="logo-main" aria-hidden="true">
+          <span>ChatBot</span>
+          <span class="logo-factory">Factory</span>
+        </span>
       </a>
       <button class="mobile-menu menu-button" type="button" title="Toggle sidebar" [attr.aria-label]="navCollapsed ? 'Open navigation' : 'Close navigation'" [attr.aria-expanded]="!navCollapsed" (click)="toggleNav()">
         <svg *ngIf="!navCollapsed" lucidePanelLeftClose size="17" aria-hidden="true"></svg>

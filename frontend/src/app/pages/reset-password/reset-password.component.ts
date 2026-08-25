@@ -36,7 +36,14 @@ export class ResetPasswordComponent {
 
   submit() {
     this.submitted.set(true);
-    if (!this.token || this.loading() || !this.password || !this.confirmPassword || this.passwordMismatch()) {
+    if (
+      !this.token ||
+      this.loading() ||
+      !this.password ||
+      !this.confirmPassword ||
+      this.passwordPolicyError() ||
+      this.passwordMismatch()
+    ) {
       return;
     }
 
@@ -62,6 +69,15 @@ export class ResetPasswordComponent {
 
   passwordMismatch() {
     return Boolean(this.confirmPassword && this.password && this.confirmPassword !== this.password);
+  }
+
+  passwordPolicyError() {
+    if (!this.password) return '';
+    if (this.password.length < 8) return 'Password must be at least 8 characters.';
+    if (!/[A-Z]/.test(this.password)) return 'Password must include at least one uppercase letter.';
+    if (!/[a-z]/.test(this.password)) return 'Password must include at least one lowercase letter.';
+    if (!/\d/.test(this.password)) return 'Password must include at least one number.';
+    return '';
   }
 
   togglePasswordVisibility() {

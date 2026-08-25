@@ -4,8 +4,9 @@ import hashlib
 import os
 import secrets
 import smtplib
+import time
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session
 
@@ -28,11 +29,13 @@ from models.user_schema import (
 from config.settings import get_settings
 from services.auth import (
     create_access_token,
+    clear_auth_cookie,
     get_current_user,
     get_db,
     hash_password,
     normalize_role,
     require_roles,
+    set_auth_cookie,
     verify_password,
 )
 from services.audit import record_audit_log
@@ -40,6 +43,33 @@ from services.audit import record_audit_log
 router = APIRouter(prefix="/auth", tags=["Auth"])
 PASSWORD_RESET_RESPONSE = "If an account exists for that email, a password reset link has been sent."
 PASSWORD_RESET_TOKEN_MINUTES = 60
+LOGIN_RATE_LIMIT = 5
+LOGIN_RATE_WINDOW_SECONDS = 60
+FORGOT_PASSWORD_RATE_LIMIT = 3
+FORGOT_PASSWORD_RATE_WINDOW_SECONDS = 5 * 60
+_rate_limit_attempts: dict[tuple[str, str], list[float]] = {}
+_rate_limit_time = time.monotonic
+
+
+def _client_ip(request: Request | None) -> str:
+    if request and request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+def _enforce_rate_limit(key: str, request: Request | None, limit: int, window_seconds: int) -> None:
+    now = _rate_limit_time()
+    bucket_key = (key, _client_ip(request))
+    attempts = [
+        timestamp
+        for timestamp in _rate_limit_attempts.get(bucket_key, [])
+        if now - timestamp < window_seconds
+    ]
+    if len(attempts) >= limit:
+        raise HTTPException(status_code=429, detail="Too many requests. Please try again later.")
+
+    attempts.append(now)
+    _rate_limit_attempts[bucket_key] = attempts
 
 
 def hash_reset_token(token: str) -> str:
@@ -216,27 +246,46 @@ def user_dependency_summary(db: Session, user_id: int) -> list[str]:
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(payload: UserLogin, db: Session = Depends(get_db)):
+def login(
+    payload: UserLogin,
+    request: Request = None,
+    response: Response = None,
+    db: Session = Depends(get_db)
+):
+    _enforce_rate_limit("login", request, LOGIN_RATE_LIMIT, LOGIN_RATE_WINDOW_SECONDS)
     user = db.query(User).filter(User.email == payload.email).first()
 
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     if user.status != "active":
-        raise HTTPException(status_code=403, detail="Account is not active")
+        raise HTTPException(status_code=403, detail="Your account has been disabled. Please contact an administrator.")
 
     user.last_login_at = datetime.utcnow()
     db.commit()
     db.refresh(user)
 
-    return TokenResponse(
-        access_token=create_access_token(user),
-        user=serialize_user(user)
-    )
+    token = create_access_token(user)
+    if response is not None:
+        set_auth_cookie(response, token)
+
+    return TokenResponse(user=serialize_user(user))
+
+
+@router.post("/logout")
+def logout(response: Response):
+    clear_auth_cookie(response)
+    return {"message": "Logged out"}
 
 
 @router.post("/forgot-password")
-def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
+def forgot_password(payload: ForgotPasswordRequest, request: Request = None, db: Session = Depends(get_db)):
+    _enforce_rate_limit(
+        "forgot-password",
+        request,
+        FORGOT_PASSWORD_RATE_LIMIT,
+        FORGOT_PASSWORD_RATE_WINDOW_SECONDS,
+    )
     email = payload.email.strip().lower()
     user = db.query(User).filter(func.lower(User.email) == email).first()
 

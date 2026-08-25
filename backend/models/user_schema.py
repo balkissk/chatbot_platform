@@ -2,12 +2,19 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
+from services.auth import validate_password_policy
+
 
 class UserCreate(BaseModel):
     name: str
     email: str
     password: str
     role: str = "end_user"
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        return validate_password_policy(value)
 
 
 class AdminUserCreate(BaseModel):
@@ -32,9 +39,7 @@ class ResetPasswordRequest(BaseModel):
     @field_validator("new_password")
     @classmethod
     def validate_new_password(cls, value: str) -> str:
-        if len(value) < 8:
-            raise ValueError("New password must be at least 8 characters")
-        return value
+        return validate_password_policy(value)
 
 
 class UserResponse(BaseModel):
@@ -69,8 +74,6 @@ class UserListResponse(BaseModel):
 
 
 class TokenResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
     user: UserResponse
 
 
@@ -108,6 +111,4 @@ class UserPasswordUpdate(BaseModel):
     @field_validator("new_password")
     @classmethod
     def validate_new_password(cls, value: str) -> str:
-        if len(value) < 8:
-            raise ValueError("New password must be at least 8 characters")
-        return value
+        return validate_password_policy(value)

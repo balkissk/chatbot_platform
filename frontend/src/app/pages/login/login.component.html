@@ -2,14 +2,18 @@
   <section class="auth-panel" aria-labelledby="login-title">
     <header class="auth-header">
       <a class="auth-brand" routerLink="/" aria-label="ChatBot Factory home">
-        <img src="/logo-navbar.png" alt="ChatBot Factory" width="232" height="70" decoding="async" fetchpriority="high">
+        <img src="/chatbot-factory-logo-cropped.png" alt="" width="194" height="246" decoding="async" fetchpriority="high">
+        <span class="auth-brand-text" aria-hidden="true">
+          <span class="auth-brand-chatbot">ChatBot</span>
+          <span class="auth-brand-factory">Factory</span>
+        </span>
       </a>
       <p class="eyebrow">WELCOME BACK</p>
       <h1 id="login-title">Sign in to ChatBot Factory</h1>
       <p class="subtitle">Continue building, testing and publishing your chatbot projects.</p>
     </header>
 
-    <form (ngSubmit)="login()" class="auth-form" novalidate>
+    <form #loginForm="ngForm" (ngSubmit)="login()" class="auth-form" novalidate>
       <div class="field">
         <label for="login-email">Email</label>
         <input
@@ -18,17 +22,21 @@
           [(ngModel)]="email"
           name="email"
           type="email"
+          email
           autocomplete="email"
           required
-          [attr.aria-invalid]="(emailField.invalid && (emailField.touched || submitted())) ? 'true' : null"
-          [attr.aria-describedby]="(emailField.invalid && (emailField.touched || submitted())) ? 'login-email-error' : null">
-        <p *ngIf="emailField.invalid && (emailField.touched || submitted())" id="login-email-error" class="field-error">Enter your email address.</p>
+          [attr.aria-invalid]="(emailField.invalid && (emailField.touched || submitted() || loginForm.submitted)) ? 'true' : null"
+          [attr.aria-describedby]="(emailField.invalid && (emailField.touched || submitted() || loginForm.submitted)) ? 'login-email-error' : null">
+        <p *ngIf="emailField.invalid && (emailField.touched || submitted() || loginForm.submitted)" id="login-email-error" class="field-error">Enter your email address.</p>
       </div>
 
       <div class="field">
         <div class="label-row">
           <label for="login-password">Password</label>
-          <a routerLink="/forgot-password">Forgot password?</a>
+          <a class="forgot-password-link" routerLink="/forgot-password">
+            <svg lucideKeyRound size="14" aria-hidden="true"></svg>
+            <span>Forgot password?</span>
+          </a>
         </div>
         <div class="password-control">
           <input
@@ -39,8 +47,8 @@
             [type]="showPassword() ? 'text' : 'password'"
             autocomplete="current-password"
             required
-            [attr.aria-invalid]="(passwordField.invalid && (passwordField.touched || submitted())) ? 'true' : null"
-            [attr.aria-describedby]="(passwordField.invalid && (passwordField.touched || submitted())) ? 'login-password-error' : null">
+            [attr.aria-invalid]="(passwordField.invalid && (passwordField.touched || submitted() || loginForm.submitted)) ? 'true' : null"
+            [attr.aria-describedby]="(passwordField.invalid && (passwordField.touched || submitted() || loginForm.submitted)) ? 'login-password-error' : null">
           <button
             class="password-toggle"
             type="button"
@@ -51,13 +59,13 @@
             <svg *ngIf="showPassword()" lucideEyeOff size="18" aria-hidden="true"></svg>
           </button>
         </div>
-        <p *ngIf="passwordField.invalid && (passwordField.touched || submitted())" id="login-password-error" class="field-error">Enter your password.</p>
+        <p *ngIf="passwordField.invalid && (passwordField.touched || submitted() || loginForm.submitted)" id="login-password-error" class="field-error">Enter your password.</p>
       </div>
 
       <p *ngIf="error()" class="auth-alert error" role="alert">{{ error() }}</p>
       <p *ngIf="message()" class="auth-alert success" role="status">{{ message() }}</p>
 
-      <button class="auth-submit" type="submit" [disabled]="loading() || !email || !password">
+      <button class="auth-submit" type="submit" [disabled]="loading() || loginForm.invalid">
         {{ loading() ? 'Signing in...' : 'Sign in' }}
       </button>
 

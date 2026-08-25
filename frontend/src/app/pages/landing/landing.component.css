@@ -124,14 +124,43 @@ svg {
 .brand {
   align-items: center;
   display: inline-flex;
+  flex-shrink: 0;
+  gap: 5px;
   min-width: 0;
+  white-space: nowrap;
 }
 
 .brand img {
   display: block;
-  height: 52px;
+  flex: 0 0 46px;
+  height: 58px;
+  max-height: 58px;
+  max-width: 46px;
+  min-height: 58px;
+  min-width: 46px;
   object-fit: contain;
-  width: auto;
+  width: 46px;
+}
+
+.brand-text {
+  align-items: baseline;
+  display: inline-flex;
+  font-family: FactoryDisplay, Urbanist, Outfit, ui-sans-serif, system-ui, sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  gap: 4px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.brand-chatbot {
+  color: var(--color-heading);
+  font-weight: inherit;
+}
+
+.brand-factory {
+  color: var(--brand-teal);
+  font-weight: inherit;
 }
 
 .desktop-nav {
@@ -1313,8 +1342,12 @@ svg {
   }
 
   .brand img {
-    height: 42px;
-    max-width: 174px;
+    height: 58px;
+    width: 46px;
+  }
+
+  .brand-text {
+    font-size: 17px;
   }
 
   .theme-button,

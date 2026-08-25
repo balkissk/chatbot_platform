@@ -88,12 +88,12 @@ class ProfileTest(unittest.TestCase):
 
     def test_password_change_validates_current_password_and_creates_audit_log(self):
         update_password(
-            UserPasswordUpdate(current_password="adminpass123", new_password="newpass123"),
+            UserPasswordUpdate(current_password="adminpass123", new_password="Newpass123"),
             current_user=self.admin,
             db=self.db,
         )
         persisted = self.db.query(User).filter(User.id == self.admin.id).first()
-        self.assertTrue(verify_password("newpass123", persisted.password_hash))
+        self.assertTrue(verify_password("Newpass123", persisted.password_hash))
 
         audit = self.db.query(AuditLog).filter(AuditLog.action == "PASSWORD_CHANGED").first()
         self.assertIsNotNone(audit)
@@ -103,7 +103,7 @@ class ProfileTest(unittest.TestCase):
     def test_failed_password_change_does_not_create_audit_log(self):
         with self.assertRaises(HTTPException) as raised:
             update_password(
-                UserPasswordUpdate(current_password="wrongpass123", new_password="newpass123"),
+                UserPasswordUpdate(current_password="wrongpass123", new_password="Newpass123"),
                 current_user=self.admin,
                 db=self.db,
             )
@@ -120,7 +120,7 @@ class ProfileTest(unittest.TestCase):
         with self.assertRaises(ValidationError):
             UserPasswordUpdate.model_validate({
                 "current_password": "adminpass123",
-                "new_password": "newpass123",
+                "new_password": "Newpass123",
                 "role": "admin",
             })
 
