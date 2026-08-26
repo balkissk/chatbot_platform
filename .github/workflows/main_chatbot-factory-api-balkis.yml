@@ -50,6 +50,7 @@ jobs:
           rsync -av \
             --exclude 'antenv/' \
             --exclude '.env' \
+            --exclude '.env.*' \
             --exclude '.idea/' \
             --exclude 'venv/' \
             --exclude '__pycache__/' \
@@ -61,6 +62,7 @@ jobs:
         with:
           name: backend-app
           path: backend-package
+          retention-days: 1
 
   deploy:
     runs-on: ubuntu-latest

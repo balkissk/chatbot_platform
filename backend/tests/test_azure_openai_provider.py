@@ -76,7 +76,7 @@ class AzureOpenAIProviderTest(unittest.TestCase):
         return {
             "AI_PROVIDER": "azure_openai",
             "EMBEDDING_PROVIDER": "azure_openai",
-            "AZURE_OPENAI_ENDPOINT": "https://balkissekri-7560-resource.openai.azure.com/",
+            "AZURE_OPENAI_ENDPOINT": "https://example-resource.openai.azure.com/",
             "AZURE_OPENAI_API_KEY": "test-key",
             "AZURE_OPENAI_DEPLOYMENT": "gpt-5-mini",
             "AZURE_OPENAI_EMBEDDING_DEPLOYMENT": "text-embedding-3-small",

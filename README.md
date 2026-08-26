@@ -1,5 +1,34 @@
 # ChatBot Factory
 
+ChatBot Factory is a FastAPI backend with an Angular SSR frontend for building, publishing, and evaluating chatbot assistants.
+
+## Public Repository Setup
+
+Do not commit real credentials. Keep local and production secrets in environment variables, ignored `.env` files, Azure App Service application settings, or GitHub Secrets.
+
+Backend:
+
+```powershell
+cd backend
+copy .env.example .env.development
+# Edit .env.development with local placeholder replacements only.
+.\venv\Scripts\python.exe -m alembic upgrade head
+.\venv\Scripts\uvicorn.exe main:app --reload
+```
+
+Frontend:
+
+```powershell
+cd frontend
+copy .env.example .env
+npm ci
+npm run start
+```
+
+Required sensitive backend settings include `DATABASE_URL` or `POSTGRES_*`, `JWT_SECRET`, `SMTP_PASSWORD`, and `AZURE_OPENAI_API_KEY`. Browser-exposed frontend settings must contain only public URLs such as `PUBLIC_API_BASE_URL`, `PUBLIC_FRONTEND_BASE_URL`, `VITE_BACKEND_BASE_URL`, and `VITE_FRONTEND_BASE_URL`.
+
+For Azure deployment, configure credentials through GitHub Secrets and Azure App Service application settings. Do not commit `.env`, publish profiles, private keys, database dumps, local uploads, or screenshots containing private data.
+
 ## Evaluation Center
 
 The Evaluation Center measures whether an assistant version behaves well enough to publish. It is separate from Flow Test and the pre-publish smoke test: smoke tests check that the runtime works, while evaluations check answer quality, expected sources, flow path, latency and regressions.

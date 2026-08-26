@@ -14,12 +14,13 @@ from services.embedding_config import pgvector_literal
 
 SOURCE_DATABASE_URL = os.getenv(
     "SOURCE_DATABASE_URL",
-    "postgresql://postgres:1234@localhost:5432/chatbot_db?sslmode=disable",
+    "postgresql://postgres@localhost:5432/chatbot_db?sslmode=disable",
 )
 TARGET_DATABASE_URL = os.getenv(
     "TARGET_DATABASE_URL",
-    "postgresql://postgres:1234@localhost:5433/chatbot_db?sslmode=disable",
+    "postgresql://postgres@localhost:5433/chatbot_db?sslmode=disable",
 )
+MIGRATION_USER_CHECK_EMAIL = os.getenv("MIGRATION_USER_CHECK_EMAIL")
 
 APPLICATION_TABLES = [
     "audit_logs",
@@ -74,8 +75,17 @@ def quote_ident(name: str) -> str:
 
 
 def database_label(url: str) -> str:
-    safe = url.replace("postgres:1234", "postgres:****")
-    return safe
+    from urllib.parse import urlsplit, urlunsplit
+
+    parts = urlsplit(url)
+    if not parts.password:
+        return url
+    host = parts.hostname or ""
+    if parts.port:
+        host = f"{host}:{parts.port}"
+    username = parts.username or ""
+    netloc = f"{username}:****@{host}" if username else host
+    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
 
 
 def table_counts(engine, tables: list[str]) -> dict[str, int]:
@@ -284,15 +294,18 @@ def main() -> int:
             GROUP BY embedding_dimensions, embedding_status, embedding_vector IS NOT NULL
             ORDER BY embedding_dimensions NULLS FIRST, embedding_status, has_vector
         """)).fetchall()
-        user_check = conn.execute(text("""
-            SELECT id, email, role, status, password_hash IS NOT NULL AS has_password_hash
-            FROM users
-            WHERE email = 'balkisdemo@gmail.com'
-        """)).fetchall()
+        user_check = []
+        if MIGRATION_USER_CHECK_EMAIL:
+            user_check = conn.execute(text("""
+                SELECT id, email, role, status, password_hash IS NOT NULL AS has_password_hash
+                FROM users
+                WHERE email = :email
+            """), {"email": MIGRATION_USER_CHECK_EMAIL}).fetchall()
 
     print("target_counts_after=", after_counts)
     print("embedding_summary=", embedding_summary)
-    print("balkis_user=", user_check)
+    if MIGRATION_USER_CHECK_EMAIL:
+        print("migration_user_check=", user_check)
     return 0
 
 

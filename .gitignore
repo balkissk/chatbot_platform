@@ -1,5 +1,6 @@
+# Environment and local secrets
 .env
-backend/.env.development
+.env.*
 !.env.example
 backend/.env
 backend/.env.*
@@ -7,18 +8,47 @@ backend/.env.*
 frontend/.env
 frontend/.env.*
 !frontend/.env.example
+*.pem
+*.key
+*.cert
+*.crt
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+secrets/
+local-secrets/
 
-.idea/
-backend/.idea/
+# Python
 **/__pycache__/
 **pycache**/
-*.pyc
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+backend/venv/
+backend/.venv/
+venv/
+.venv/
+env/
+
+# Node / Angular
 node_modules/
+frontend/node_modules/
 dist/
 frontend/dist/
-backend/venv/
 .angular/cache/
 frontend/.angular/cache/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
 # Logs and local runtime output
 *.log
@@ -26,20 +56,36 @@ frontend/.angular/cache/
 *.err.log
 backend/*.log
 frontend/*.log
+logs/
 
 # OS and editor-generated files
 .DS_Store
 Thumbs.db
 desktop.ini
+.idea/
+backend/.idea/
+.vscode/*
+!.vscode/extensions.json
 
-# Local artifacts and data dumps
+# Local artifacts, uploads, storage, and data dumps
 *.sqlite
 *.sqlite3
 *.db
 *.dump
 *.sql
+*.bak
+*.backup
 uploads/
 backend/uploads/
+storage/
+backend/storage/
 tmp/
 temp/
+*.tmp
+*.swp
+*.swo
+*~
 .tmp-chrome-layout/
+.tmp-chrome-login-validation/
+.freebuff/
+performance-tests/

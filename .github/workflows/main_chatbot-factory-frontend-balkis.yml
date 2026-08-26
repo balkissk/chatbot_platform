@@ -54,8 +54,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: frontend-app
-          path: ${{ env.FRONTEND_PATH }}
+          path: |
+            ${{ env.FRONTEND_PATH }}
+            !${{ env.FRONTEND_PATH }}/.env
+            !${{ env.FRONTEND_PATH }}/.env.*
+            !${{ env.FRONTEND_PATH }}/.git
+            !${{ env.FRONTEND_PATH }}/.git/**
           include-hidden-files: false
+          retention-days: 1
 
   deploy:
     runs-on: ubuntu-latest
