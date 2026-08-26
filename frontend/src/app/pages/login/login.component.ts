@@ -41,7 +41,8 @@ export class LoginComponent {
     this.auth.login(this.email, this.password).subscribe({
       next: response => {
         this.auth.saveSession(response);
-        this.router.navigate([this.auth.homeForRole(response.user.role)]);
+        this.loading.set(false);
+        void this.router.navigate([this.auth.homeForRole(response.user.role)]);
       },
       error: err => {
         this.error.set(err.error?.detail || 'Login failed');

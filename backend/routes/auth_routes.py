@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 import hashlib
+import html as html_utils
 import os
 import secrets
 import smtplib
@@ -76,7 +77,81 @@ def hash_reset_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def send_password_reset_email(email: str, reset_link: str) -> None:
+def build_auth_email(
+    *,
+    title: str,
+    body: str,
+    cta_label: str,
+    cta_url: str,
+    security_note: str,
+) -> tuple[str, str]:
+    safe_title = html_utils.escape(title)
+    safe_body = html_utils.escape(body)
+    safe_cta_label = html_utils.escape(cta_label)
+    safe_cta_url = html_utils.escape(cta_url, quote=True)
+    safe_security_note = html_utils.escape(security_note)
+    text = (
+        "ChatBot Factory\n\n"
+        f"{title}\n\n"
+        f"{body}\n\n"
+        f"{cta_label}: {cta_url}\n\n"
+        f"This link expires in {PASSWORD_RESET_TOKEN_MINUTES} minutes.\n\n"
+        f"{security_note}\n\n"
+        "ChatBot Factory • Secure workspace access"
+    )
+    html_content = f"""\
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{safe_title}</title>
+  </head>
+  <body style="margin:0;padding:0;background-color:#eef5f6;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">Use the secure button to reset your ChatBot Factory password.</div>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background-color:#eef5f6;margin:0;padding:0;">
+      <tr>
+        <td align="center" style="padding:32px 12px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:600px;background-color:#ffffff;border:1px solid #d8e7ea;border-radius:14px;overflow:hidden;">
+            <tr>
+              <td align="center" style="padding:28px 24px 22px;background-color:#0f172a;">
+                <div style="font-size:24px;line-height:1.2;font-weight:800;color:#ffffff;">ChatBot <span style="color:#2dd4bf;">Factory</span></div>
+                <div style="margin-top:8px;font-size:12px;line-height:1.4;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:#a7f3d0;">Secure workspace access</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:34px 30px 30px;">
+                <h1 style="margin:0 0 14px;font-size:26px;line-height:1.25;font-weight:800;color:#0f172a;">{safe_title}</h1>
+                <p style="margin:0 0 26px;font-size:15px;line-height:1.65;color:#334155;">{safe_body}</p>
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 26px;">
+                  <tr>
+                    <td align="center" bgcolor="#0f766e" style="border-radius:10px;background-color:#0f766e;">
+                      <a href="{safe_cta_url}" style="display:inline-block;padding:14px 24px;font-size:15px;line-height:1.2;font-weight:800;color:#ffffff;text-decoration:none;border-radius:10px;">{safe_cta_label}</a>
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin:0 0 18px;font-size:14px;line-height:1.6;color:#475569;">This link expires in <strong style="color:#0f172a;">60 minutes</strong>.</p>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:0;">
+                  <tr>
+                    <td style="padding:14px 16px;background-color:#ecfeff;border-left:4px solid #0f766e;border-radius:8px;font-size:13px;line-height:1.55;color:#334155;">{safe_security_note}</td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding:18px 24px;background-color:#f8fafc;border-top:1px solid #e2e8f0;font-size:13px;line-height:1.5;color:#64748b;">ChatBot Factory &bull; Secure workspace access</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
+"""
+    return text, html_content
+
+
+def send_auth_email(email: str, subject: str, text: str, html: str) -> None:
     smtp_host = os.getenv("SMTP_HOST")
     smtp_from = os.getenv("SMTP_FROM") or os.getenv("SMTP_USERNAME")
     if not smtp_host or not smtp_from:
@@ -88,13 +163,11 @@ def send_password_reset_email(email: str, reset_link: str) -> None:
     use_tls = os.getenv("SMTP_USE_TLS", "true").strip().lower() != "false"
 
     message = EmailMessage()
-    message["Subject"] = "Reset your ChatBot Factory password"
+    message["Subject"] = subject
     message["From"] = smtp_from
     message["To"] = email
-    message.set_content(
-        "Use the link below to reset your ChatBot Factory password. "
-        f"This link expires in {PASSWORD_RESET_TOKEN_MINUTES} minutes.\n\n{reset_link}"
-    )
+    message.set_content(text)
+    message.add_alternative(html, subtype="html")
 
     with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as smtp:
         if use_tls:
@@ -102,36 +175,28 @@ def send_password_reset_email(email: str, reset_link: str) -> None:
         if smtp_username and smtp_password:
             smtp.login(smtp_username, smtp_password)
         smtp.send_message(message)
+
+
+def send_password_reset_email(email: str, reset_link: str) -> None:
+    text, html = build_auth_email(
+        title="Reset your password",
+        body="We received a request to reset the password for your ChatBot Factory account. Use the secure button below to choose a new password.",
+        cta_label="Reset Password",
+        cta_url=reset_link,
+        security_note="If you didn't request a password reset, you can safely ignore this email.",
+    )
+    send_auth_email(email, "Reset your ChatBot Factory password", text, html)
 
 
 def send_account_setup_email(email: str, reset_link: str) -> None:
-    smtp_host = os.getenv("SMTP_HOST")
-    smtp_from = os.getenv("SMTP_FROM") or os.getenv("SMTP_USERNAME")
-    if not smtp_host or not smtp_from:
-        return
-
-    smtp_port = int(os.getenv("SMTP_PORT", "587"))
-    smtp_username = os.getenv("SMTP_USERNAME")
-    smtp_password = os.getenv("SMTP_PASSWORD")
-    use_tls = os.getenv("SMTP_USE_TLS", "true").strip().lower() != "false"
-
-    message = EmailMessage()
-    message["Subject"] = "Welcome to ChatBot Factory - Set up your account"
-    message["From"] = smtp_from
-    message["To"] = email
-    message.set_content(
-        "An account has been created for you on ChatBot Factory.\n"
-        "Use the link below to set your password and access your account.\n"
-        f"The link expires in {PASSWORD_RESET_TOKEN_MINUTES} minutes.\n\n"
-        f"Set your password: {reset_link}"
+    text, html = build_auth_email(
+        title="Set up your ChatBot Factory account",
+        body="An administrator has created a ChatBot Factory account for you. Use the secure button below to set your password and access the platform.",
+        cta_label="Set your password",
+        cta_url=reset_link,
+        security_note="If you did not expect this account invitation, you can safely ignore this email or contact your administrator.",
     )
-
-    with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as smtp:
-        if use_tls:
-            smtp.starttls()
-        if smtp_username and smtp_password:
-            smtp.login(smtp_username, smtp_password)
-        smtp.send_message(message)
+    send_auth_email(email, "Welcome to ChatBot Factory - Set up your account", text, html)
 
 
 def create_password_reset_link(user: User, db: Session) -> str:
