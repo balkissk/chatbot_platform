@@ -69,6 +69,7 @@ jobs:
     permissions:
       id-token: write #This is required for requesting the JWT
       contents: read #This is required for actions/checkout
+      actions: read
 
     steps:
       - name: Download artifact from build job
@@ -84,6 +85,15 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_0FBC1F1763D1469899525E7679C98F8F }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_DBA1076453184737BA4A25FB76265E91 }}
 
+      - name: Resolve frontend default hostname
+        run: |
+          DEFAULT_HOSTNAME="$(az webapp list --query "[?name=='${AZURE_WEBAPP_NAME}'].defaultHostName | [0]" -o tsv)"
+          if [ -z "${DEFAULT_HOSTNAME}" ]; then
+            echo "Could not resolve Azure default hostname for ${AZURE_WEBAPP_NAME}."
+            exit 1
+          fi
+          echo "FRONTEND_HEALTH_URL=https://${DEFAULT_HOSTNAME}/" >> "${GITHUB_ENV}"
+
       - name: 'Deploy to Azure Web App'
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
@@ -92,4 +102,8 @@ jobs:
           slot-name: 'Production'
           package: frontend-app
           startup-command: node dist/frontend/server/server.mjs
-          
+
+      - name: Verify frontend after deployment
+        run: |
+          echo "Checking ${FRONTEND_HEALTH_URL}"
+          curl --fail --silent --show-error --location --retry 12 --retry-delay 10 --retry-all-errors "${FRONTEND_HEALTH_URL}"
