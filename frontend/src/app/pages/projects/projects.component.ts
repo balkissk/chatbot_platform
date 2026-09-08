@@ -366,7 +366,12 @@ export class ProjectsComponent implements OnInit, OnDestroy {
     this.loadProjects(true);
   }
 
+  canManageWorkspace() {
+    return this.auth.canManageWorkspace();
+  }
+
   createProject() {
+    if (!this.canManageWorkspace()) return;
     const name = this.newProjectName.trim();
     if (!name) return;
 
@@ -399,6 +404,7 @@ export class ProjectsComponent implements OnInit, OnDestroy {
   }
 
   openRenameDialog(project: any) {
+    if (!this.canManageWorkspace()) return;
     this.closeProjectMenu();
     this.renameDialogProject.set(project);
     this.renameName = project.name || '';
@@ -421,6 +427,7 @@ export class ProjectsComponent implements OnInit, OnDestroy {
   }
 
   saveProject(project: any) {
+    if (!this.canManageWorkspace()) return;
     const name = this.editName.trim();
     if (!name) {
       this.error.set('Project name is required');
@@ -459,6 +466,7 @@ export class ProjectsComponent implements OnInit, OnDestroy {
   }
 
   confirmRename() {
+    if (!this.canManageWorkspace()) return;
     const project = this.renameDialogProject();
     const name = this.renameName.trim();
     if (!project || !name) {
@@ -488,6 +496,7 @@ export class ProjectsComponent implements OnInit, OnDestroy {
   }
 
   openDeleteDialog(project: any) {
+    if (!this.canManageWorkspace()) return;
     this.closeProjectMenu();
     this.deleteDialogProject.set(project);
     this.error.set('');
@@ -500,6 +509,7 @@ export class ProjectsComponent implements OnInit, OnDestroy {
   }
 
   confirmDeleteProject() {
+    if (!this.canManageWorkspace()) return;
     const project = this.deleteDialogProject();
     if (!project) return;
 
@@ -523,6 +533,7 @@ export class ProjectsComponent implements OnInit, OnDestroy {
   }
 
   duplicateProject(project: any) {
+    if (!this.canManageWorkspace()) return;
     this.closeProjectMenu();
     this.duplicatingId.set(project.id);
     this.error.set('');
@@ -543,6 +554,7 @@ export class ProjectsComponent implements OnInit, OnDestroy {
   }
 
   openArchiveDialog(project: any) {
+    if (!this.canManageWorkspace()) return;
     this.closeProjectMenu();
     this.archiveDialogProject.set(project);
     this.error.set('');
@@ -555,6 +567,7 @@ export class ProjectsComponent implements OnInit, OnDestroy {
   }
 
   confirmArchiveProject() {
+    if (!this.canManageWorkspace()) return;
     const project = this.archiveDialogProject();
     if (!project) return;
 
@@ -578,6 +591,7 @@ export class ProjectsComponent implements OnInit, OnDestroy {
   }
 
   restoreProject(project: any) {
+    if (!this.canManageWorkspace()) return;
     this.closeProjectMenu();
     this.restoringId.set(project.id);
     this.error.set('');
@@ -614,6 +628,7 @@ export class ProjectsComponent implements OnInit, OnDestroy {
   }
 
   openCreateModal() {
+    if (!this.canManageWorkspace()) return;
     this.createModalOpen.set(true);
     this.error.set('');
   }

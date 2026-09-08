@@ -1,6 +1,7 @@
 import { PLATFORM_ID, inject } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { CanActivateFn, Router } from '@angular/router';
+import { catchError, map, of } from 'rxjs';
 import { AuthService } from '../services/auth';
 
 
@@ -17,5 +18,8 @@ export const authGuard: CanActivateFn = () => {
     return true;
   }
 
-  return router.createUrlTree(['/login']);
+  return auth.loadCurrentUser().pipe(
+    map(() => true),
+    catchError(() => of(router.createUrlTree(['/login'])))
+  );
 };

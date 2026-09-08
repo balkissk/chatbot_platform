@@ -241,6 +241,10 @@ export class DashboardLayoutComponent implements OnInit {
     return { mode, chatbot_id: this.chatbotId() };
   }
 
+  navHiddenFromAssistiveTech() {
+    return this.navCollapsed && this.isMobileViewport();
+  }
+
   private focusFirstNavItem() {
     const nav = document.querySelector('.pcoded-navbar') as HTMLElement | null;
     const firstItem = nav?.querySelector<HTMLElement>('a[href], button:not([disabled])');
@@ -248,7 +252,7 @@ export class DashboardLayoutComponent implements OnInit {
   }
 
   private restoreNavPreference() {
-    if (typeof window !== 'undefined' && window.matchMedia?.('(max-width: 991px)').matches) {
+    if (this.isMobileViewport()) {
       this.navCollapsed = true;
       return;
     }
@@ -279,6 +283,10 @@ export class DashboardLayoutComponent implements OnInit {
       return null;
     }
     return localStorage;
+  }
+
+  private isMobileViewport() {
+    return typeof window !== 'undefined' && window.matchMedia?.('(max-width: 991px)').matches;
   }
 
   private updateRouteContext() {

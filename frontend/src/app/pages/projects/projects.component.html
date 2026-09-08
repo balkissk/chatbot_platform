@@ -22,7 +22,7 @@
           </ng-template>
         </div>
 
-        <div class="hero-actions">
+        <div class="hero-actions" *ngIf="canManageWorkspace()">
           <button class="workspace-create-button icon-button-label" type="button" (click)="openCreateModal()">
             <svg lucidePlus size="16"></svg>
             <span>New Project</span>
@@ -126,7 +126,7 @@
           <h3>No projects yet</h3>
           <p>Create your first project to start organizing assistants, knowledge, and runtime operations.</p>
         </div>
-        <button class="primary icon-button-label" type="button" (click)="openCreateModal()">
+        <button *ngIf="canManageWorkspace()" class="primary icon-button-label" type="button" (click)="openCreateModal()">
           <svg lucidePlus size="15"></svg>
           <span>Create Project</span>
         </button>
@@ -162,6 +162,7 @@
               </div>
 
               <button
+                *ngIf="canManageWorkspace()"
                 class="secondary project-menu-button"
                 type="button"
                 (click)="toggleProjectMenu(p, $event)"
@@ -293,6 +294,7 @@
                   Open
                 </button>
                 <button
+                  *ngIf="canManageWorkspace()"
                   class="secondary project-menu-button"
                   type="button"
                   (click)="toggleProjectMenu(p, $event)"
@@ -421,7 +423,7 @@
   </div>
 
   <app-project-actions-menu
-    *ngIf="menuProject() as p"
+    *ngIf="canManageWorkspace() && menuProject() as p"
     [project]="p"
     [position]="projectMenuPosition()"
     [deleting]="deletingId() === p.id"

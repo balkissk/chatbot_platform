@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from database.db import SessionLocal
 from models.llm_config import LLMConfig
 from models.llm_config_schema import LLMConfigCreate, LLMConfigResponse
-from services.auth import require_roles
+from services.auth import require_roles, require_workspace_manager
 
 router = APIRouter()
 
@@ -22,7 +22,7 @@ def get_db():
 def create_or_update_config(
     data: LLMConfigCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(require_roles("admin", "manager"))
+    current_user=Depends(require_workspace_manager)
 ):
 
     config = db.query(LLMConfig).filter(

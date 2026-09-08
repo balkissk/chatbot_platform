@@ -10,7 +10,7 @@ from models.chatbot_channel import ChannelLog, ChatbotChannel
 from models.user import User
 from routes.chatbot_routes import get_accessible_chatbot
 from services.audit import record_audit_log
-from services.auth import require_roles
+from services.auth import require_roles, require_workspace_manager
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -160,7 +160,7 @@ def create_chatbot_channel(
     channel_type: str,
     payload: ChannelPayload,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager")),
+    current_user: User = Depends(require_workspace_manager),
 ):
     chatbot = get_accessible_chatbot(db, chatbot_id, current_user)
     channel_type = clean_channel_type(channel_type)
@@ -196,7 +196,7 @@ def update_chatbot_channel(
     channel_type: str,
     payload: ChannelPayload,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager")),
+    current_user: User = Depends(require_workspace_manager),
 ):
     chatbot = get_accessible_chatbot(db, chatbot_id, current_user)
     channel_type = clean_channel_type(channel_type)
@@ -248,7 +248,7 @@ def test_chatbot_channel(
     chatbot_id: int,
     channel_type: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager")),
+    current_user: User = Depends(require_workspace_manager),
 ):
     chatbot = get_accessible_chatbot(db, chatbot_id, current_user)
     channel_type = clean_channel_type(channel_type)
@@ -277,7 +277,7 @@ def clear_channel_error(
     chatbot_id: int,
     channel_type: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager")),
+    current_user: User = Depends(require_workspace_manager),
 ):
     chatbot = get_accessible_chatbot(db, chatbot_id, current_user)
     channel_type = clean_channel_type(channel_type)
@@ -298,7 +298,7 @@ def delete_chatbot_channel(
     chatbot_id: int,
     channel_type: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager")),
+    current_user: User = Depends(require_workspace_manager),
 ):
     chatbot = get_accessible_chatbot(db, chatbot_id, current_user)
     channel_type = clean_channel_type(channel_type)

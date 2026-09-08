@@ -3,6 +3,7 @@ import { Component, HostListener, Inject, OnInit, PLATFORM_ID, computed, signal 
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { ApiService } from '../../services/api';
+import { AuthService } from '../../services/auth';
 import { apiBaseUrl, frontendBaseUrl } from '../../config/app-config';
 import { AssistantCreationWizardComponent } from './assistant-creation-wizard.component';
 import { ToastService } from '../../services/toast.service';
@@ -141,6 +142,7 @@ export class ChatbotsComponent implements OnInit {
   constructor(
     private route: ActivatedRoute,
     private api: ApiService,
+    public auth: AuthService,
     private router: Router,
     private toast: ToastService,
     @Inject(PLATFORM_ID) platformId: object
@@ -319,7 +321,7 @@ export class ChatbotsComponent implements OnInit {
   }
 
   openWizard() {
-    if (this.isArchivedProject()) return;
+    if (!this.canManageWorkspace() || this.isArchivedProject()) return;
     this.error.set('');
     this.success.set('');
     this.wizardOpen.set(true);
@@ -331,6 +333,7 @@ export class ChatbotsComponent implements OnInit {
   }
 
   finishWizard(state: any) {
+    if (!this.canManageWorkspace()) return;
     this.creating.set(true);
     this.error.set('');
     this.success.set('');
@@ -378,7 +381,7 @@ export class ChatbotsComponent implements OnInit {
   }
 
   deleteChatbot(bot: any) {
-    if (this.isArchivedProject()) return;
+    if (!this.canManageWorkspace() || this.isArchivedProject()) return;
     this.closeActionMenu();
     this.deleteError.set('');
     this.pendingDeleteAssistant.set(bot);
@@ -391,6 +394,7 @@ export class ChatbotsComponent implements OnInit {
   }
 
   confirmDeleteAssistant() {
+    if (!this.canManageWorkspace()) return;
     const bot = this.pendingDeleteAssistant();
     if (!bot || this.deletingId()) return;
 
@@ -436,7 +440,7 @@ export class ChatbotsComponent implements OnInit {
   }
 
   openPanel(bot: any, mode: 'overview' | 'deploy' | 'settings') {
-    if (this.isArchivedProject() && mode !== 'overview') return;
+    if ((!this.canManageWorkspace() || this.isArchivedProject()) && mode !== 'overview') return;
     if (mode === 'deploy') {
       this.closeActionMenu();
       this.router.navigate(['/dashboard/projects', this.projectId, 'chatbots', bot.id, 'deployment']);
@@ -540,7 +544,7 @@ export class ChatbotsComponent implements OnInit {
   }
 
   startEdit(bot: any) {
-    if (this.isArchivedProject()) return;
+    if (!this.canManageWorkspace() || this.isArchivedProject()) return;
     this.editingId.set(bot.id);
     this.error.set('');
     this.success.set('');
@@ -561,6 +565,7 @@ export class ChatbotsComponent implements OnInit {
   }
 
   saveChatbot(bot: any) {
+    if (!this.canManageWorkspace()) return;
     const name = this.editForm.name.trim();
     if (!name) {
       this.error.set('Assistant name is required');
@@ -595,7 +600,7 @@ export class ChatbotsComponent implements OnInit {
   }
 
   setActive(bot: any, isActive: boolean) {
-    if (this.isArchivedProject()) return;
+    if (!this.canManageWorkspace() || this.isArchivedProject()) return;
     this.statusId.set(bot.id);
     this.error.set('');
     this.success.set('');
@@ -645,7 +650,7 @@ export class ChatbotsComponent implements OnInit {
   }
 
   saveChannel(bot: any, type: 'web' | 'widget' | 'api', config: any = {}) {
-    if (this.isArchivedProject()) return;
+    if (!this.canManageWorkspace() || this.isArchivedProject()) return;
     this.channelSaving.set(type);
     this.error.set('');
     this.success.set('');
@@ -673,6 +678,7 @@ export class ChatbotsComponent implements OnInit {
   }
 
   testChannel(bot: any, type: 'web' | 'widget' | 'api') {
+    if (!this.canManageWorkspace() || this.isArchivedProject()) return;
     this.channelTesting.set(type);
     this.error.set('');
     this.success.set('');
@@ -749,6 +755,7 @@ export class ChatbotsComponent implements OnInit {
   }
 
   clearChannelError(details: any, type: 'web' | 'widget' | 'api') {
+    if (!this.canManageWorkspace() || this.isArchivedProject()) return;
     this.error.set('');
     this.success.set('');
     this.api.clearChatbotChannelError(details.id, type).subscribe({
@@ -806,7 +813,7 @@ export class ChatbotsComponent implements OnInit {
   }
 
   regenerateApiKey(bot: any) {
-    if (this.isArchivedProject()) return;
+    if (!this.canManageWorkspace() || this.isArchivedProject()) return;
     if (this.apiKeyId()) return;
     this.pendingApiKeyReset.set(bot);
   }
@@ -817,6 +824,7 @@ export class ChatbotsComponent implements OnInit {
   }
 
   confirmRegenerateApiKey() {
+    if (!this.canManageWorkspace() || this.isArchivedProject()) return;
     const bot = this.pendingApiKeyReset();
     if (!bot || this.apiKeyId()) return;
 
@@ -845,5 +853,9 @@ export class ChatbotsComponent implements OnInit {
 
   isArchivedProject() {
     return String(this.project()?.status || '').toLowerCase() === 'archived';
+  }
+
+  canManageWorkspace() {
+    return this.auth.canManageWorkspace();
   }
 }

@@ -14,7 +14,7 @@
         <svg lucideRefreshCw size="14" aria-hidden="true"></svg>
         <span>{{ refreshing() ? 'Refreshing...' : 'Refresh' }}</span>
       </button>
-      <button class="lifecycle-create-button" type="button" (click)="openWizard()" [disabled]="isArchivedProject()">
+      <button *ngIf="canManageWorkspace()" class="lifecycle-create-button" type="button" (click)="openWizard()" [disabled]="isArchivedProject()">
         <svg lucidePlus size="14" aria-hidden="true"></svg>
         <span>Create assistant</span>
       </button>
@@ -61,7 +61,7 @@
     <div class="empty-icon">CB</div>
     <h3>No assistants in this project</h3>
     <p>Create a draft assistant, then continue directly into the Flow Builder.</p>
-    <button class="lifecycle-create-button" type="button" (click)="openWizard()" [disabled]="isArchivedProject()">
+    <button *ngIf="canManageWorkspace()" class="lifecycle-create-button" type="button" (click)="openWizard()" [disabled]="isArchivedProject()">
       <svg lucidePlus size="14" aria-hidden="true"></svg>
       <span>Create assistant</span>
     </button>
@@ -152,11 +152,11 @@
     (click)="$event.stopPropagation()">
     <div class="menu-group" role="group" aria-label="Build">
       <span class="menu-group-label">Build</span>
-      <button *ngIf="!isArchivedProject()" type="button" role="menuitem" [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'flow']" (click)="closeActionMenu()">
+      <button *ngIf="canManageWorkspace() && !isArchivedProject()" type="button" role="menuitem" [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'flow']" (click)="closeActionMenu()">
         <span class="menu-icon">FL</span>
         <span>Flow Builder</span>
       </button>
-      <button *ngIf="!isArchivedProject()" type="button" role="menuitem" [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'knowledge']" (click)="closeActionMenu()">
+      <button *ngIf="canManageWorkspace() && !isArchivedProject()" type="button" role="menuitem" [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'knowledge']" (click)="closeActionMenu()">
         <span class="menu-icon">KB</span>
         <span>Knowledge</span>
       </button>
@@ -176,7 +176,7 @@
         <span class="menu-icon">AN</span>
         <span>Analytics</span>
       </button>
-      <button *ngIf="!isArchivedProject()" type="button" role="menuitem" [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'deployment']" (click)="closeActionMenu()">
+      <button *ngIf="canManageWorkspace() && !isArchivedProject()" type="button" role="menuitem" [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'deployment']" (click)="closeActionMenu()">
         <span class="menu-icon">DP</span>
         <span>Deploy</span>
       </button>
@@ -184,7 +184,7 @@
 
     <div class="menu-group" role="group" aria-label="Manage">
       <span class="menu-group-label">Manage</span>
-      <button *ngIf="!isArchivedProject()" type="button" role="menuitem" [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'settings']" (click)="closeActionMenu()">
+      <button *ngIf="canManageWorkspace() && !isArchivedProject()" type="button" role="menuitem" [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'settings']" (click)="closeActionMenu()">
         <span class="menu-icon">ST</span>
         <span>Settings</span>
       </button>
@@ -244,17 +244,17 @@
               <strong>Overview</strong>
               <small>Open workspace</small>
             </a>
-            <a [routerLink]="['/dashboard/projects', projectId, 'chatbots', details.id, 'flow']" (click)="closeDetails()">
+            <a *ngIf="canManageWorkspace()" [routerLink]="['/dashboard/projects', projectId, 'chatbots', details.id, 'flow']" (click)="closeDetails()">
               <span>FL</span>
               <strong>Flow</strong>
               <small>Build logic</small>
             </a>
-            <a [routerLink]="['/dashboard/projects', projectId, 'chatbots', details.id, 'knowledge']" (click)="closeDetails()">
+            <a *ngIf="canManageWorkspace()" [routerLink]="['/dashboard/projects', projectId, 'chatbots', details.id, 'knowledge']" (click)="closeDetails()">
               <span>KB</span>
               <strong>Knowledge</strong>
               <small>Manage sources</small>
             </a>
-            <a [routerLink]="['/dashboard/projects', projectId, 'chatbots', details.id, 'settings']" (click)="closeDetails()">
+            <a *ngIf="canManageWorkspace()" [routerLink]="['/dashboard/projects', projectId, 'chatbots', details.id, 'settings']" (click)="closeDetails()">
               <span>ST</span>
               <strong>Settings</strong>
               <small>Edit profile</small>
@@ -345,7 +345,7 @@
                 <div class="copy-row">
                   <input [ngModel]="maskedApiKey(details)" readonly>
                   <button class="secondary" (click)="copyText(details.public_api_key)">Copy</button>
-                  <button class="secondary" (click)="regenerateApiKey(details)" [disabled]="apiKeyId() === details.id">
+                  <button *ngIf="canManageWorkspace()" class="secondary" (click)="regenerateApiKey(details)" [disabled]="apiKeyId() === details.id">
                     {{ apiKeyId() === details.id ? 'Regenerating...' : 'Regenerate' }}
                   </button>
                 </div>
@@ -370,7 +370,7 @@
               <p class="eyebrow">Settings</p>
               <h2>{{ details.name }}</h2>
             </div>
-            <button class="secondary" type="button" (click)="startEdit(details)" *ngIf="editingId() !== details.id && !isArchivedProject()">Edit</button>
+            <button class="secondary" type="button" (click)="startEdit(details)" *ngIf="editingId() !== details.id && canManageWorkspace() && !isArchivedProject()">Edit</button>
           </div>
 
           <div *ngIf="editingId() !== details.id" class="detail-grid">
@@ -413,14 +413,14 @@
             </button>
             <button *ngIf="editingId() === details.id" class="secondary" (click)="cancelEdit()">Cancel</button>
             <button
-              *ngIf="!isArchivedProject()"
+              *ngIf="canManageWorkspace() && !isArchivedProject()"
               class="secondary"
               (click)="setActive(details, !details.is_active)"
               [disabled]="statusId() === details.id">
               {{ statusId() === details.id ? 'Updating...' : details.is_active ? 'Deactivate' : 'Activate' }}
             </button>
             <button
-              *ngIf="!isArchivedProject()"
+              *ngIf="canManageWorkspace() && !isArchivedProject()"
               class="danger"
               (click)="deleteChatbot(details)"
               [disabled]="deletingId() === details.id">

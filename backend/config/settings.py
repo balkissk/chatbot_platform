@@ -87,7 +87,7 @@ def get_settings() -> Settings:
     environment = load_environment()
     database_url = os.getenv("DATABASE_URL") or _database_url_from_parts(environment)
     frontend_base_url = _frontend_base_url(environment)
-    backend_base_url = (os.getenv("BACKEND_BASE_URL") or os.getenv("API_BASE_URL") or "http://127.0.0.1:8000").rstrip("/")
+    backend_base_url = (os.getenv("BACKEND_BASE_URL") or os.getenv("API_BASE_URL") or "http://localhost:8000").rstrip("/")
     return Settings(
         environment=environment,
         database_url=database_url,

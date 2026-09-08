@@ -85,6 +85,22 @@ export const routes: Routes = [
             .then(m => m.VersionsComponent)
       },
       {
+        path: 'projects/:projectId/chatbots/:chatbotId/evaluations/datasets/:datasetId/cases/new',
+        canActivate: [roleGuard],
+        data: { roles: ['manager'] },
+        loadComponent: () =>
+          import('./pages/evaluations/evaluations.component')
+            .then(m => m.EvaluationsComponent)
+      },
+      {
+        path: 'projects/:projectId/chatbots/:chatbotId/evaluations/datasets/:datasetId/cases/:caseId/edit',
+        canActivate: [roleGuard],
+        data: { roles: ['manager'] },
+        loadComponent: () =>
+          import('./pages/evaluations/evaluations.component')
+            .then(m => m.EvaluationsComponent)
+      },
+      {
         path: 'projects/:projectId/chatbots/:chatbotId/evaluations',
         loadComponent: () =>
           import('./pages/evaluations/evaluations.component')
@@ -110,42 +126,56 @@ export const routes: Routes = [
       },
       {
         path: 'projects/:projectId/chatbots/:chatbotId/deployment',
+        canActivate: [roleGuard],
+        data: { roles: ['manager'] },
         loadComponent: () =>
           import('./pages/chatbot-deployment/chatbot-deployment.component')
             .then(m => m.ChatbotDeploymentComponent)
       },
       {
         path: 'projects/:projectId/chatbots/:chatbotId/settings',
+        canActivate: [roleGuard],
+        data: { roles: ['manager'] },
         loadComponent: () =>
           import('./pages/assistant-settings/assistant-settings.component')
             .then(m => m.AssistantSettingsComponent)
       },
       {
         path: 'projects/:projectId/chatbots/:chatbotId/flow',
+        canActivate: [roleGuard],
+        data: { roles: ['manager'] },
         loadComponent: () =>
           import('./pages/flow-builder/flow-builder.component')
             .then(m => m.FlowBuilderComponent)
       },
       {
         path: 'projects/:projectId/chatbots/:chatbotId/templates',
+        canActivate: [roleGuard],
+        data: { roles: ['manager'] },
         loadComponent: () =>
           import('./pages/template-selection/template-selection.component')
             .then(m => m.TemplateSelectionComponent)
       },
       {
         path: 'projects/:projectId/chatbots/:chatbotId/ai-generator',
+        canActivate: [roleGuard],
+        data: { roles: ['manager'] },
         loadComponent: () =>
           import('./pages/ai-generator/ai-generator.component')
             .then(m => m.AiGeneratorComponent)
       },
       {
         path: 'projects/:projectId/chatbots/:chatbotId/flow/test',
+        canActivate: [roleGuard],
+        data: { roles: ['manager'] },
         loadComponent: () =>
           import('./pages/flow-test/flow-test.component')
             .then(m => m.FlowTestComponent)
       },
       {
         path: 'projects/:projectId/chatbots/:chatbotId/knowledge',
+        canActivate: [roleGuard],
+        data: { roles: ['manager'] },
         loadComponent: () =>
           import('./pages/knowledge-base/knowledge-base.component')
             .then(m => m.KnowledgeBaseComponent)
@@ -158,6 +188,8 @@ export const routes: Routes = [
       },
       {
         path: 'projects/:projectId/settings',
+        canActivate: [roleGuard],
+        data: { roles: ['manager'] },
         loadComponent: () =>
           import('./pages/project-settings/project-settings.component')
             .then(m => m.ProjectSettingsComponent)

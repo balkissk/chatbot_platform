@@ -26,7 +26,7 @@
   </section>
 
   <section class="workspace-grid" aria-label="Assistant workspace">
-    <a [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId, 'flow']" class="workspace-card primary-card">
+    <a *ngIf="canManageWorkspace()" [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId, 'flow']" class="workspace-card primary-card">
       <span><svg lucideWorkflow size="18" aria-hidden="true"></svg></span>
       <div>
         <p class="eyebrow">Build</p>
@@ -34,11 +34,11 @@
         <p>Design and connect the assistant conversation logic.</p>
       </div>
     </a>
-    <a [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId, 'knowledge']" class="workspace-card">
+    <a *ngIf="canManageWorkspace()" [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId, 'knowledge']" class="workspace-card">
       <span><svg lucideBookOpen size="18" aria-hidden="true"></svg></span>
       <div><h2>Knowledge</h2><p>Manage source documents, chunks, and retrieval settings.</p></div>
     </a>
-    <a [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId, 'flow', 'test']" class="workspace-card">
+    <a *ngIf="canManageWorkspace()" [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId, 'flow', 'test']" class="workspace-card">
       <span><svg lucideMessageSquareText size="18" aria-hidden="true"></svg></span>
       <div><h2>Test</h2><p>Run the current draft through the chat test workspace.</p></div>
     </a>
@@ -50,11 +50,11 @@
       <span><svg lucideBarChart3 size="18" aria-hidden="true"></svg></span>
       <div><h2>Analytics</h2><p>Inspect assistant activity and operating signals.</p></div>
     </a>
-    <a [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId, 'deployment']" class="workspace-card">
+    <a *ngIf="canManageWorkspace()" [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId, 'deployment']" class="workspace-card">
       <span><svg lucideRocket size="18" aria-hidden="true"></svg></span>
       <div><h2>Deployment</h2><p>Share public chat links, widgets, and API access.</p></div>
     </a>
-    <a [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId, 'settings']" class="workspace-card">
+    <a *ngIf="canManageWorkspace()" [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId, 'settings']" class="workspace-card">
       <span><svg lucideSettings size="18" aria-hidden="true"></svg></span>
       <div><h2>Settings</h2><p>Edit assistant identity, channel, language, and status.</p></div>
     </a>

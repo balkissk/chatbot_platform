@@ -6,8 +6,9 @@ import os
 import secrets
 import smtplib
 import time
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session
 
@@ -30,13 +31,20 @@ from models.user_schema import (
 from config.settings import get_settings
 from services.auth import (
     create_access_token,
+    create_refresh_session,
+    clear_auth_cookies,
     clear_auth_cookie,
+    clear_refresh_cookie,
     get_current_user,
     get_db,
     hash_password,
     normalize_role,
+    REFRESH_COOKIE_NAME,
     require_roles,
+    revoke_refresh_session,
+    rotate_refresh_session,
     set_auth_cookie,
+    set_refresh_cookie,
     verify_password,
 )
 from services.audit import record_audit_log
@@ -331,15 +339,40 @@ def login(
     db.refresh(user)
 
     token = create_access_token(user)
+    refresh_token, _ = create_refresh_session(db, user)
     if response is not None:
         set_auth_cookie(response, token)
+        set_refresh_cookie(response, refresh_token)
 
     return TokenResponse(user=serialize_user(user))
 
 
+@router.post("/refresh")
+def refresh(
+    response: Response,
+    refresh_token: Annotated[str | None, Cookie(alias=REFRESH_COOKIE_NAME)] = None,
+    db: Session = Depends(get_db),
+):
+    try:
+        new_refresh_token, _, user = rotate_refresh_session(db, refresh_token)
+    except HTTPException:
+        clear_auth_cookies(response)
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    set_auth_cookie(response, create_access_token(user))
+    set_refresh_cookie(response, new_refresh_token)
+    return {"message": "Session refreshed"}
+
+
 @router.post("/logout")
-def logout(response: Response):
+def logout(
+    response: Response,
+    refresh_token: Annotated[str | None, Cookie(alias=REFRESH_COOKIE_NAME)] = None,
+    db: Session = Depends(get_db),
+):
+    revoke_refresh_session(db, refresh_token)
     clear_auth_cookie(response)
+    clear_refresh_cookie(response)
     return {"message": "Logged out"}
 
 

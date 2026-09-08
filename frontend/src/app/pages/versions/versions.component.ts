@@ -3,6 +3,7 @@ import { Component, HostListener, Inject, OnInit, PLATFORM_ID, signal } from '@a
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { ApiService } from '../../services/api';
+import { AuthService } from '../../services/auth';
 
 @Component({
   selector: 'app-versions',
@@ -60,6 +61,7 @@ export class VersionsComponent implements OnInit {
     private route: ActivatedRoute,
     private router: Router,
     private api: ApiService,
+    private auth: AuthService,
     @Inject(PLATFORM_ID) platformId: object
   ) {
     this.isBrowser = isPlatformBrowser(platformId);
@@ -105,6 +107,7 @@ export class VersionsComponent implements OnInit {
   }
 
   createVersion() {
+    if (!this.canManageWorkspace()) return;
     this.creating.set(true);
     this.error.set('');
 
@@ -121,6 +124,7 @@ export class VersionsComponent implements OnInit {
   }
 
   publish(versionId: number) {
+    if (!this.canManageWorkspace()) return;
     this.actionId.set(versionId);
     this.error.set('');
     this.smokeMessage.set('');
@@ -131,7 +135,7 @@ export class VersionsComponent implements OnInit {
         const blocked = (readiness?.checks || []).filter((check: any) => check.status === 'BLOCKED');
         const warnings = (readiness?.checks || []).filter((check: any) => check.status === 'WARNING');
         if (blocked.length) {
-          this.error.set(`Resolve blocked readiness checks before publishing: ${blocked.map((check: any) => check.label).join(', ')}`);
+          this.error.set(`Publication blocked: ${blocked.map((check: any) => check.message || check.label).join(' ')}`);
           this.actionId.set(undefined);
           return;
         }
@@ -156,6 +160,7 @@ export class VersionsComponent implements OnInit {
   }
 
   private publishNow(versionId: number, confirmWarnings: boolean) {
+    if (!this.canManageWorkspace()) return;
     this.actionId.set(versionId);
     this.api.publishVersion(versionId, confirmWarnings).subscribe({
       next: () => {
@@ -173,6 +178,7 @@ export class VersionsComponent implements OnInit {
   }
 
   archive(versionId: number) {
+    if (!this.canManageWorkspace()) return;
     this.actionId.set(versionId);
     this.api.archiveVersion(versionId).subscribe({
       next: () => {
@@ -187,6 +193,7 @@ export class VersionsComponent implements OnInit {
   }
 
   duplicate(versionId: number) {
+    if (!this.canManageWorkspace()) return;
     this.actionId.set(versionId);
     this.error.set('');
     this.api.duplicateVersion(versionId).subscribe({
@@ -202,6 +209,7 @@ export class VersionsComponent implements OnInit {
   }
 
   deleteVersion(version: any) {
+    if (!this.canManageWorkspace()) return;
     this.pendingConfirm.set({
       type: 'version',
       item: version,
@@ -212,6 +220,7 @@ export class VersionsComponent implements OnInit {
   }
 
   private deleteVersionNow(version: any) {
+    if (!this.canManageWorkspace()) return;
     this.actionId.set(version.id);
     this.api.deleteVersion(version.id).subscribe({
       next: () => {
@@ -266,6 +275,7 @@ export class VersionsComponent implements OnInit {
   }
 
   saveLlmConfig() {
+    if (!this.canManageWorkspace()) return;
     const versionId = this.selectedVersionId();
     if (!versionId) return;
 
@@ -344,6 +354,7 @@ export class VersionsComponent implements OnInit {
   }
 
   runSmokeTest() {
+    if (!this.canManageWorkspace()) return;
     const versionId = this.selectedVersionId();
     if (!versionId) return;
     this.smokeLoading.set(true);
@@ -364,6 +375,7 @@ export class VersionsComponent implements OnInit {
   }
 
   deleteDocument(document: any) {
+    if (!this.canManageWorkspace()) return;
     this.pendingConfirm.set({
       type: 'document',
       item: document,
@@ -374,6 +386,7 @@ export class VersionsComponent implements OnInit {
   }
 
   private deleteDocumentNow(document: any) {
+    if (!this.canManageWorkspace()) return;
     this.api.deleteDocument(document.id).subscribe({
       next: () => {
         this.pendingConfirm.set(null);
@@ -394,6 +407,7 @@ export class VersionsComponent implements OnInit {
   }
 
   confirmPendingAction() {
+    if (!this.canManageWorkspace()) return;
     const pending = this.pendingConfirm();
     if (!pending) return;
     if (pending.type === 'version') {
@@ -417,6 +431,7 @@ export class VersionsComponent implements OnInit {
   }
 
   onFileSelected(event: Event) {
+    if (!this.canManageWorkspace()) return;
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
 
@@ -511,6 +526,10 @@ export class VersionsComponent implements OnInit {
     if (Array.isArray(detail?.errors)) {
       return `Fix these flow issues before publishing: ${detail.errors.join(' ')}`;
     }
+    const blocked = detail?.readiness?.checks?.filter((check: any) => check.status === 'BLOCKED') || [];
+    if (blocked.length) {
+      return `Publication blocked: ${blocked.map((check: any) => check.message || check.label).join(' ')}`;
+    }
     if (typeof detail?.message === 'string') return detail.message;
     if (typeof detail === 'string') return detail;
     return 'Could not publish version';
@@ -518,5 +537,9 @@ export class VersionsComponent implements OnInit {
 
   goBack() {
     this.router.navigate(['/dashboard/projects', this.projectId, 'chatbots']);
+  }
+
+  canManageWorkspace() {
+    return this.auth.canManageWorkspace();
   }
 }

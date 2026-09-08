@@ -32,7 +32,7 @@
       <strong>This project is archived.</strong>
       <p>Restore it to make changes.</p>
     </div>
-    <button class="primary compact" type="button" (click)="restoreProject()" [disabled]="restoring()">
+    <button *ngIf="canManageWorkspace()" class="primary compact" type="button" (click)="restoreProject()" [disabled]="restoring()">
       {{ restoring() ? 'Restoring...' : 'Restore Project' }}
     </button>
   </section>
@@ -118,7 +118,7 @@
               type="button"
               *ngFor="let item of recommendations()"
               [class.high]="item.priority === 'high'"
-              [disabled]="!item.action"
+              [disabled]="!item.action || (!canManageWorkspace() && isManagerOnlyAction(item.action))"
               (click)="handleRecommendation(item)">
               <span class="priority-badge">{{ item.priority }}</span>
               <div>
@@ -293,7 +293,7 @@
     <p class="eyebrow">No assistant yet</p>
     <h3>Create an assistant to start monitoring operations.</h3>
     <p class="muted">The operations dashboard will appear after this workspace has a chatbot and real conversation data.</p>
-    <button class="primary compact" type="button" (click)="newAssistant()" [disabled]="isArchived()">Create Assistant</button>
+    <button *ngIf="canManageWorkspace()" class="primary compact" type="button" (click)="newAssistant()" [disabled]="isArchived()">Create Assistant</button>
   </section>
 
   <section *ngIf="workspaceError() && !workspaceLoading()" class="panel error-state">

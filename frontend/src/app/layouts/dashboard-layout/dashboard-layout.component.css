@@ -1,6 +1,7 @@
 :host {
   --ga-header-height: var(--ds-topbar-height, 48px);
   --ga-menu-width: 224px;
+  --ga-sidebar-transition: var(--ds-sidebar-transition, 280ms cubic-bezier(.22, 1, .36, 1));
   --ga-primary: #18b9a8;
   --ga-primary-dark: #087a70;
   --ga-accent: #2f6fed;
@@ -505,7 +506,8 @@
   min-height: 100vh;
   padding-top: var(--ga-header-height);
   position: relative;
-  transition: all 0.15s ease-in-out;
+  transition: margin-left var(--ga-sidebar-transition);
+  will-change: margin-left;
 }
 
 .pcoded-content {
@@ -653,7 +655,7 @@
   margin: 3px 0 8px;
   max-height: 520px;
   overflow: hidden;
-  transition: max-height .18s ease, opacity .18s ease;
+  transition: max-height 220ms cubic-bezier(.22, 1, .36, 1), opacity 180ms ease-out;
 }
 
 .project-subnav.collapsed {
@@ -720,7 +722,8 @@
 
 .pcoded-navbar,
 .pcoded-main-container {
-  transition: margin-left .18s ease, transform .18s ease;
+  transition: margin-left var(--ga-sidebar-transition), transform var(--ga-sidebar-transition), width var(--ga-sidebar-transition);
+  will-change: margin-left, transform, width;
 }
 
 :host-context(.landing-dark-mode) {

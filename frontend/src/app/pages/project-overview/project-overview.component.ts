@@ -20,6 +20,7 @@ import {
   LucideTriangleAlert
 } from '@lucide/angular';
 import { ApiService } from '../../services/api';
+import { AuthService } from '../../services/auth';
 import { ToastService } from '../../services/toast.service';
 
 @Component({
@@ -78,6 +79,7 @@ export class ProjectOverviewComponent implements OnInit, OnDestroy {
     private route: ActivatedRoute,
     private router: Router,
     private api: ApiService,
+    private auth: AuthService,
     private toast: ToastService,
     @Inject(PLATFORM_ID) platformId: object
   ) {
@@ -249,6 +251,7 @@ export class ProjectOverviewComponent implements OnInit, OnDestroy {
   }
 
   newAssistant() {
+    if (!this.canManageWorkspace()) return;
     if (this.isArchived()) return;
     this.router.navigate(['/dashboard/projects', this.projectId, 'chatbots'], {
       queryParams: { create: 1 }
@@ -273,6 +276,7 @@ export class ProjectOverviewComponent implements OnInit, OnDestroy {
   }
 
   restoreProject() {
+    if (!this.canManageWorkspace()) return;
     if (!this.isArchived() || this.restoring()) return;
     this.restoring.set(true);
     this.error.set('');
@@ -474,6 +478,7 @@ export class ProjectOverviewComponent implements OnInit, OnDestroy {
   handleRecommendation(item: any) {
     const action = item?.action;
     if (!action) return;
+    if (!this.canManageWorkspace() && this.isManagerOnlyAction(action)) return;
     const targetAssistantId = item.affected_assistant_id || this.firstChatbot()?.id;
     if (!targetAssistantId) return;
     const base = ['/dashboard/projects', this.projectId, 'chatbots', targetAssistantId];
@@ -508,6 +513,7 @@ export class ProjectOverviewComponent implements OnInit, OnDestroy {
   }
 
   goToFirstChatbot(path: 'flow' | 'knowledge' | 'analytics' | 'test' | 'versions') {
+    if (!this.canManageWorkspace() && this.isManagerOnlyAction(path)) return;
     if (this.isArchived() && (path === 'flow' || path === 'knowledge')) return;
     const bot = this.firstChatbot();
     if (!bot) return;
@@ -521,5 +527,13 @@ export class ProjectOverviewComponent implements OnInit, OnDestroy {
       return;
     }
     this.router.navigate([...base, path]);
+  }
+
+  canManageWorkspace() {
+    return this.auth.canManageWorkspace();
+  }
+
+  isManagerOnlyAction(action: string | null | undefined) {
+    return new Set(['flow', 'knowledge', 'test']).has(String(action || ''));
   }
 }

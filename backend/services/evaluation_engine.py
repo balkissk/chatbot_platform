@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from models.chatbot import Chatbot
 from models.evaluation import EvaluationCase, EvaluationCaseResult, EvaluationDataset, EvaluationRun
+from models.flow import Flow, FlowNode, FlowTransition
 from models.llm_config import LLMConfig
 from models.version import VersionChatbot
 from routes.chat_routes import build_rag_response
@@ -26,6 +27,9 @@ SCORING_POLICY = {
     "critical_case_weight": 2,
     "judge_prompt_version": "evaluation-judge-v1",
 }
+
+EVALUATION_TURN_TEXT = "TEXT"
+EVALUATION_TURN_BUTTON_SELECTION = "BUTTON_SELECTION"
 
 
 def _norm(value: Any) -> str:
@@ -47,6 +51,81 @@ def _source_text(source: dict) -> str:
         str(source.get(key) or "")
         for key in ("document_id", "filename", "title", "section_type", "text")
     )
+
+
+def _button_options_for(node: FlowNode, transitions: list[FlowTransition]) -> list[str]:
+    config = node.config or {}
+    buttons = config.get("buttons") or []
+    transition_labels = [
+        transition.label
+        for transition in transitions
+        if transition.source_node_key == node.node_key and transition.label
+    ]
+    return [str(item) for item in (buttons or transition_labels) if str(item or "").strip()]
+
+
+def _normalize_turn_type(value: Any) -> str:
+    normalized = str(value or "").strip().upper()
+    return normalized if normalized in {EVALUATION_TURN_TEXT, EVALUATION_TURN_BUTTON_SELECTION} else EVALUATION_TURN_TEXT
+
+
+def normalize_evaluation_turns(turns: Any, fallback_input_message: str | None = None) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for turn in _as_list(turns):
+        if isinstance(turn, dict):
+            turn_type = _normalize_turn_type(turn.get("type"))
+            if turn_type == EVALUATION_TURN_BUTTON_SELECTION:
+                normalized.append({
+                    "type": EVALUATION_TURN_BUTTON_SELECTION,
+                    "block_id": str(turn.get("block_id") or turn.get("node_key") or "").strip(),
+                    "value": str(turn.get("value") or turn.get("message") or "").strip(),
+                })
+                continue
+            normalized.append({
+                "type": EVALUATION_TURN_TEXT,
+                "value": str(turn.get("value") or turn.get("message") or "").strip(),
+            })
+            continue
+        normalized.append({
+            "type": EVALUATION_TURN_TEXT,
+            "value": str(turn or "").strip(),
+        })
+    if normalized:
+        return normalized
+    return [{
+        "type": EVALUATION_TURN_TEXT,
+        "value": str(fallback_input_message or "").strip(),
+    }]
+
+
+def _interaction_runtime_error(
+    message: str,
+    current_node_key: str | None,
+    variables: dict,
+    trace: dict,
+    turn: dict[str, Any],
+) -> dict:
+    trace.setdefault("turn_errors", []).append({
+        "type": turn.get("type"),
+        "block_id": turn.get("block_id"),
+        "value": turn.get("value"),
+        "message": message,
+    })
+    result = {
+        "response": message,
+        "messages": [{"text": message, "options": []}],
+        "mode_used": "evaluation_interaction_error",
+        "current_node_key": current_node_key,
+        "variables": variables,
+        "options": [],
+        "sources": [],
+        "runtime_error": {
+            "code": "INVALID_EVALUATION_INTERACTION",
+            "severity": "error",
+            "message": message,
+        },
+    }
+    return result
 
 
 def assertion_result(
@@ -364,11 +443,12 @@ def execute_evaluation_case(db: Session, chatbot: Chatbot, version: VersionChatb
     failure_category = None
     error_message = None
     current_node_key = None
-    turns = case.turns or []
-    messages = [
-        str(turn.get("message", "")) if isinstance(turn, dict) else str(turn or "")
-        for turn in turns
-    ] or [case.input_message]
+    flow = db.query(Flow).filter(Flow.version_id == version.id).first()
+    nodes = db.query(FlowNode).filter(FlowNode.flow_id == flow.id).all() if flow else []
+    transitions = db.query(FlowTransition).filter(FlowTransition.flow_id == flow.id).all() if flow else []
+    runtime_graph = (flow, nodes, transitions) if flow else None
+    node_by_key = {node.node_key: node for node in nodes}
+    turns = normalize_evaluation_turns(case.turns or [], case.input_message)
 
     def rag_answer(query: str, fallback_variables: dict | None = None, node_config: dict | None = None):
         return build_rag_response(
@@ -383,17 +463,50 @@ def execute_evaluation_case(db: Session, chatbot: Chatbot, version: VersionChatb
         )
 
     try:
-        for index, turn_message in enumerate(messages, start=1):
-            trace.setdefault("turns", []).append({"turn": index, "message_present": bool(turn_message.strip())})
+        for index, turn in enumerate(turns, start=1):
+            turn_type = _normalize_turn_type(turn.get("type"))
+            turn_value = str(turn.get("value") or "").strip()
+            trace.setdefault("turns", []).append({
+                "turn": index,
+                "type": turn_type,
+                "message_present": bool(turn_value),
+                "block_id": turn.get("block_id"),
+            })
+            if turn_type == EVALUATION_TURN_BUTTON_SELECTION:
+                block_id = str(turn.get("block_id") or "").strip()
+                if not block_id:
+                    failure_category = RuntimeFailureCategory.INVALID_FLOW.value
+                    error_message = "Button selection turn is missing block_id."
+                    runtime_result = _interaction_runtime_error(error_message, current_node_key, variables, trace, turn)
+                    break
+                node = node_by_key.get(block_id)
+                if not node or node.type != "buttons":
+                    failure_category = RuntimeFailureCategory.INVALID_FLOW.value
+                    error_message = f'Button selection block "{block_id}" is not a valid buttons block in this version.'
+                    runtime_result = _interaction_runtime_error(error_message, current_node_key, variables, trace, turn)
+                    break
+                if current_node_key != block_id:
+                    failure_category = RuntimeFailureCategory.INVALID_FLOW.value
+                    error_message = f'Button selection expected waiting block "{block_id}" but runtime is waiting at "{current_node_key or "start"}".'
+                    runtime_result = _interaction_runtime_error(error_message, current_node_key, variables, trace, turn)
+                    break
+                options = {_norm(option) for option in _button_options_for(node, transitions)}
+                if not turn_value or _norm(turn_value) not in options:
+                    failure_category = RuntimeFailureCategory.INVALID_FLOW.value
+                    error_message = f'Button selection "{turn_value}" is not a valid option for block "{block_id}".'
+                    runtime_result = _interaction_runtime_error(error_message, current_node_key, variables, trace, turn)
+                    break
+
             runtime_result = execute_flow(
                 db=db,
                 version_id=version.id,
-                message=turn_message,
+                message=turn_value,
                 current_node_key=current_node_key,
                 variables=variables,
                 rag_answer=rag_answer,
                 allow_rag_fallback=False,
                 trace=trace,
+                _runtime_graph=runtime_graph,
             )
             variables = runtime_result.get("variables") or variables
             current_node_key = runtime_result.get("current_node_key")

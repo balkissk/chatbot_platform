@@ -15,6 +15,7 @@ from models.llm_config import LLMConfig
 from models.version import VersionChatbot
 from models.version_smoke_test import VersionSmokeTest
 from routes.chat_routes import build_rag_response
+from services.evaluation_engine import compare_runs
 from services.flow_runtime import execute_flow
 from services.flow_validation import validate_flow_version
 from services.runtime_contracts import RuntimeFailureCategory, sanitized_category_from_error
@@ -30,6 +31,23 @@ def latest_completed_evaluation(db: Session, version_id: int, dataset_id: int | 
     return query.order_by(EvaluationRun.completed_at.desc(), EvaluationRun.id.desc()).first()
 
 
+def current_published_version(db: Session, chatbot: Chatbot, candidate_version_id: int) -> VersionChatbot | None:
+    if chatbot.active_version_id and chatbot.active_version_id != candidate_version_id:
+        active = db.query(VersionChatbot).filter(
+            VersionChatbot.id == chatbot.active_version_id,
+            VersionChatbot.chatbot_id == chatbot.id,
+            VersionChatbot.status == "published",
+        ).first()
+        if active:
+            return active
+
+    return db.query(VersionChatbot).filter(
+        VersionChatbot.chatbot_id == chatbot.id,
+        VersionChatbot.id != candidate_version_id,
+        VersionChatbot.status == "published",
+    ).order_by(VersionChatbot.published_at.desc(), VersionChatbot.id.desc()).first()
+
+
 def evaluation_readiness_check(db: Session, version: VersionChatbot, chatbot: Chatbot) -> dict | None:
     policy = db.query(EvaluationPolicy).filter(EvaluationPolicy.assistant_id == chatbot.id).first()
     if not policy or not policy.required_before_publish:
@@ -41,6 +59,7 @@ def evaluation_readiness_check(db: Session, version: VersionChatbot, chatbot: Ch
         "minimum_score": policy.minimum_score,
         "maximum_failed_cases": policy.maximum_failed_cases,
         "critical_failures_allowed": policy.critical_failures_allowed,
+        "block_on_regression": policy.block_on_regression,
         "maximum_evaluation_age_hours": policy.maximum_evaluation_age_hours,
     }
     if not run:
@@ -76,6 +95,33 @@ def evaluation_readiness_check(db: Session, version: VersionChatbot, chatbot: Ch
             "evaluations",
             metadata,
         )
+
+    if policy.block_on_regression:
+        baseline_version = current_published_version(db, chatbot, version.id)
+        if baseline_version:
+            baseline = latest_completed_evaluation(db, baseline_version.id, policy.required_dataset_id)
+        else:
+            baseline = None
+        if baseline:
+            comparison = compare_runs(db, baseline, run)
+            metadata.update({
+                "baseline_run_id": baseline.id,
+                "baseline_version_id": baseline.version_id,
+                "candidate_run_id": run.id,
+                "candidate_version_id": run.version_id,
+                "comparison_regressions": comparison["regressions"],
+            })
+            if comparison["regressions"] > 0:
+                return readiness_item(
+                    "EVALUATION_REQUIRED",
+                    "Required evaluation completed",
+                    "BLOCKED",
+                    f"Publication blocked: {comparison['regressions']} regression detected compared with the current published version."
+                    if comparison["regressions"] == 1
+                    else f"Publication blocked: {comparison['regressions']} regressions detected compared with the current published version.",
+                    "evaluations",
+                    metadata,
+                )
 
     if run.completed_at and run.completed_at < datetime.utcnow() - timedelta(hours=policy.maximum_evaluation_age_hours):
         return readiness_item(

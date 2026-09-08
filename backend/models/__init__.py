@@ -8,6 +8,7 @@ from .knowledge_base import KnowledgeBase
 from .document import Document
 from .chunk import Chunk
 from .user import User
+from .auth_session import AuthSession
 from .flow import Flow, FlowNode, FlowTransition
 from .flow_template import FlowTemplate, FlowTemplateRevision
 from .evaluation import EvaluationCase, EvaluationCaseResult, EvaluationDataset, EvaluationPolicy, EvaluationRun

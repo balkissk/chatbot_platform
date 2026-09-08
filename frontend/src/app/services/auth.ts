@@ -1,6 +1,7 @@
 import { Injectable, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
+import { tap } from 'rxjs';
 import { apiBaseUrl } from '../config/app-config';
 
 export interface AuthUser {
@@ -30,6 +31,7 @@ interface MessageResponse {
 export class AuthService {
   private baseUrl = apiBaseUrl();
   private userKey = 'chatbot_factory_user';
+  private expirationHandled = false;
 
   currentUser = signal<AuthUser | null>(this.readStoredUser());
 
@@ -48,6 +50,20 @@ export class AuthService {
       `${this.baseUrl}/auth/login`,
       { email, password },
       { withCredentials: true }
+    );
+  }
+
+  refreshSession() {
+    return this.http.post<MessageResponse>(
+      `${this.baseUrl}/auth/refresh`,
+      {},
+      { withCredentials: true }
+    );
+  }
+
+  loadCurrentUser() {
+    return this.http.get<AuthUser>(`${this.baseUrl}/auth/me`, { withCredentials: true }).pipe(
+      tap(user => this.updateStoredUser(user))
     );
   }
 
@@ -81,6 +97,7 @@ export class AuthService {
     if (!storage) return;
     storage.setItem(this.userKey, JSON.stringify(response.user));
     this.currentUser.set(response.user);
+    this.expirationHandled = false;
   }
 
   updateStoredUser(user: AuthUser) {
@@ -89,6 +106,7 @@ export class AuthService {
       storage.setItem(this.userKey, JSON.stringify(user));
     }
     this.currentUser.set(user);
+    this.expirationHandled = false;
   }
 
   logout() {
@@ -99,6 +117,9 @@ export class AuthService {
   }
 
   expireSession() {
+    if (this.expirationHandled) return;
+    this.expirationHandled = true;
+
     const storage = this.safeLocalStorage();
     if (storage) {
       storage.removeItem(this.userKey);
@@ -124,6 +145,16 @@ export class AuthService {
     this.restoreSession();
     const user = this.currentUser();
     return !!user && roles.includes(user.role);
+  }
+
+  canManageWorkspace() {
+    this.restoreSession();
+    return this.currentUser()?.role === 'manager';
+  }
+
+  hasStoredSession() {
+    this.restoreSession();
+    return !!this.currentUser();
   }
 
   homeForRole(role: string) {

@@ -10,7 +10,7 @@
       {{ loading() ? 'Refreshing...' : 'Refresh' }}
     </button>
     <button class="secondary" (click)="goBack()">Back</button>
-    <button (click)="createVersion()" [disabled]="creating()">
+    <button *ngIf="canManageWorkspace()" (click)="createVersion()" [disabled]="creating()">
       {{ creating() ? 'Creating...' : 'Create Version' }}
     </button>
   </div>
@@ -36,14 +36,14 @@
     </div>
   </div>
   <div class="identity-actions">
-    <button class="secondary" type="button" (click)="runSmokeTest()" [disabled]="smokeLoading() || actionId() === selected.id">
+    <button *ngIf="canManageWorkspace()" class="secondary" type="button" (click)="runSmokeTest()" [disabled]="smokeLoading() || actionId() === selected.id">
       {{ smokeLoading() ? 'Testing...' : 'Test assistant before publish' }}
     </button>
-    <button (click)="publish(selected.id)" [disabled]="selected.status === 'published' || actionId() === selected.id">
+    <button *ngIf="canManageWorkspace()" (click)="publish(selected.id)" [disabled]="selected.status === 'published' || actionId() === selected.id">
       {{ actionId() === selected.id ? 'Working...' : 'Publish' }}
     </button>
-    <button class="secondary" (click)="duplicate(selected.id)" [disabled]="actionId() === selected.id">Duplicate</button>
-    <button class="secondary" (click)="archive(selected.id)" [disabled]="selected.status === 'archived' || actionId() === selected.id">Archive</button>
+    <button *ngIf="canManageWorkspace()" class="secondary" (click)="duplicate(selected.id)" [disabled]="actionId() === selected.id">Duplicate</button>
+    <button *ngIf="canManageWorkspace()" class="secondary" (click)="archive(selected.id)" [disabled]="selected.status === 'archived' || actionId() === selected.id">Archive</button>
   </div>
 </section>
 
@@ -106,7 +106,7 @@
       <button class="secondary" (click)="selectVersion(v.id)" [disabled]="selectedVersionId() === v.id">
         Select
       </button>
-      <button class="danger" (click)="deleteVersion(v)" [disabled]="actionId() === v.id || v.is_active || v.status === 'published'">
+      <button *ngIf="canManageWorkspace()" class="danger" (click)="deleteVersion(v)" [disabled]="actionId() === v.id || v.is_active || v.status === 'published'">
         Delete
       </button>
     </div>
@@ -120,7 +120,7 @@
         <p class="eyebrow">AI Instructions</p>
         <h3>Assistant behavior</h3>
       </div>
-      <button (click)="saveLlmConfig()" [disabled]="configSaving() || configLoading()">
+      <button *ngIf="canManageWorkspace()" (click)="saveLlmConfig()" [disabled]="configSaving() || configLoading()">
         {{ configSaving() ? 'Saving...' : 'Save instructions' }}
       </button>
     </div>
@@ -133,12 +133,13 @@
         System Instructions
         <textarea
           [(ngModel)]="aiInstructions.system_instructions"
+          [readonly]="!canManageWorkspace()"
           rows="6"
           placeholder="You are the official assistant of UNVV. Always answer professionally in French."></textarea>
       </label>
       <label>
         Tone
-        <select [(ngModel)]="aiInstructions.tone">
+        <select [(ngModel)]="aiInstructions.tone" [disabled]="!canManageWorkspace()">
           <option>Professional</option>
           <option>Friendly</option>
           <option>Formal</option>
@@ -147,7 +148,7 @@
       </label>
       <label>
         Language
-        <select [(ngModel)]="aiInstructions.language">
+        <select [(ngModel)]="aiInstructions.language" [disabled]="!canManageWorkspace()">
           <option>French</option>
           <option>English</option>
           <option>Arabic</option>
@@ -155,7 +156,7 @@
       </label>
       <label>
         Response Style
-        <select [(ngModel)]="aiInstructions.response_style">
+        <select [(ngModel)]="aiInstructions.response_style" [disabled]="!canManageWorkspace()">
           <option>Concise</option>
           <option>Detailed</option>
           <option>Step-by-step</option>
@@ -164,7 +165,7 @@
       </label>
       <label>
         Temperature
-        <input type="number" min="0" max="1" step="0.1" [(ngModel)]="aiInstructions.temperature">
+        <input type="number" min="0" max="1" step="0.1" [(ngModel)]="aiInstructions.temperature" [disabled]="!canManageWorkspace()">
       </label>
     </div>
   </section>
@@ -175,10 +176,10 @@
         <p class="eyebrow">RAG</p>
         <h3>Knowledge Base</h3>
       </div>
-      <button class="secondary" type="button" [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId, 'knowledge']">Open Knowledge Base</button>
+      <button *ngIf="canManageWorkspace()" class="secondary" type="button" [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId, 'knowledge']">Open Knowledge Base</button>
     </div>
 
-    <label class="file-control">
+    <label class="file-control" *ngIf="canManageWorkspace()">
       <input
         type="file"
         accept=".txt,.md,.csv,.json"
@@ -199,7 +200,7 @@
         <strong>{{ doc.filename }}</strong>
         <p>{{ doc.chunks_count }} chunks</p>
       </div>
-      <button class="danger" (click)="deleteDocument(doc)">Delete</button>
+      <button *ngIf="canManageWorkspace()" class="danger" (click)="deleteDocument(doc)">Delete</button>
     </div>
   </section>
 

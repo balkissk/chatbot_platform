@@ -15,7 +15,7 @@ from models.flow_schema import BuilderContextResponse, FlowNodeCreate, FlowNodeR
 from models.project import Project
 from models.user import User
 from models.version import VersionChatbot
-from services.auth import require_roles
+from services.auth import require_roles, require_workspace_manager
 from services.ai_provider import AIProviderError, generate_chat_completion
 from services.flow_limits import (
     MAX_FLOW_NODES,
@@ -1103,7 +1103,7 @@ def _normalize_ai_generation(raw: dict, payload: AiGenerateRequest) -> AiGenerat
 @router.post("/assistants/ai-generate", response_model=AiGenerateResponse)
 def generate_assistant_with_ai(
     payload: AiGenerateRequest,
-    current_user=Depends(require_roles("admin", "manager"))
+    current_user=Depends(require_workspace_manager)
 ):
     goal = _compact(payload.assistant_goal)
     context = _compact(payload.business_context)
@@ -1175,6 +1175,8 @@ def get_flow(
 
     flow = db.query(Flow).filter(Flow.version_id == version_id).first()
     if not flow:
+        if current_user.role != "manager":
+            raise HTTPException(status_code=404, detail="Flow not found")
         chatbot = db.query(Chatbot).filter(Chatbot.id == version.chatbot_id).first()
         flow = create_starter_flow(db, version_id, "blank", chatbot.language if chatbot else None)
 
@@ -1325,7 +1327,7 @@ def update_flow_template(
     template_key: str,
     payload: FlowTemplateUpdate,
     db: Session = Depends(get_db),
-    current_user=Depends(require_roles("admin", "manager"))
+    current_user=Depends(require_workspace_manager)
 ):
     template = _template_from_db(db, template_key, current_user)
     if not template:
@@ -1412,7 +1414,7 @@ def create_flow_template_from_flow(
     flow_id: int,
     payload: FlowTemplateCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(require_roles("admin", "manager"))
+    current_user=Depends(require_workspace_manager)
 ):
     flow = ensure_flow_access(db, flow_id, current_user)
     name = payload.name.strip()
@@ -1460,7 +1462,7 @@ def create_flow_template_revision_from_flow(
     template_key: str,
     payload: FlowTemplateRevisionCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(require_roles("admin", "manager"))
+    current_user=Depends(require_workspace_manager)
 ):
     flow = ensure_flow_access(db, flow_id, current_user)
     template = _template_from_db(db, template_key, current_user)
@@ -1497,7 +1499,7 @@ def apply_flow_template(
     flow_id: int,
     payload: FlowTemplateApply,
     db: Session = Depends(get_db),
-    current_user=Depends(require_roles("admin", "manager"))
+    current_user=Depends(require_workspace_manager)
 ):
     flow = ensure_flow_access(db, flow_id, current_user)
     version = db.query(VersionChatbot).filter(VersionChatbot.id == flow.version_id).first()
@@ -1579,7 +1581,7 @@ def apply_generated_flow(
     flow_id: int,
     payload: GeneratedFlowApply,
     db: Session = Depends(get_db),
-    current_user=Depends(require_roles("admin", "manager"))
+    current_user=Depends(require_workspace_manager)
 ):
     flow = ensure_flow_access(db, flow_id, current_user)
     version = db.query(VersionChatbot).filter(VersionChatbot.id == flow.version_id).first()
@@ -1677,7 +1679,7 @@ def create_node(
     flow_id: int,
     payload: FlowNodeCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(require_roles("admin", "manager"))
+    current_user=Depends(require_workspace_manager)
 ):
     flow = ensure_flow_access(db, flow_id, current_user)
     node_count = db.query(FlowNode).filter(FlowNode.flow_id == flow.id).count()
@@ -1707,7 +1709,7 @@ def update_node(
     node_id: int,
     payload: FlowNodeUpdate,
     db: Session = Depends(get_db),
-    current_user=Depends(require_roles("admin", "manager"))
+    current_user=Depends(require_workspace_manager)
 ):
     node = ensure_node_access(db, node_id, current_user)
     position_x = payload.position_x if payload.position_x is not None else node.position_x
@@ -1733,7 +1735,7 @@ def update_node(
 def delete_node(
     node_id: int,
     db: Session = Depends(get_db),
-    current_user=Depends(require_roles("admin", "manager"))
+    current_user=Depends(require_workspace_manager)
 ):
     node = ensure_node_access(db, node_id, current_user)
 
@@ -1755,7 +1757,7 @@ def create_transition(
     flow_id: int,
     payload: FlowTransitionCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(require_roles("admin", "manager"))
+    current_user=Depends(require_workspace_manager)
 ):
     flow = ensure_flow_access(db, flow_id, current_user)
     transition_count = db.query(FlowTransition).filter(FlowTransition.flow_id == flow.id).count()
@@ -1791,7 +1793,7 @@ def update_transition(
     transition_id: int,
     payload: FlowTransitionUpdate,
     db: Session = Depends(get_db),
-    current_user=Depends(require_roles("admin", "manager"))
+    current_user=Depends(require_workspace_manager)
 ):
     transition = ensure_transition_access(db, transition_id, current_user)
     source_key = payload.source_node_key if payload.source_node_key is not None else transition.source_node_key
@@ -1828,7 +1830,7 @@ def update_transition(
 def delete_transition(
     transition_id: int,
     db: Session = Depends(get_db),
-    current_user=Depends(require_roles("admin", "manager"))
+    current_user=Depends(require_workspace_manager)
 ):
     transition = ensure_transition_access(db, transition_id, current_user)
 

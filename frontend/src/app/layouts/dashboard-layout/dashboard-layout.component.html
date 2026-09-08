@@ -1,5 +1,5 @@
 <div class="pcoded-shell" [class.navbar-collapsed]="navCollapsed">
-  <nav class="pcoded-navbar menu-light" aria-label="Workspace navigation" [attr.aria-hidden]="navCollapsed ? 'true' : null" (keydown.tab)="trapNavDrawerFocus($event)">
+  <nav class="pcoded-navbar menu-light" aria-label="Workspace navigation" [attr.aria-hidden]="navHiddenFromAssistiveTech() ? 'true' : null" (keydown.tab)="trapNavDrawerFocus($event)">
     <div class="navbar-wrapper">
       <div class="navbar-content">
         <div class="side-profile">

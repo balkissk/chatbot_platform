@@ -25,7 +25,7 @@ from models.project_schema import (
 from models.runtime_log import RuntimeLog
 from models.user import User
 from models.version import VersionChatbot
-from services.auth import require_roles
+from services.auth import require_roles, require_workspace_manager
 from services.audit import record_audit_log
 from services.flow_validation import validate_flow_version
 
@@ -468,7 +468,7 @@ def duplicate_project_name(db: Session, source: Project, current_user: User) -> 
 def create_project(
     project: ProjectCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager"))
+    current_user: User = Depends(require_workspace_manager)
 ):
     name = project.name.strip()
     if not name:
@@ -1121,7 +1121,7 @@ def get_project_workspace_dashboard(
 def archive_project(
     project_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager"))
+    current_user: User = Depends(require_workspace_manager)
 ):
     project = get_accessible_project(db, project_id, current_user)
     if project.status == ProjectStatus.archived.value:
@@ -1150,7 +1150,7 @@ def archive_project(
 def restore_project(
     project_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager"))
+    current_user: User = Depends(require_workspace_manager)
 ):
     project = get_accessible_project(db, project_id, current_user)
     project.status = ProjectStatus.active.value
@@ -1175,7 +1175,7 @@ def restore_project(
 def duplicate_project(
     project_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager"))
+    current_user: User = Depends(require_workspace_manager)
 ):
     source = get_accessible_project(db, project_id, current_user)
     duplicate = Project(
@@ -1207,7 +1207,7 @@ def update_project(
     project_id: int,
     payload: ProjectUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager"))
+    current_user: User = Depends(require_workspace_manager)
 ):
     project = get_accessible_project(db, project_id, current_user)
     name = payload.name.strip()
@@ -1239,7 +1239,7 @@ def update_project(
 def delete_project(
     project_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager"))
+    current_user: User = Depends(require_workspace_manager)
 ):
     project = get_accessible_project(db, project_id, current_user)
     deleted_project_id = project.id

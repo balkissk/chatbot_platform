@@ -195,6 +195,151 @@ class EvaluationCenterTest(unittest.TestCase):
         self.assertEqual(result.case_snapshot["turns"][1]["message"], "Support")
         self.assertEqual(result.actual_variables["customer_email"], "alex@example.com")
 
+    def test_legacy_text_only_turns_still_work(self):
+        self.create_message_flow("Returns are accepted within 30 days.")
+        dataset, case = self.create_dataset_with_case(expected_keywords=["30 days"])
+        case.turns = ["What is the return window?"]
+        self.db.commit()
+
+        run = run_dataset_evaluation(self.db, dataset, self.version, self.chatbot, self.manager.id)
+
+        self.assertEqual(run.status, "completed")
+        self.assertEqual(run.results[0].status, "passed")
+        self.assertEqual(run.results[0].case_snapshot["turns"], ["What is the return window?"])
+
+    def test_button_selection_turn_follows_correct_branch_and_preserves_state(self):
+        flow = Flow(version_id=self.version.id, name="Returns Flow")
+        self.db.add(flow)
+        self.db.commit()
+        self.db.add_all([
+            FlowNode(flow_id=flow.id, node_key="start", type="message", label="Start", config={"text": "Hello"}),
+            FlowNode(flow_id=flow.id, node_key="route", type="buttons", label="Route", config={"text": "Choose an option.", "buttons": ["Return policy", "Contact information"], "field": "route_choice"}),
+            FlowNode(flow_id=flow.id, node_key="returns", type="message", label="Returns", config={"text": "Returns are accepted within 30 days."}),
+            FlowNode(flow_id=flow.id, node_key="contact", type="message", label="Contact", config={"text": "You can reach support at support@example.com."}),
+            FlowNode(flow_id=flow.id, node_key="end", type="end", label="End", config={"message": "Done."}),
+            FlowTransition(flow_id=flow.id, source_node_key="start", target_node_key="route", label="next"),
+            FlowTransition(flow_id=flow.id, source_node_key="route", target_node_key="returns", label="Return policy"),
+            FlowTransition(flow_id=flow.id, source_node_key="route", target_node_key="contact", label="Contact information"),
+            FlowTransition(flow_id=flow.id, source_node_key="returns", target_node_key="end", label="next"),
+            FlowTransition(flow_id=flow.id, source_node_key="contact", target_node_key="end", label="next"),
+        ])
+        self.db.commit()
+
+        dataset = EvaluationDataset(assistant_id=self.chatbot.id, name="Returns Suite", created_by=self.manager.id)
+        self.db.add(dataset)
+        self.db.commit()
+        case = EvaluationCase(
+            dataset_id=dataset.id,
+            name="Return policy branch",
+            input_message="Hello",
+            turns=[
+                {"type": "TEXT", "value": "Hello"},
+                {"type": "BUTTON_SELECTION", "block_id": "route", "value": "Return policy"},
+            ],
+            expected_keywords=["30 days"],
+            expected_flow_node_ids=["start", "route", "returns"],
+            expected_final_node_id="end",
+            expected_fallback=False,
+            critical=True,
+            enabled=True,
+        )
+        self.db.add(case)
+        self.db.commit()
+
+        run = run_dataset_evaluation(self.db, dataset, self.version, self.chatbot, self.manager.id)
+
+        self.assertEqual(run.results[0].status, "passed")
+        self.assertEqual(run.results[0].actual_variables["route_choice"], "Return policy")
+        self.assertEqual(run.results[0].case_snapshot["turns"][1]["type"], "BUTTON_SELECTION")
+        self.assertEqual(
+            [node["node_key"] for node in run.results[0].actual_visited_nodes],
+            ["start", "route", "returns", "end"],
+        )
+
+    def test_invalid_button_selection_is_rejected_without_mutating_snapshot(self):
+        flow = Flow(version_id=self.version.id, name="Invalid Branch Flow")
+        self.db.add(flow)
+        self.db.commit()
+        self.db.add_all([
+            FlowNode(flow_id=flow.id, node_key="start", type="message", label="Start", config={"text": "Hello"}),
+            FlowNode(flow_id=flow.id, node_key="route", type="buttons", label="Route", config={"text": "Choose.", "buttons": ["Return policy"], "field": "route_choice"}),
+            FlowNode(flow_id=flow.id, node_key="returns", type="message", label="Returns", config={"text": "Returns are accepted within 30 days."}),
+            FlowTransition(flow_id=flow.id, source_node_key="start", target_node_key="route", label="next"),
+            FlowTransition(flow_id=flow.id, source_node_key="route", target_node_key="returns", label="Return policy"),
+        ])
+        self.db.commit()
+
+        dataset = EvaluationDataset(assistant_id=self.chatbot.id, name="Invalid Suite", created_by=self.manager.id)
+        self.db.add(dataset)
+        self.db.commit()
+        case = EvaluationCase(
+            dataset_id=dataset.id,
+            name="Invalid selection",
+            input_message="Hello",
+            turns=[
+                {"type": "TEXT", "value": "Hello"},
+                {"type": "BUTTON_SELECTION", "block_id": "route", "value": "Missing option"},
+            ],
+            expected_final_node_id="returns",
+            critical=True,
+            enabled=True,
+        )
+        self.db.add(case)
+        self.db.commit()
+
+        run = run_dataset_evaluation(self.db, dataset, self.version, self.chatbot, self.manager.id)
+
+        result = run.results[0]
+        self.assertEqual(result.status, "error")
+        self.assertEqual(result.failure_category, "INVALID_FLOW")
+        self.assertIn("Missing option", result.error_message_sanitized)
+        self.assertEqual(result.case_snapshot["turns"][1]["value"], "Missing option")
+
+    def test_contact_button_selection_reaches_contact_branch(self):
+        flow = Flow(version_id=self.version.id, name="Contact Flow")
+        self.db.add(flow)
+        self.db.commit()
+        self.db.add_all([
+            FlowNode(flow_id=flow.id, node_key="start", type="message", label="Start", config={"text": "Hello"}),
+            FlowNode(flow_id=flow.id, node_key="route", type="buttons", label="Route", config={"text": "Choose an option.", "buttons": ["Return policy", "Contact information"], "field": "route_choice"}),
+            FlowNode(flow_id=flow.id, node_key="returns", type="message", label="Returns", config={"text": "Returns are accepted within 30 days."}),
+            FlowNode(flow_id=flow.id, node_key="contact", type="message", label="Contact", config={"text": "Contact us at support@example.com."}),
+            FlowNode(flow_id=flow.id, node_key="end", type="end", label="End", config={"message": "Done."}),
+            FlowTransition(flow_id=flow.id, source_node_key="start", target_node_key="route", label="next"),
+            FlowTransition(flow_id=flow.id, source_node_key="route", target_node_key="returns", label="Return policy"),
+            FlowTransition(flow_id=flow.id, source_node_key="route", target_node_key="contact", label="Contact information"),
+            FlowTransition(flow_id=flow.id, source_node_key="returns", target_node_key="end", label="next"),
+            FlowTransition(flow_id=flow.id, source_node_key="contact", target_node_key="end", label="next"),
+        ])
+        self.db.commit()
+
+        dataset = EvaluationDataset(assistant_id=self.chatbot.id, name="Contact Suite", created_by=self.manager.id)
+        self.db.add(dataset)
+        self.db.commit()
+        case = EvaluationCase(
+            dataset_id=dataset.id,
+            name="Contact branch",
+            input_message="Hello",
+            turns=[
+                {"type": "TEXT", "value": "Hello"},
+                {"type": "BUTTON_SELECTION", "block_id": "route", "value": "Contact information"},
+            ],
+            expected_keywords=["support@example.com"],
+            expected_flow_node_ids=["start", "route", "contact"],
+            expected_final_node_id="end",
+            expected_fallback=False,
+            critical=True,
+            enabled=True,
+        )
+        self.db.add(case)
+        self.db.commit()
+
+        run = run_dataset_evaluation(self.db, dataset, self.version, self.chatbot, self.manager.id)
+
+        self.assertEqual(run.results[0].status, "passed")
+        self.assertEqual(run.results[0].actual_variables["route_choice"], "Contact information")
+        self.assertEqual(run.results[0].actual_response, "Done.")
+
 
 if __name__ == "__main__":
     unittest.main()

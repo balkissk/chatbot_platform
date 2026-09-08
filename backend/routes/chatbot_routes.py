@@ -30,7 +30,7 @@ from models.llm_config import LLMConfig
 from models.project import Project
 from models.user import User
 from models.version import VersionChatbot
-from services.auth import require_roles
+from services.auth import require_roles, require_workspace_manager
 from services.audit import record_audit_log
 from services.flow_validation import validate_flow_version
 from services.generated_flow import ensure_generated_flow_is_valid
@@ -620,7 +620,7 @@ def operation_recommendations(
 def create_chatbot(
     chatbot: ChatbotCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager"))
+    current_user: User = Depends(require_workspace_manager)
 ):
     ensure_project_access(db, chatbot.project_id, current_user)
     name = chatbot.name.strip()
@@ -706,7 +706,8 @@ def get_chatbots(
     if current_user.role == "manager":
         query = query.join(Project, Chatbot.project_id == Project.id).filter(Project.user_id == current_user.id)
     chatbots = query.all()
-    ensure_public_api_keys(db, chatbots)
+    if current_user.role == "manager":
+        ensure_public_api_keys(db, chatbots)
     version_stats = chatbot_version_stats_for_ids(db, [chatbot.id for chatbot in chatbots])
     return [serialize_chatbot(chatbot, version_stats.get(chatbot.id)) for chatbot in chatbots]
 
@@ -1175,7 +1176,7 @@ def update_conversation_follow_up(
     session_id: int,
     payload: dict = Body(default_factory=dict),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager"))
+    current_user: User = Depends(require_workspace_manager)
 ):
     chatbot = get_accessible_chatbot(db, id, current_user)
     session = db.query(ConversationSession).filter(
@@ -1247,7 +1248,8 @@ def get_chatbot_details(
     current_user: User = Depends(require_roles("admin", "manager"))
 ):
     chatbot = get_accessible_chatbot(db, id, current_user)
-    ensure_public_api_key(db, chatbot)
+    if current_user.role == "manager":
+        ensure_public_api_key(db, chatbot)
     return serialize_chatbot_details(db, chatbot)
 
 
@@ -1255,7 +1257,7 @@ def get_chatbot_details(
 def get_chatbot_setup(
     id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("manager"))
+    current_user: User = Depends(require_workspace_manager)
 ):
     chatbot = get_accessible_chatbot(db, id, current_user)
     return serialize_chatbot_setup(chatbot)
@@ -1266,7 +1268,7 @@ def update_chatbot_setup(
     id: int,
     payload: ChatbotSetupUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("manager"))
+    current_user: User = Depends(require_workspace_manager)
 ):
     chatbot = get_accessible_chatbot(db, id, current_user)
     updates = payload.model_dump(exclude_unset=True)
@@ -1345,7 +1347,7 @@ def update_chatbot_setup(
 def reapply_template_to_new_draft(
     id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("manager"))
+    current_user: User = Depends(require_workspace_manager)
 ):
     chatbot = get_accessible_chatbot(db, id, current_user)
     source_template_key = getattr(chatbot, "source_template_key", None)
@@ -1385,7 +1387,7 @@ def regenerate_ai_draft(
     id: int,
     payload: ChatbotAiDraftRegenerate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("manager"))
+    current_user: User = Depends(require_workspace_manager)
 ):
     chatbot = get_accessible_chatbot(db, id, current_user)
     if chatbot.build_method != "ai":
@@ -1467,7 +1469,7 @@ def regenerate_ai_draft(
 def regenerate_chatbot_api_key(
     id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager"))
+    current_user: User = Depends(require_workspace_manager)
 ):
     chatbot = get_accessible_chatbot(db, id, current_user)
     chatbot.public_api_key = new_public_api_key()
@@ -1492,7 +1494,7 @@ def update_chatbot_rag_settings(
     id: int,
     payload: RagSettingsUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager"))
+    current_user: User = Depends(require_workspace_manager)
 ):
     chatbot = get_accessible_chatbot(db, id, current_user)
     chatbot.rag_settings = normalize_rag_settings(payload.model_dump())
@@ -1506,7 +1508,7 @@ def update_chatbot(
     id: int,
     payload: ChatbotUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager"))
+    current_user: User = Depends(require_workspace_manager)
 ):
     chatbot = get_accessible_chatbot(db, id, current_user)
     name = payload.name.strip()
@@ -1546,7 +1548,7 @@ def update_chatbot_status(
     id: int,
     payload: ChatbotStatusUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager"))
+    current_user: User = Depends(require_workspace_manager)
 ):
     chatbot = get_accessible_chatbot(db, id, current_user)
     chatbot.is_active = payload.is_active
@@ -1569,7 +1571,7 @@ def update_chatbot_status(
 def delete_chatbot(
     id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager"))
+    current_user: User = Depends(require_workspace_manager)
 ):
     chatbot = get_accessible_chatbot(db, id, current_user)
     deleted_chatbot_id = chatbot.id
@@ -1649,6 +1651,7 @@ def get_chatbots_by_project(
 ):
     ensure_project_access(db, project_id, current_user)
     chatbots = db.query(Chatbot).filter(Chatbot.project_id == project_id).all()
-    ensure_public_api_keys(db, chatbots)
+    if current_user.role == "manager":
+        ensure_public_api_keys(db, chatbots)
     version_stats = chatbot_version_stats_for_ids(db, [chatbot.id for chatbot in chatbots])
     return [serialize_chatbot(chatbot, version_stats.get(chatbot.id)) for chatbot in chatbots]

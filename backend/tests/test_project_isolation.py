@@ -590,6 +590,24 @@ class ProjectIsolationTest(unittest.TestCase):
             )
         self.assertEqual(transition_error.exception.status_code, 404)
 
+    def test_admin_get_flow_does_not_create_missing_flow(self):
+        chatbot = Chatbot(name="A Bot", project_id=self.project_a1.id, language="en", is_active=True)
+        self.db.add(chatbot)
+        self.db.commit()
+        version = VersionChatbot(chatbot_id=chatbot.id, version_number=1, status="draft")
+        self.db.add(version)
+        self.db.commit()
+
+        with self.assertRaises(HTTPException) as admin_error:
+            get_flow(version.id, db=self.db, current_user=self.admin)
+
+        self.assertEqual(admin_error.exception.status_code, 404)
+        self.assertEqual(self.db.query(Flow).filter(Flow.version_id == version.id).count(), 0)
+
+        flow = get_flow(version.id, db=self.db, current_user=self.manager_a)
+        self.assertEqual(flow.version_id, version.id)
+        self.assertEqual(self.db.query(Flow).filter(Flow.version_id == version.id).count(), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

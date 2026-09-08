@@ -13,7 +13,7 @@ from models.project import Project
 from models.user import User
 from models.version import VersionChatbot
 from services.audit import record_audit_log
-from services.auth import require_roles
+from services.auth import require_roles, require_workspace_manager
 from services.evaluation_engine import (
     compare_runs,
     export_dataset_csv,
@@ -146,7 +146,7 @@ def create_dataset(
     assistant_id: int,
     payload: DatasetPayload,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager")),
+    current_user: User = Depends(require_workspace_manager),
 ):
     chatbot = get_accessible_chatbot(db, assistant_id, current_user)
     dataset = EvaluationDataset(
@@ -192,7 +192,7 @@ def update_dataset(
     dataset_id: int,
     payload: DatasetPayload,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager")),
+    current_user: User = Depends(require_workspace_manager),
 ):
     dataset = get_accessible_dataset(db, dataset_id, current_user)
     dataset.name = payload.name.strip()
@@ -205,7 +205,7 @@ def update_dataset(
 
 
 @router.post("/datasets/{dataset_id}/archive")
-def archive_dataset(dataset_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_roles("admin", "manager"))):
+def archive_dataset(dataset_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_workspace_manager)):
     dataset = get_accessible_dataset(db, dataset_id, current_user)
     dataset.status = "archived"
     dataset.updated_at = datetime.utcnow()
@@ -215,7 +215,7 @@ def archive_dataset(dataset_id: int, db: Session = Depends(get_db), current_user
 
 
 @router.post("/datasets/{dataset_id}/restore")
-def restore_dataset(dataset_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_roles("admin", "manager"))):
+def restore_dataset(dataset_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_workspace_manager)):
     dataset = get_accessible_dataset(db, dataset_id, current_user)
     dataset.status = "active"
     dataset.updated_at = datetime.utcnow()
@@ -225,7 +225,7 @@ def restore_dataset(dataset_id: int, db: Session = Depends(get_db), current_user
 
 
 @router.delete("/datasets/{dataset_id}")
-def delete_dataset(dataset_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_roles("admin", "manager"))):
+def delete_dataset(dataset_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_workspace_manager)):
     dataset = get_accessible_dataset(db, dataset_id, current_user)
     run_count = db.query(EvaluationRun).filter(EvaluationRun.dataset_id == dataset.id).count()
     if run_count:
@@ -237,7 +237,7 @@ def delete_dataset(dataset_id: int, db: Session = Depends(get_db), current_user:
 
 
 @router.post("/datasets/{dataset_id}/cases")
-def create_case(dataset_id: int, payload: CasePayload, db: Session = Depends(get_db), current_user: User = Depends(require_roles("admin", "manager"))):
+def create_case(dataset_id: int, payload: CasePayload, db: Session = Depends(get_db), current_user: User = Depends(require_workspace_manager)):
     dataset = get_accessible_dataset(db, dataset_id, current_user)
     next_index = db.query(EvaluationCase).filter(EvaluationCase.dataset_id == dataset.id).count()
     case = EvaluationCase(dataset_id=dataset.id, order_index=payload.order_index if payload.order_index is not None else next_index)
@@ -250,7 +250,7 @@ def create_case(dataset_id: int, payload: CasePayload, db: Session = Depends(get
 
 
 @router.put("/cases/{case_id}")
-def update_case(case_id: int, payload: CasePayload, db: Session = Depends(get_db), current_user: User = Depends(require_roles("admin", "manager"))):
+def update_case(case_id: int, payload: CasePayload, db: Session = Depends(get_db), current_user: User = Depends(require_workspace_manager)):
     case = db.query(EvaluationCase).filter(EvaluationCase.id == case_id).first()
     if not case:
         raise HTTPException(status_code=404, detail="Evaluation case not found")
@@ -263,7 +263,7 @@ def update_case(case_id: int, payload: CasePayload, db: Session = Depends(get_db
 
 
 @router.post("/cases/{case_id}/duplicate")
-def duplicate_case(case_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_roles("admin", "manager"))):
+def duplicate_case(case_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_workspace_manager)):
     case = db.query(EvaluationCase).filter(EvaluationCase.id == case_id).first()
     if not case:
         raise HTTPException(status_code=404, detail="Evaluation case not found")
@@ -283,7 +283,7 @@ def duplicate_case(case_id: int, db: Session = Depends(get_db), current_user: Us
 
 
 @router.post("/datasets/{dataset_id}/cases/reorder")
-def reorder_cases(dataset_id: int, payload: CaseReorderPayload, db: Session = Depends(get_db), current_user: User = Depends(require_roles("admin", "manager"))):
+def reorder_cases(dataset_id: int, payload: CaseReorderPayload, db: Session = Depends(get_db), current_user: User = Depends(require_workspace_manager)):
     dataset = get_accessible_dataset(db, dataset_id, current_user)
     cases = db.query(EvaluationCase).filter(EvaluationCase.dataset_id == dataset.id, EvaluationCase.id.in_(payload.case_ids)).all()
     if len(cases) != len(set(payload.case_ids)):
@@ -296,7 +296,7 @@ def reorder_cases(dataset_id: int, payload: CaseReorderPayload, db: Session = De
 
 
 @router.post("/cases/{case_id}/enabled")
-def set_case_enabled(case_id: int, enabled: bool = Query(...), db: Session = Depends(get_db), current_user: User = Depends(require_roles("admin", "manager"))):
+def set_case_enabled(case_id: int, enabled: bool = Query(...), db: Session = Depends(get_db), current_user: User = Depends(require_workspace_manager)):
     case = db.query(EvaluationCase).filter(EvaluationCase.id == case_id).first()
     if not case:
         raise HTTPException(status_code=404, detail="Evaluation case not found")
@@ -308,7 +308,7 @@ def set_case_enabled(case_id: int, enabled: bool = Query(...), db: Session = Dep
 
 
 @router.delete("/cases/{case_id}")
-def delete_case(case_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_roles("admin", "manager"))):
+def delete_case(case_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_workspace_manager)):
     case = db.query(EvaluationCase).filter(EvaluationCase.id == case_id).first()
     if not case:
         raise HTTPException(status_code=404, detail="Evaluation case not found")
@@ -326,7 +326,7 @@ def delete_case(case_id: int, db: Session = Depends(get_db), current_user: User 
 
 
 @router.post("/datasets/{dataset_id}/import")
-def import_cases(dataset_id: int, payload: ImportPayload, db: Session = Depends(get_db), current_user: User = Depends(require_roles("admin", "manager"))):
+def import_cases(dataset_id: int, payload: ImportPayload, db: Session = Depends(get_db), current_user: User = Depends(require_workspace_manager)):
     dataset = get_accessible_dataset(db, dataset_id, current_user)
     format_name = payload.format.strip().lower()
     if format_name not in {"json", "csv"}:
@@ -390,7 +390,7 @@ def export_dataset(dataset_id: int, format: str = "json", db: Session = Depends(
 
 
 @router.post("/runs")
-def run_evaluation(payload: RunPayload, db: Session = Depends(get_db), current_user: User = Depends(require_roles("admin", "manager"))):
+def run_evaluation(payload: RunPayload, db: Session = Depends(get_db), current_user: User = Depends(require_workspace_manager)):
     dataset = get_accessible_dataset(db, payload.dataset_id, current_user)
     version = get_accessible_version(db, payload.version_id, current_user)
     chatbot = get_accessible_chatbot(db, dataset.assistant_id, current_user)
@@ -434,7 +434,7 @@ def read_result(result_id: int, db: Session = Depends(get_db), current_user: Use
 
 
 @router.post("/runs/{run_id}/cancel")
-def cancel_run(run_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_roles("admin", "manager"))):
+def cancel_run(run_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_workspace_manager)):
     run = get_accessible_run(db, run_id, current_user)
     if run.status not in {"queued", "running"}:
         return serialize_run(run)
@@ -484,7 +484,7 @@ def read_policy(assistant_id: int, db: Session = Depends(get_db), current_user: 
 
 
 @router.put("/assistants/{assistant_id}/policy")
-def update_policy(assistant_id: int, payload: PolicyPayload, db: Session = Depends(get_db), current_user: User = Depends(require_roles("admin", "manager"))):
+def update_policy(assistant_id: int, payload: PolicyPayload, db: Session = Depends(get_db), current_user: User = Depends(require_workspace_manager)):
     chatbot = get_accessible_chatbot(db, assistant_id, current_user)
     if payload.required_dataset_id:
         dataset = get_accessible_dataset(db, payload.required_dataset_id, current_user)

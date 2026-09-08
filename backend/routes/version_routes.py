@@ -16,7 +16,7 @@ from models.project import Project
 from models.user import User
 from models.version import VersionChatbot
 from models.version_schema import VersionCreate
-from services.auth import require_roles
+from services.auth import require_roles, require_workspace_manager
 from services.audit import record_audit_log
 from services.flow_validation import validate_flow_version
 from services.publication_readiness import readiness_report, run_version_smoke_test
@@ -136,7 +136,7 @@ def copy_flow(db: Session, source_version_id: int, target_version_id: int) -> No
 def create_version(
     version: VersionCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager"))
+    current_user: User = Depends(require_workspace_manager)
 ):
     chatbot = get_accessible_chatbot(db, version.chatbot_id, current_user)
     last_version = db.query(VersionChatbot) \
@@ -177,7 +177,7 @@ def create_version(
 def duplicate_version(
     version_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager"))
+    current_user: User = Depends(require_workspace_manager)
 ):
     source_version = get_accessible_version(db, version_id, current_user)
     chatbot = get_accessible_chatbot(db, source_version.chatbot_id, current_user)
@@ -234,7 +234,7 @@ def get_version_readiness(
 def smoke_test_version(
     version_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager"))
+    current_user: User = Depends(require_workspace_manager)
 ):
     version = get_accessible_version(db, version_id, current_user)
     chatbot = get_accessible_chatbot(db, version.chatbot_id, current_user)
@@ -246,7 +246,7 @@ def publish_version(
     version_id: int,
     confirm_warnings: bool = False,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager"))
+    current_user: User = Depends(require_workspace_manager)
 ):
     version = get_accessible_version(db, version_id, current_user)
     chatbot = get_accessible_chatbot(db, version.chatbot_id, current_user)
@@ -319,7 +319,7 @@ def publish_version(
 def archive_version(
     version_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager"))
+    current_user: User = Depends(require_workspace_manager)
 ):
     version = get_accessible_version(db, version_id, current_user)
     chatbot = get_accessible_chatbot(db, version.chatbot_id, current_user)
@@ -341,7 +341,7 @@ def archive_version(
 def delete_version(
     version_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager"))
+    current_user: User = Depends(require_workspace_manager)
 ):
     version = get_accessible_version(db, version_id, current_user)
     chatbot = get_accessible_chatbot(db, version.chatbot_id, current_user)

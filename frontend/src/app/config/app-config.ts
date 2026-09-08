@@ -9,7 +9,7 @@ declare global {
   }
 }
 
-const localApiBaseUrl = 'http://127.0.0.1:8000';
+const localApiBaseUrl = 'http://localhost:8000';
 
 function viteEnvValue(key: string) {
   try {

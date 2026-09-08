@@ -15,7 +15,7 @@ from models.knowledge_schema import ChunkReprocessResponse, ChunkResponse, Docum
 from models.project import Project
 from models.user import User
 from models.version import VersionChatbot
-from services.auth import require_roles
+from services.auth import require_roles, require_workspace_manager
 from services.audit import record_audit_log
 from services.document_ingestion import DocumentExtractionError, decode_content_bytes, extract_document_text
 from services.rag import chunk_document, embed_chunks, get_or_create_knowledge_base, retrieve_relevant_chunks_with_mode
@@ -262,7 +262,7 @@ def ingest_document(
     payload: DocumentIngest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager"))
+    current_user: User = Depends(require_workspace_manager)
 ):
     ensure_version_access(db, version_id, current_user)
 
@@ -331,7 +331,13 @@ def get_documents(
     current_user: User = Depends(require_roles("admin", "manager"))
 ):
     ensure_version_access(db, version_id, current_user)
-    knowledge_base = get_or_create_knowledge_base(db, version_id)
+    knowledge_base = (
+        get_or_create_knowledge_base(db, version_id)
+        if current_user.role == "manager"
+        else db.query(KnowledgeBase).filter(KnowledgeBase.version_id == version_id).first()
+    )
+    if not knowledge_base:
+        return []
     documents = db.query(Document).filter(
         Document.knowledge_base_id == knowledge_base.id
     ).order_by(Document.created_at.desc()).all()
@@ -354,7 +360,7 @@ def update_document(
     document_id: int,
     payload: DocumentUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager"))
+    current_user: User = Depends(require_workspace_manager)
 ):
     document = ensure_document_access(db, document_id, current_user)
     filename = payload.filename.strip()
@@ -393,7 +399,7 @@ def get_chunks(
 def reprocess_document_embeddings(
     document_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager"))
+    current_user: User = Depends(require_workspace_manager)
 ):
     document = ensure_document_access(db, document_id, current_user)
     if document.status == "processing":
@@ -432,7 +438,7 @@ def reprocess_document_embeddings(
 def reprocess_document_chunks(
     document_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager"))
+    current_user: User = Depends(require_workspace_manager)
 ):
     document = ensure_document_access(db, document_id, current_user)
     if not document.raw_text:
@@ -551,7 +557,7 @@ def test_rag_retrieval(
 def delete_document(
     document_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "manager"))
+    current_user: User = Depends(require_workspace_manager)
 ):
     document = ensure_document_access(db, document_id, current_user)
     deleted_document_id = document.id

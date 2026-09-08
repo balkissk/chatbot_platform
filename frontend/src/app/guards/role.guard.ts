@@ -1,6 +1,7 @@
 import { PLATFORM_ID, inject } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { CanActivateFn, Router } from '@angular/router';
+import { catchError, map, of } from 'rxjs';
 import { AuthService } from '../services/auth';
 
 
@@ -18,6 +19,11 @@ export const roleGuard: CanActivateFn = route => {
     return true;
   }
 
-  const user = auth.currentUser();
-  return router.createUrlTree([auth.homeForRole(user?.role || 'end_user')]);
+  return auth.loadCurrentUser().pipe(
+    map(user => roles.includes(user.role)
+      ? true
+      : router.createUrlTree([auth.homeForRole(user.role)])
+    ),
+    catchError(() => of(router.createUrlTree(['/login'])))
+  );
 };

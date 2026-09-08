@@ -11,6 +11,7 @@ import {
   LucideWorkflow
 } from '@lucide/angular';
 import { ApiService } from '../../services/api';
+import { AuthService } from '../../services/auth';
 import { channelLabel, languageLabel, purposeLabel } from '../../shared/assistant-options';
 
 @Component({
@@ -41,6 +42,7 @@ export class AssistantOverviewComponent implements OnInit {
   constructor(
     private route: ActivatedRoute,
     private api: ApiService,
+    private auth: AuthService,
     @Inject(PLATFORM_ID) platformId: object
   ) {
     this.isBrowser = isPlatformBrowser(platformId);
@@ -93,5 +95,9 @@ export class AssistantOverviewComponent implements OnInit {
     const latest = assistant.latest_version_number || assistant.draft_version_number || assistant.version_number;
     const live = assistant.published_version_number || assistant.live_version_number;
     return `Draft ${latest ? 'v' + latest : 'none'} · ${live ? 'Live v' + live : 'No live version'}`;
+  }
+
+  canManageWorkspace() {
+    return this.auth.canManageWorkspace();
   }
 }
