@@ -19,8 +19,8 @@ function jsString(value: string) {
 }
 
 app.get('/config.js', (_req, res) => {
-  const apiBaseUrl = process.env['PUBLIC_API_BASE_URL'] || process.env['API_BASE_URL'] || 'http://127.0.0.1:8000';
-  const frontendBaseUrl = process.env['PUBLIC_FRONTEND_BASE_URL'] || process.env['FRONTEND_URL'] || '';
+  const apiBaseUrl = process.env['PUBLIC_API_BASE_URL'] || process.env['API_BASE_URL'] || process.env['BACKEND_BASE_URL'] || 'http://localhost:8000';
+  const frontendBaseUrl = process.env['PUBLIC_FRONTEND_BASE_URL'] || process.env['FRONTEND_BASE_URL'] || process.env['FRONTEND_URL'] || '';
 
   res
     .type('application/javascript')
