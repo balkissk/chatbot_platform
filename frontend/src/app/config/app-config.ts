@@ -10,6 +10,8 @@ declare global {
 }
 
 const localApiBaseUrl = 'http://localhost:8000';
+const azureFrontendBaseUrl = 'https://chatbot-factory-frontend-balkis-a4dchke0bucchbgk.francecentral-01.azurewebsites.net';
+const azureApiBaseUrl = 'https://chatbot-factory-api-balkis-hkfhh2adh8hzhkbu.francecentral-01.azurewebsites.net';
 
 function viteEnvValue(key: string) {
   try {
@@ -29,8 +31,13 @@ function trimTrailingSlash(value: string) {
   return value.replace(/\/+$/, '');
 }
 
+function productionApiBaseUrl() {
+  if (typeof window === 'undefined') return undefined;
+  return trimTrailingSlash(window.location.origin) === azureFrontendBaseUrl ? azureApiBaseUrl : undefined;
+}
+
 export function apiBaseUrl() {
-  return trimTrailingSlash(runtimeConfig().apiBaseUrl || viteEnvValue('VITE_BACKEND_BASE_URL') || localApiBaseUrl);
+  return trimTrailingSlash(runtimeConfig().apiBaseUrl || viteEnvValue('VITE_BACKEND_BASE_URL') || productionApiBaseUrl() || localApiBaseUrl);
 }
 
 export function frontendBaseUrl() {
