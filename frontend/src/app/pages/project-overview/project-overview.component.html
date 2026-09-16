@@ -291,9 +291,8 @@
 
   <section *ngIf="noAssistantConfirmed()" class="panel empty-dashboard">
     <p class="eyebrow">No assistant yet</p>
-    <h3>Create an assistant to start monitoring operations.</h3>
-    <p class="muted">The operations dashboard will appear after this workspace has a chatbot and real conversation data.</p>
-    <button *ngIf="canManageWorkspace()" class="primary compact" type="button" (click)="newAssistant()" [disabled]="isArchived()">Create Assistant</button>
+    <h3>No assistant exists in this project yet.</h3>
+    <p class="muted">Use the Assistants section in the sidebar to create and manage assistants. The operations dashboard will appear after this workspace has an assistant and real conversation data.</p>
   </section>
 
   <section *ngIf="workspaceError() && !workspaceLoading()" class="panel error-state">

@@ -193,7 +193,7 @@ button.danger,
 .health-strip {
   display: grid;
   gap: 1px;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
   overflow: hidden;
   padding: 0;
 }
@@ -511,6 +511,25 @@ button.danger,
   gap: 8px;
 }
 
+.document-ready-summary {
+  background: var(--status-success-soft, #edf9f2);
+  border: 1px solid rgba(45, 155, 104, .2);
+  border-radius: 13px;
+  color: var(--success);
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+}
+
+.document-ready-summary strong {
+  color: var(--success);
+}
+
+.document-ready-summary span {
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+
 .details-metrics span,
 .pipeline span {
   background: var(--surface-subtle);
@@ -525,6 +544,47 @@ button.danger,
 .chunk-explorer {
   display: grid;
   gap: 12px;
+}
+
+.advanced-details {
+  border: 1px solid var(--border-soft);
+  border-radius: 13px;
+  background: #fff;
+  padding: 0;
+}
+
+.advanced-details summary {
+  color: var(--ink-strong);
+  cursor: pointer;
+  font-weight: 850;
+  list-style: none;
+  padding: 12px;
+}
+
+.advanced-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.advanced-details summary::after {
+  color: var(--ink-muted);
+  content: "Open";
+  float: right;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.advanced-details[open] summary {
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.advanced-details[open] summary::after {
+  content: "Hide";
+}
+
+.advanced-details .details-metrics,
+.advanced-details .chunk-explorer,
+.settings-advanced .nested-settings {
+  padding: 12px;
 }
 
 .chunk-toolbar,
@@ -726,6 +786,16 @@ button.danger,
   justify-content: flex-end;
 }
 
+.settings-advanced,
+.settings-grid > .field-hint {
+  grid-column: 1 / -1;
+}
+
+.nested-settings {
+  box-shadow: none;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .test-form input {
   flex: 1;
 }
@@ -772,7 +842,7 @@ button.danger,
 
 @media (max-width: 1120px) {
   .health-strip {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: 1fr;
   }
 
   .knowledge-workspace,

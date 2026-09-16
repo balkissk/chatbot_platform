@@ -30,7 +30,6 @@
 
 .page-header,
 .version-identity,
-.config-tabs,
 .version-card,
 .panel,
 .empty-state,
@@ -149,30 +148,6 @@ button.danger {
   color: var(--ink-muted);
   font-size: 13px;
   font-weight: 750;
-}
-
-.config-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 12px;
-  padding: 8px;
-}
-
-.config-tabs a {
-  border-radius: 10px;
-  color: var(--ink-muted);
-  font-size: 13px;
-  font-weight: 850;
-  padding: 9px 11px;
-  text-decoration: none;
-}
-
-.config-tabs a:hover,
-.config-tabs a:focus-visible {
-  background: rgba(24, 185, 168, .1);
-  color: var(--brand-teal-dark);
-  outline: 0;
 }
 
 .version-grid {
@@ -376,37 +351,7 @@ textarea:focus {
   outline: 0;
 }
 
-.file-control {
-  align-items: center;
-  background:
-    linear-gradient(90deg, rgba(16, 34, 56, .04) 1px, transparent 1px),
-    linear-gradient(rgba(16, 34, 56, .035) 1px, transparent 1px),
-    var(--surface-subtle);
-  background-size: 24px 24px;
-  border: 1px dashed rgba(8, 122, 112, .34);
-  border-radius: 14px;
-  cursor: pointer;
-  display: flex;
-  justify-content: center;
-  min-height: 94px;
-  padding: 12px;
-}
-
-.file-control input {
-  height: 1px;
-  opacity: 0;
-  position: absolute;
-  width: 1px;
-}
-
-.file-control span {
-  color: var(--brand-teal-dark);
-  font-weight: 900;
-}
-
 .document-row,
-.answer,
-.source-row,
 .mini-empty {
   background: #fff;
   border: 1px solid var(--border-soft);
@@ -433,39 +378,9 @@ textarea:focus {
   white-space: nowrap;
 }
 
-.document-row p,
-.answer p,
-.source-row p {
+.document-row p {
   line-height: 1.55;
   margin: 6px 0 0;
-}
-
-.answer-bubble {
-  background: #f7fafb;
-  border: 1px solid var(--border-soft);
-  border-radius: 12px;
-  margin-top: 10px;
-  padding: 10px;
-}
-
-.sources {
-  display: grid;
-  gap: 10px;
-}
-
-.quick-replies {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.quick-replies button {
-  background: #fff;
-  border: 1px solid var(--border-soft);
-  color: var(--brand-teal-dark);
-  min-height: 34px;
-  padding: 0 10px;
 }
 
 .error,
@@ -571,12 +486,6 @@ textarea:focus {
   --danger: var(--status-danger, #d84c5d);
 }
 
-.config-tabs a:hover,
-.config-tabs a:focus-visible {
-  background: var(--surface-subtle) !important;
-  color: var(--ink-strong) !important;
-}
-
 .version-card {
   background: #fff !important;
 }
@@ -600,28 +509,6 @@ textarea:focus {
   box-shadow: inset 4px 0 0 var(--brand-teal) !important;
 }
 
-.quick-replies button {
-  background: #fff !important;
-  border-color: var(--border-soft) !important;
-  color: var(--accent-blue) !important;
-}
-
-.quick-replies button:hover,
-.quick-replies button:focus-visible {
-  background: var(--surface-subtle) !important;
-  border-color: var(--border-strong, #c4d0dc) !important;
-  color: var(--accent-blue) !important;
-}
-
-.file-control {
-  background:
-    linear-gradient(90deg, rgba(16, 34, 56, .045) 1px, transparent 1px),
-    linear-gradient(rgba(16, 34, 56, .035) 1px, transparent 1px),
-    #fbfcfd !important;
-  border-color: var(--border-strong, #c4d0dc) !important;
-}
-
-.file-control span,
 .status-badge {
   color: var(--ink-muted) !important;
 }
@@ -636,7 +523,6 @@ textarea:focus {
 /* Layout correction: prevent the fixed app header and dense panel content from visually colliding. */
 .page-header,
 .version-identity,
-.config-tabs,
 .version-grid,
 .manager-grid {
   min-width: 0;
@@ -666,8 +552,7 @@ textarea:focus {
   white-space: nowrap;
 }
 
-.knowledge-panel,
-.test-panel {
+.knowledge-panel {
   overflow: hidden;
 }
 
@@ -683,10 +568,6 @@ textarea:focus {
 .manager-grid {
   align-items: start;
   grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.85fr);
-}
-
-.document-row button {
-  align-self: center;
 }
 
 @media (max-width: 1180px) {

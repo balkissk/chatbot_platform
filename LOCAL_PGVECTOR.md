@@ -2,7 +2,7 @@
 
 Use the pgvector-enabled Docker Compose profile for local RAG/vector development.
 
-Default port, matching `backend/.env.development`:
+Default host port, matching `backend/.env.development`:
 
 ```powershell
 $env:POSTGRES_PASSWORD='replace-with-local-password'
@@ -11,8 +11,8 @@ cd backend
 .\venv\Scripts\python.exe -m alembic upgrade head
 ```
 
-If another PostgreSQL server already uses port `5432`, run the container on `5433`
-and override the backend port for local commands:
+The container keeps PostgreSQL on port `5432` internally, while Windows host
+tools and backend commands should connect through `localhost:5433`:
 
 ```powershell
 $env:POSTGRES_PASSWORD='replace-with-local-password'

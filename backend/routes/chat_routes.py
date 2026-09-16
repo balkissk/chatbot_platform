@@ -269,10 +269,13 @@ def merge_node_rag_settings(rag_settings: dict, node_config: dict | None) -> dic
         settings["strict_context"] = False
         settings["show_sources"] = False
 
+    global_strict_context = bool(settings.get("strict_context"))
+    node_strict_context = global_strict_context
     if "answer_only_from_documents" in node_config:
-        settings["strict_context"] = _bool_setting(node_config.get("answer_only_from_documents"), settings["strict_context"])
+        node_strict_context = _bool_setting(node_config.get("answer_only_from_documents"), node_strict_context)
     if "strict_context" in node_config:
-        settings["strict_context"] = _bool_setting(node_config.get("strict_context"), settings["strict_context"])
+        node_strict_context = _bool_setting(node_config.get("strict_context"), node_strict_context)
+    settings["strict_context"] = bool(global_strict_context or node_strict_context)
     if not settings["use_knowledge_base"]:
         settings["strict_context"] = False
     if "show_sources" in node_config:
@@ -719,6 +722,49 @@ def chat_stream(
             return
 
         if generation.get("fallback_response"):
+            result_variables = result.get("variables") or {}
+            handoff_executed = (
+                result.get("mode_used") == "handoff"
+                or bool(result_variables.get("__handoff_requested"))
+                or bool(result_variables.get("__handoff_collecting"))
+            )
+            if handoff_executed:
+                session.current_node_key = result.get("current_node_key")
+                session.variables = result_variables
+                bot_messages = result.get("messages") or [
+                    {"text": result.get("response", ""), "options": result.get("options", [])}
+                ]
+                if user_message:
+                    add_message(db, session.id, "user", user_message)
+                for item in bot_messages:
+                    add_message(
+                        db,
+                        session.id,
+                        "bot",
+                        item.get("text", ""),
+                        options=item.get("options") or [],
+                        sources=result.get("sources") or []
+                    )
+                db_started_at = time.perf_counter()
+                db.commit()
+                latency_trace["db_query_ms"] += elapsed_ms(db_started_at)
+                yield sse_event("final", {
+                    **result,
+                    "session_id": session.id,
+                    "current_node_key": session.current_node_key,
+                    "variables": session.variables or {},
+                    "latency": {
+                        **latency_trace,
+                        **(generation.get("metrics") or {}),
+                        "first_token_ms": 0,
+                        "llm_ms": 0,
+                        "flow_db_query_ms": flow_trace.get("flow_db_query_ms", 0),
+                        "flow_invocations": flow_trace.get("flow_invocations", 0),
+                        "total_ms": elapsed_ms(request_started_at)
+                    }
+                })
+                return
+
             final_result = {
                 **result,
                 "response": generation["fallback_response"],

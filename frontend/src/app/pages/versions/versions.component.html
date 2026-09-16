@@ -2,7 +2,7 @@
   <div>
     <p class="eyebrow">Assistant {{ chatbotId }}</p>
     <h2>Versions</h2>
-    <p class="muted">Configure instructions, review knowledge and test a selected assistant version.</p>
+    <p class="muted">Manage assistant versions, configuration and publication readiness.</p>
   </div>
 
   <div class="actions">
@@ -21,7 +21,7 @@
 
 <section *ngIf="!loading() && versions().length === 0" class="empty-state">
   <h3>No versions yet</h3>
-  <p>Create a version before uploading knowledge or testing the assistant.</p>
+  <p>Create a version before configuring and publishing the assistant.</p>
 </section>
 
 <section *ngIf="selectedVersion() as selected" class="version-identity">
@@ -36,9 +36,6 @@
     </div>
   </div>
   <div class="identity-actions">
-    <button *ngIf="canManageWorkspace()" class="secondary" type="button" (click)="runSmokeTest()" [disabled]="smokeLoading() || actionId() === selected.id">
-      {{ smokeLoading() ? 'Testing...' : 'Test assistant before publish' }}
-    </button>
     <button *ngIf="canManageWorkspace()" (click)="publish(selected.id)" [disabled]="selected.status === 'published' || actionId() === selected.id">
       {{ actionId() === selected.id ? 'Working...' : 'Publish' }}
     </button>
@@ -51,11 +48,16 @@
   <div class="panel-header">
     <div>
       <p class="eyebrow">Publication readiness</p>
-      <h3>Test assistant before publish</h3>
+      <h3>Checks before publish</h3>
     </div>
-    <button class="secondary" type="button" (click)="loadReadiness()" [disabled]="readinessLoading()">
-      {{ readinessLoading() ? 'Checking...' : 'Refresh checks' }}
-    </button>
+    <div class="readiness-actions">
+      <button *ngIf="canManageWorkspace()" class="secondary" type="button" (click)="runSmokeTest()" [disabled]="smokeLoading()">
+        {{ smokeLoading() ? 'Testing...' : 'Run smoke test' }}
+      </button>
+      <button class="secondary" type="button" (click)="loadReadiness()" [disabled]="readinessLoading()">
+        {{ readinessLoading() ? 'Checking...' : 'Refresh checks' }}
+      </button>
+    </div>
   </div>
 
   <p *ngIf="smokeMessage()" class="success">{{ smokeMessage() }}</p>
@@ -77,12 +79,6 @@
     </article>
   </div>
 </section>
-
-<nav *ngIf="selectedVersionId()" class="config-tabs" aria-label="Version configuration sections">
-  <a href="#instructions">Instructions</a>
-  <a href="#knowledge-snapshot">Knowledge snapshot</a>
-  <a href="#test-version">Test version</a>
-</nav>
 
 <section *ngIf="!loading() && versions().length > 0" class="version-grid" aria-label="Version history">
   <article
@@ -114,7 +110,7 @@
 </section>
 
 <section *ngIf="selectedVersionId()" class="manager-grid">
-  <section id="instructions" class="panel ai-panel">
+  <section class="panel ai-panel">
     <div class="panel-header">
       <div>
         <p class="eyebrow">AI Instructions</p>
@@ -170,26 +166,27 @@
     </div>
   </section>
 
-  <section id="knowledge-snapshot" class="panel knowledge-panel">
+  <section class="panel knowledge-panel">
     <div class="panel-header">
       <div>
         <p class="eyebrow">RAG</p>
-        <h3>Knowledge Base</h3>
+        <h3>Knowledge snapshot</h3>
       </div>
-      <button *ngIf="canManageWorkspace()" class="secondary" type="button" [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId, 'knowledge']">Open Knowledge Base</button>
+      <button class="secondary" type="button" [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId, 'knowledge']">Open Knowledge Base</button>
     </div>
 
-    <label class="file-control" *ngIf="canManageWorkspace()">
-      <input
-        type="file"
-        accept=".txt,.md,.csv,.json"
-        (change)="onFileSelected($event)"
-        [disabled]="uploadLoading()">
-      <span>{{ uploadLoading() ? 'Uploading...' : 'Upload version document' }}</span>
-    </label>
+    <p *ngIf="documentsError()" class="error">{{ documentsError() }}</p>
 
-    <p *ngIf="selectedFileName" class="muted">Selected: {{ selectedFileName }}</p>
-    <p *ngIf="uploadError()" class="error">{{ uploadError() }}</p>
+    <div class="knowledge-summary">
+      <div>
+        <span>Documents</span>
+        <strong>{{ documents().length }}</strong>
+      </div>
+      <div>
+        <span>Chunks</span>
+        <strong>{{ totalChunks() }}</strong>
+      </div>
+    </div>
 
     <div *ngIf="documents().length === 0" class="mini-empty">
       No documents uploaded for this version.
@@ -198,54 +195,7 @@
     <div *ngFor="let doc of documents()" class="document-row">
       <div>
         <strong>{{ doc.filename }}</strong>
-        <p>{{ doc.chunks_count }} chunks</p>
-      </div>
-      <button *ngIf="canManageWorkspace()" class="danger" (click)="deleteDocument(doc)">Delete</button>
-    </div>
-  </section>
-
-  <section id="test-version" class="panel test-panel">
-    <div class="panel-header">
-      <div>
-        <p class="eyebrow">Test</p>
-        <h3>Published Version Chat</h3>
-      </div>
-    </div>
-
-    <textarea
-      [(ngModel)]="chatQuestion"
-      rows="5"
-      placeholder="Ask a question from the uploaded knowledge base"></textarea>
-
-    <button (click)="askChatbot()" [disabled]="chatLoading() || !chatQuestion.trim()">
-      {{ chatLoading() ? 'Asking...' : 'Ask assistant' }}
-    </button>
-
-    <p *ngIf="chatError()" class="error">{{ chatError() }}</p>
-
-    <div *ngIf="chatMessages().length > 0" class="answer">
-      <h4>Answer</h4>
-      <div *ngFor="let answer of chatMessages()" class="answer-bubble">
-        <p>{{ answer.text }}</p>
-        <div class="quick-replies" *ngIf="answer.options?.length">
-          <button class="secondary" type="button" *ngFor="let option of answer.options" (click)="askOption(option)">
-            {{ option }}
-          </button>
-        </div>
-      </div>
-      <div class="quick-replies" *ngIf="chatMessages().length === 0 && chatOptions().length > 0">
-        <button class="secondary" type="button" *ngFor="let option of chatOptions()" (click)="askOption(option)">
-          {{ option }}
-        </button>
-      </div>
-    </div>
-
-    <div *ngIf="chatSources().length > 0" class="sources">
-      <h4>Sources</h4>
-      <div *ngFor="let source of chatSources()" class="source-row">
-        <strong>{{ source.filename }}</strong>
-        <small>Score: {{ source.score | number:'1.2-2' }}</small>
-        <p>{{ source.text }}</p>
+        <p>{{ doc.chunks_count || 0 }} chunks · {{ documentStatus(doc) }}</p>
       </div>
     </div>
   </section>

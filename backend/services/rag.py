@@ -29,7 +29,20 @@ MARKDOWN_HEADING_PATTERN = re.compile(r"(?m)^#{1,6}\s+.+$")
 NUMBERED_HEADING_PATTERN = re.compile(r"(?m)^\s*\d+(?:\.\d+)*[.)]?\s+[A-Z][^\n]{3,}$")
 STOPWORDS = {
     "a", "an", "and", "are", "about", "is", "the", "to", "of", "or", "for",
-    "in", "on", "with", "which", "what", "who", "how", "does", "do"
+    "in", "on", "with", "which", "what", "who", "how", "does", "do",
+    "alors", "au", "aux", "avec", "ce", "ces", "cette", "dans", "de", "des",
+    "du", "elle", "en", "est", "et", "il", "ils", "je", "la", "le", "les",
+    "leur", "leurs", "l", "ma", "mes", "mon", "ne", "nous", "n", "ou", "où",
+    "par", "pas", "pour", "que", "quel", "quelle", "quels", "quelles", "qui",
+    "se", "ses", "son", "sur", "un", "une", "vos", "votre", "vous", "y", "à",
+    "d"
+}
+KEYWORD_GENERIC_TERMS = {
+    "chatbot", "epic", "module", "system",
+    "après", "apres", "avoir", "besoin", "cinq", "comment", "demande",
+    "faire", "information", "informations", "interne", "obtenir", "peut",
+    "problème", "probleme", "problèmes", "problemes", "procédure", "procedure",
+    "question", "service", "utilisateur", "utilisateurs"
 }
 
 
@@ -242,6 +255,16 @@ def cosine_score(query_terms: Counter, chunk_terms: Counter) -> float:
     return dot_product / (query_norm * chunk_norm)
 
 
+def keyword_content_terms(terms: set[str]) -> set[str]:
+    return {
+        term
+        for term in terms
+        if len(term) >= 4
+        and not term.isdigit()
+        and term not in KEYWORD_GENERIC_TERMS
+    }
+
+
 def keyword_relevance_score(query: str, text: str) -> float:
     query_terms = Counter(tokenize(query))
     text_terms = Counter(tokenize(text))
@@ -251,32 +274,35 @@ def keyword_relevance_score(query: str, text: str) -> float:
     base_score = cosine_score(query_terms, text_terms)
     unique_query_terms = set(query_terms)
     unique_text_terms = set(text_terms)
-    matched_terms = unique_query_terms & unique_text_terms
-    coverage = len(matched_terms) / max(len(unique_query_terms), 1)
+    query_content_terms = keyword_content_terms(unique_query_terms)
+    text_content_terms = keyword_content_terms(unique_text_terms)
+    matched_content_terms = query_content_terms & text_content_terms
+    if not matched_content_terms:
+        return 0.0
+
+    coverage = len(matched_content_terms) / max(len(query_content_terms), 1)
     phrase_boost = 0.0
 
-    normalized_query = " ".join(tokenize(query))
-    normalized_text = " ".join(tokenize(text))
+    normalized_query = " ".join(term for term in tokenize(query) if term in query_content_terms)
+    normalized_text = " ".join(term for term in tokenize(text) if term in text_content_terms)
     if normalized_query and normalized_query in normalized_text:
-        phrase_boost = 0.35
+        phrase_boost = 0.25
 
     heading_text = " ".join((text or "").split()[:14])
-    heading_terms = set(tokenize(heading_text))
+    heading_terms = keyword_content_terms(set(tokenize(heading_text)))
     heading_boost = 0.0
-    for term in matched_terms:
-        if len(term) >= 4 and term in heading_terms:
-            heading_boost += 0.25
+    for term in matched_content_terms:
+        if term in heading_terms:
+            heading_boost += 0.1
 
-    generic_terms = {"chatbot", "epic", "module", "system"}
-    specific_query_terms = {term for term in unique_query_terms if term not in generic_terms and len(term) >= 4}
-    specific_match_ratio = len(specific_query_terms & unique_text_terms) / max(len(specific_query_terms), 1)
-    specific_heading_ratio = len(specific_query_terms & heading_terms) / max(len(specific_query_terms), 1)
+    specific_match_ratio = len(matched_content_terms) / max(len(query_content_terms), 1)
+    specific_heading_ratio = len(matched_content_terms & heading_terms) / max(len(query_content_terms), 1)
 
     return min(
         base_score
         + coverage * 0.25
         + specific_match_ratio * 0.45
-        + specific_heading_ratio * 0.65
+        + specific_heading_ratio * 0.25
         + phrase_boost
         + heading_boost,
         1.0

@@ -284,26 +284,62 @@ export class KnowledgeBaseComponent implements OnInit, OnDestroy {
   }
 
   private hasProcessingDocuments() {
-    return this.documents().some(document => this.lifecycleStatus(document) === 'processing');
+    return this.documents().some(document => this.isProcessing(document));
   }
 
   openDocument(document: any) {
+    const documentId = document.id;
     this.selectedDocument.set(document);
     this.openDocumentMenuId.set(undefined);
     this.expandedChunkIds.set([]);
     this.chunkPage.set(1);
+    this.chunks.set([]);
     this.chunksLoading.set(true);
     this.error.set('');
-    this.api.getDocumentChunks(document.id).subscribe({
+
+    this.api.getDocument(documentId).subscribe({
+      next: updated => {
+        if (this.selectedDocument()?.id !== documentId) return;
+        this.replaceDocument(updated);
+        this.selectedDocument.set(updated);
+        if (!this.chunksLoading()) {
+          this.reconcileSelectedDocumentCounts(this.chunks());
+        }
+      }
+    });
+
+    this.api.getDocumentChunks(documentId).subscribe({
       next: chunks => {
+        if (this.selectedDocument()?.id !== documentId) return;
         this.chunks.set(chunks);
+        this.reconcileSelectedDocumentCounts(chunks);
         this.chunksLoading.set(false);
       },
       error: err => {
+        if (this.selectedDocument()?.id !== documentId) return;
         this.error.set(err.error?.detail || 'Could not load chunks');
         this.chunksLoading.set(false);
       }
     });
+  }
+
+  private replaceDocument(updated: any) {
+    this.documents.update(documents => documents.map(document => document.id === updated.id ? updated : document));
+  }
+
+  private reconcileSelectedDocumentCounts(chunks: any[]) {
+    const document = this.selectedDocument();
+    if (!document) return;
+    const counts = this.countsFromChunks(chunks);
+    const updated = {
+      ...document,
+      chunks_count: counts.total,
+      embeddings_count: counts.ready,
+      failed_embeddings_count: counts.failed,
+      pending_embeddings_count: counts.pending
+    };
+    this.selectedDocument.set(updated);
+    this.replaceDocument(updated);
   }
 
   startDocumentEdit(document: any) {
@@ -555,9 +591,9 @@ export class KnowledgeBaseComponent implements OnInit, OnDestroy {
 
   statusLabel(document: any) {
     const labels: Record<string, string> = {
-      uploaded: 'Uploaded',
+      uploaded: 'Processing',
       processing: 'Processing',
-      partially_ready: 'Partially Ready',
+      partially_ready: 'Needs attention',
       ready: 'Ready',
       failed: 'Failed'
     };
@@ -578,11 +614,37 @@ export class KnowledgeBaseComponent implements OnInit, OnDestroy {
     return this.lifecycleStatus(document).replace('_', '-');
   }
 
+  managerStatusLabel() {
+    const status = this.processingStatus();
+    if (status === 'Ready') return 'Knowledge ready';
+    return status;
+  }
+
+  managerStatusDetail() {
+    const documents = this.documents();
+    if (!documents.length) return 'Upload source documents to make knowledge available.';
+    if (documents.some(document => ['failed', 'partially_ready'].includes(this.lifecycleStatus(document)))) {
+      return 'One or more documents need review.';
+    }
+    if (documents.some(document => this.isProcessing(document))) {
+      return 'Documents are being prepared for use.';
+    }
+    return 'Documents are ready to use in the assistant.';
+  }
+
   documentCounts(document: any) {
     const total = Number(document.chunks_count || 0);
     const ready = Number(document.embeddings_count || 0);
     const failed = Number(document.failed_embeddings_count || 0);
     const pending = Number(document.pending_embeddings_count || 0);
+    return { total, ready, failed, pending };
+  }
+
+  private countsFromChunks(chunks: any[]) {
+    const total = chunks.length;
+    const ready = chunks.filter(chunk => String(chunk.embedding_status || '').toLowerCase() === 'ready').length;
+    const failed = chunks.filter(chunk => String(chunk.embedding_status || '').toLowerCase() === 'failed').length;
+    const pending = Math.max(total - ready - failed, 0);
     return { total, ready, failed, pending };
   }
 
@@ -626,7 +688,8 @@ export class KnowledgeBaseComponent implements OnInit, OnDestroy {
 
   selectedDocumentCounts() {
     const document = this.selectedDocument();
-    return document ? this.documentCounts(document) : { total: 0, ready: 0, failed: 0, pending: 0 };
+    if (!document) return { total: 0, ready: 0, failed: 0, pending: 0 };
+    return this.countsFromChunks(this.chunks());
   }
 
   selectedDocumentHealth() {
@@ -638,6 +701,19 @@ export class KnowledgeBaseComponent implements OnInit, OnDestroy {
     if (counts.failed) return 'No searchable chunks';
     if (counts.pending) return `Embedding ${counts.ready}/${counts.total} chunks`;
     return `${counts.ready}/${counts.total} chunks searchable`;
+  }
+
+  documentManagerSummary(document: any) {
+    const status = this.lifecycleStatus(document);
+    if (status === 'ready') return document.processed_at ? `Ready since ${new Date(document.processed_at).toLocaleString()}` : 'Ready to use';
+    if (status === 'processing' || status === 'uploaded') return 'Preparing this document for search.';
+    if (status === 'partially_ready') return 'Ready with some content needing attention.';
+    if (status === 'failed') return 'Processing failed. Review or reprocess this document.';
+    return 'Waiting to be prepared.';
+  }
+
+  showPipeline(document: any) {
+    return this.lifecycleStatus(document) !== 'ready';
   }
 
   progressPercent(document: any) {
@@ -739,12 +815,9 @@ export class KnowledgeBaseComponent implements OnInit, OnDestroy {
 
   retrievalConfigSummary() {
     const settings = this.ragSettings();
-    const modeLabels: Record<string, string> = {
-      auto: 'Semantic + keyword fallback',
-      semantic: 'Semantic only',
-      keyword: 'Keyword only'
-    };
-    return `${modeLabels[settings.retrieval_mode] || 'Auto'} · Top ${settings.max_chunks} · Min ${Number(settings.min_score || 0).toFixed(2)}`;
+    const sources = settings.show_sources ? 'Source references on' : 'Source references off';
+    const strict = settings.strict_context ? 'Documents only' : 'Documents preferred';
+    return `${sources} · ${strict}`;
   }
 
   toggleSettings() {
@@ -829,7 +902,7 @@ export class KnowledgeBaseComponent implements OnInit, OnDestroy {
   retrievalResultSummary() {
     const count = this.retrievalChunks().length;
     if (!count) return '';
-    return `Retrieved ${count} ${count === 1 ? 'chunk' : 'chunks'}`;
+    return `Found ${count} relevant ${count === 1 ? 'section' : 'sections'}`;
   }
 
   totalChunks() {

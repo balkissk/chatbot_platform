@@ -14,7 +14,7 @@ from services.embedding_config import pgvector_literal
 
 SOURCE_DATABASE_URL = os.getenv(
     "SOURCE_DATABASE_URL",
-    "postgresql://postgres@localhost:5432/chatbot_db?sslmode=disable",
+    "postgresql://postgres@localhost:5433/chatbot_db?sslmode=disable",
 )
 TARGET_DATABASE_URL = os.getenv(
     "TARGET_DATABASE_URL",

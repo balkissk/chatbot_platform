@@ -50,9 +50,10 @@ def _cookie_secure() -> bool:
 
 
 def _cookie_samesite() -> str:
-    configured = os.getenv("AUTH_COOKIE_SAMESITE", "lax").strip().lower()
+    default = "none" if ENVIRONMENT == "production" else "lax"
+    configured = os.getenv("AUTH_COOKIE_SAMESITE", default).strip().lower()
     if configured not in {"lax", "strict", "none"}:
-        return "lax"
+        return default
     return configured
 
 

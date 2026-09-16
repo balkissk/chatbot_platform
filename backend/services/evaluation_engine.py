@@ -463,6 +463,20 @@ def execute_evaluation_case(db: Session, chatbot: Chatbot, version: VersionChatb
         )
 
     try:
+        runtime_result = execute_flow(
+            db=db,
+            version_id=version.id,
+            message="",
+            current_node_key=None,
+            variables=variables,
+            rag_answer=rag_answer,
+            allow_rag_fallback=False,
+            trace=trace,
+            _runtime_graph=runtime_graph,
+        )
+        variables = runtime_result.get("variables") or variables
+        current_node_key = runtime_result.get("current_node_key")
+
         for index, turn in enumerate(turns, start=1):
             turn_type = _normalize_turn_type(turn.get("type"))
             turn_value = str(turn.get("value") or "").strip()

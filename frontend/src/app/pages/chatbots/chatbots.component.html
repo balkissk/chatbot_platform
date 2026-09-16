@@ -14,7 +14,7 @@
         <svg lucideRefreshCw size="14" aria-hidden="true"></svg>
         <span>{{ refreshing() ? 'Refreshing...' : 'Refresh' }}</span>
       </button>
-      <button *ngIf="canManageWorkspace()" class="lifecycle-create-button" type="button" (click)="openWizard()" [disabled]="isArchivedProject()">
+      <button *ngIf="canManageWorkspace() && (loading() || chatbots().length > 0)" class="lifecycle-create-button" type="button" (click)="openWizard()" [disabled]="isArchivedProject()">
         <svg lucidePlus size="14" aria-hidden="true"></svg>
         <span>Create assistant</span>
       </button>

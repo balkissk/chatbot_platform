@@ -119,35 +119,35 @@ def build_auth_email(
     <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">Use the secure button to reset your ChatBot Factory password.</div>
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background-color:#eef5f6;margin:0;padding:0;">
       <tr>
-        <td align="center" style="padding:32px 12px;">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:600px;background-color:#ffffff;border:1px solid #d8e7ea;border-radius:14px;overflow:hidden;">
+        <td align="center" style="padding:20px 10px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:520px;background-color:#ffffff;border:1px solid #d8e7ea;border-radius:12px;overflow:hidden;">
             <tr>
-              <td align="center" style="padding:28px 24px 22px;background-color:#0f172a;">
-                <div style="font-size:24px;line-height:1.2;font-weight:800;color:#ffffff;">ChatBot <span style="color:#2dd4bf;">Factory</span></div>
-                <div style="margin-top:8px;font-size:12px;line-height:1.4;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:#a7f3d0;">Secure workspace access</div>
+              <td align="center" style="padding:20px 20px 16px;background-color:#0f172a;">
+                <div style="font-size:22px;line-height:1.2;font-weight:800;color:#ffffff;">ChatBot <span style="color:#2dd4bf;">Factory</span></div>
+                <div style="margin-top:5px;font-size:11px;line-height:1.3;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#a7f3d0;">Secure workspace access</div>
               </td>
             </tr>
             <tr>
-              <td style="padding:34px 30px 30px;">
-                <h1 style="margin:0 0 14px;font-size:26px;line-height:1.25;font-weight:800;color:#0f172a;">{safe_title}</h1>
-                <p style="margin:0 0 26px;font-size:15px;line-height:1.65;color:#334155;">{safe_body}</p>
-                <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 26px;">
+              <td style="padding:24px 24px 22px;">
+                <h1 style="margin:0 0 10px;font-size:23px;line-height:1.25;font-weight:800;color:#0f172a;">{safe_title}</h1>
+                <p style="margin:0 0 18px;font-size:14px;line-height:1.55;color:#334155;">{safe_body}</p>
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 18px;">
                   <tr>
                     <td align="center" bgcolor="#0f766e" style="border-radius:10px;background-color:#0f766e;">
-                      <a href="{safe_cta_url}" style="display:inline-block;padding:14px 24px;font-size:15px;line-height:1.2;font-weight:800;color:#ffffff;text-decoration:none;border-radius:10px;">{safe_cta_label}</a>
+                      <a href="{safe_cta_url}" style="display:inline-block;padding:12px 20px;font-size:14px;line-height:1.2;font-weight:800;color:#ffffff;text-decoration:none;border-radius:10px;">{safe_cta_label}</a>
                     </td>
                   </tr>
                 </table>
-                <p style="margin:0 0 18px;font-size:14px;line-height:1.6;color:#475569;">This link expires in <strong style="color:#0f172a;">60 minutes</strong>.</p>
+                <p style="margin:0 0 12px;font-size:13px;line-height:1.5;color:#475569;">This link expires in <strong style="color:#0f172a;">60 minutes</strong>.</p>
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:0;">
                   <tr>
-                    <td style="padding:14px 16px;background-color:#ecfeff;border-left:4px solid #0f766e;border-radius:8px;font-size:13px;line-height:1.55;color:#334155;">{safe_security_note}</td>
+                    <td style="padding:11px 13px;background-color:#ecfeff;border-left:4px solid #0f766e;border-radius:8px;font-size:12px;line-height:1.45;color:#334155;">{safe_security_note}</td>
                   </tr>
                 </table>
               </td>
             </tr>
             <tr>
-              <td align="center" style="padding:18px 24px;background-color:#f8fafc;border-top:1px solid #e2e8f0;font-size:13px;line-height:1.5;color:#64748b;">ChatBot Factory &bull; Secure workspace access</td>
+              <td align="center" style="padding:12px 18px;background-color:#f8fafc;border-top:1px solid #e2e8f0;font-size:12px;line-height:1.4;color:#64748b;">ChatBot Factory &bull; Secure workspace access</td>
             </tr>
           </table>
         </td>

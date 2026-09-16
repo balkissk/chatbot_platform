@@ -94,6 +94,10 @@ def _continues_rag(node: FlowNode) -> bool:
     )
 
 
+def _waits_for_user_input(node: FlowNode) -> bool:
+    return node.type in {"question", "buttons", "collect_name", "collect_email", "collect_phone", "meeting_scheduler"}
+
+
 def _truthy_config(value) -> bool:
     if isinstance(value, bool):
         return value
@@ -464,7 +468,7 @@ def execute_flow(
         transition = _first_transition(transitions, node.node_key)
         next_key = transition.target_node_key if transition else None
         next_node = node_by_key.get(next_key)
-        if next_node and next_node.type in {"question", "buttons"}:
+        if next_node and _waits_for_user_input(next_node):
             if _is_silent_input(next_node):
                 return _serialize_state(
                     _node_text(node),
@@ -486,6 +490,25 @@ def execute_flow(
                     {"text": next_text, "options": options}
                 ]
             )
+
+        if next_node:
+            next_result = execute_flow(
+                db,
+                version_id,
+                "",
+                next_node.node_key,
+                state,
+                rag_answer=rag_answer,
+                allow_rag_fallback=allow_rag_fallback,
+                trace=trace,
+                _runtime_graph=_runtime_graph,
+                _runtime_steps=_runtime_steps + 1,
+            )
+            messages = [{"text": _node_text(node), "options": []}]
+            messages.extend(next_result.get("messages") or [])
+            next_result["messages"] = messages
+            next_result["response"] = next_result.get("response") or _node_text(node)
+            return next_result
 
         return _serialize_state(_node_text(node), next_key, state)
 
@@ -689,10 +712,6 @@ def execute_flow(
                 state["__last_question"] = message.strip()
             result["variables"] = state
 
-            if _continues_rag(node):
-                result["current_node_key"] = node.node_key
-                return result
-
             next_key = transition.target_node_key if transition else None
             next_node = node_by_key.get(next_key)
             fallback_transition = next(
@@ -705,10 +724,7 @@ def execute_flow(
             )
             should_handoff = bool(
                 fallback_transition
-                and (
-                    _requests_human(message or state.get("__last_question") or state.get("__last_input") or "")
-                    or result.get("mode_used") == "fallback"
-                )
+                and _requests_human(message or state.get("__last_question") or state.get("__last_input") or "")
             )
             if should_handoff:
                 handoff_result = execute_flow(
@@ -723,13 +739,17 @@ def execute_flow(
                     _runtime_graph=_runtime_graph,
                     _runtime_steps=_runtime_steps + 1,
                 )
-                result_messages = result.get("messages") or [{"text": result.get("response", ""), "options": []}]
                 handoff_messages = handoff_result.get("messages") or []
-                result["messages"] = [*result_messages, *handoff_messages]
+                result["response"] = handoff_result.get("response") or result.get("response", "")
+                result["messages"] = handoff_messages or [{"text": result["response"], "options": handoff_result.get("options") or []}]
                 result["options"] = handoff_result.get("options") or []
                 result["current_node_key"] = handoff_result.get("current_node_key")
                 result["variables"] = handoff_result.get("variables") or state
                 result["mode_used"] = handoff_result.get("mode_used") or result.get("mode_used")
+                return result
+
+            if _continues_rag(node):
+                result["current_node_key"] = node.node_key
                 return result
 
             if next_node and next_node.type in {"question", "buttons"}:

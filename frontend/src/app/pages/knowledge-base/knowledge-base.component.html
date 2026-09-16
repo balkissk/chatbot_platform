@@ -3,7 +3,7 @@
     <div>
       <p class="eyebrow">{{ chatbot()?.name || ('Assistant ' + chatbotId) }}</p>
       <h2>Knowledge Base</h2>
-      <p class="subtitle">Manage indexed documents and test retrieval for this assistant.</p>
+      <p class="subtitle">Upload documents, wait until knowledge is ready, then test what the assistant can find.</p>
     </div>
 
     <div class="header-controls">
@@ -26,27 +26,10 @@
       <span>Documents</span>
       <strong>{{ documents().length }}</strong>
     </div>
-    <div>
-      <span>Chunks</span>
-      <strong>{{ aggregateCounts().total }}</strong>
-    </div>
-    <div>
-      <span>Embeddings</span>
-      <strong>{{ aggregateCounts().ready }}/{{ aggregateCounts().total }}</strong>
-    </div>
-    <div>
-      <span>Coverage</span>
-      <strong>{{ coveragePercent() }}%</strong>
-    </div>
     <div class="health-state">
-      <span>Index Health</span>
-      <strong><i></i>{{ indexHealth().label }}</strong>
-      <small>{{ indexHealth().detail }}</small>
-    </div>
-    <div class="health-state">
-      <span>RAG Readiness</span>
-      <strong>{{ ragReadiness().label }}</strong>
-      <small>{{ ragReadiness().detail }}</small>
+      <span>Knowledge status</span>
+      <strong><i></i>{{ managerStatusLabel() }}</strong>
+      <small>{{ managerStatusDetail() }}</small>
     </div>
   </section>
 
@@ -59,7 +42,7 @@
     <div>
       <p class="eyebrow">Add Knowledge</p>
       <h3>Upload source documents</h3>
-      <p>Attach approved documents so this assistant can retrieve grounded answers.</p>
+      <p>Add approved files so the assistant can find reliable information from them.</p>
     </div>
     <label class="file-dropzone" [class.disabled]="uploadLoading() || !selectedVersionId()">
       <input
@@ -68,8 +51,8 @@
         (change)="onFileSelected($event)"
         [disabled]="uploadLoading() || !selectedVersionId()">
       <span class="drop-icon">KB</span>
-      <strong>{{ uploadLoading() ? 'Uploading document...' : 'Choose files' }}</strong>
-      <small>TXT, Markdown, CSV, JSON and PDF supported</small>
+      <strong>{{ uploadLoading() ? 'Uploading...' : 'Choose files' }}</strong>
+      <small>PDF, TXT, Markdown, CSV, JSON</small>
     </label>
     <p *ngIf="selectedFileName" class="upload-progress">Selected: {{ selectedFileName }}</p>
     <p *ngIf="!selectedVersionId()" class="field-hint">Create or select a version before uploading documents.</p>
@@ -77,7 +60,7 @@
 
   <section *ngIf="!loading() && documents().length === 0" class="primary-empty">
     <strong>No documents yet</strong>
-    <span>Uploaded files will appear here with indexing status and chunk coverage.</span>
+    <span>Upload source documents to make knowledge available for this assistant.</span>
   </section>
 
   <section *ngIf="!loading() && documents().length" class="knowledge-workspace">
@@ -116,13 +99,9 @@
               <strong>{{ document.filename }}</strong>
               <span class="status-pill" [ngClass]="statusTone(document)">{{ statusLabel(document) }}</span>
             </span>
-            <span class="document-meta">
-              {{ documentCounts(document).total }} chunks ·
-              {{ documentCounts(document).ready }}/{{ documentCounts(document).total }} embedded
-              <ng-container *ngIf="document.processed_at"> · indexed {{ document.processed_at | date:'short' }}</ng-container>
-            </span>
+            <span class="document-meta">{{ documentManagerSummary(document) }}</span>
             <span *ngIf="isPartial(document)" class="warning inline-warning">
-              {{ documentCounts(document).failed }} chunks could not be indexed.
+              Some content could not be prepared.
             </span>
           </span>
         </button>
@@ -146,7 +125,7 @@
           class="retry-link secondary"
           (click)="reprocessEmbeddings(document)"
           [disabled]="isDocumentActionBusy(document)">
-          {{ reprocessId() === document.id ? 'Retrying...' : 'Retry failed chunks' }}
+          {{ reprocessId() === document.id ? 'Retrying...' : 'Retry failed content' }}
         </button>
 
         <div class="row-menu" *ngIf="editingDocumentId() !== document.id">
@@ -182,28 +161,25 @@
     <section class="details-panel panel">
       <div *ngIf="!selectedDocument()" class="empty-state">
         <strong>Select a document</strong>
-        <span>Open a document to inspect its indexing state and chunks.</span>
+        <span>Open a document to view its readiness and available actions.</span>
       </div>
 
       <ng-container *ngIf="selectedDocument() as document">
         <div class="details-header">
           <div>
-            <p class="eyebrow">Document Details</p>
+            <p class="eyebrow">Document details</p>
             <h3>{{ document.filename }}</h3>
-            <p>{{ selectedDocumentHealth() }}</p>
+            <p>{{ documentManagerSummary(document) }}</p>
           </div>
           <span class="status-pill" [ngClass]="statusTone(document)">{{ statusLabel(document) }}</span>
         </div>
 
-        <div class="details-metrics">
-          <span>{{ selectedDocumentCounts().total }} chunks</span>
-          <span>{{ selectedDocumentCounts().ready }} embedded</span>
-          <span *ngIf="selectedDocumentCounts().failed">{{ selectedDocumentCounts().failed }} failed</span>
-          <span *ngIf="selectedDocumentCounts().pending">{{ selectedDocumentCounts().pending }} pending</span>
-          <span *ngIf="document.processed_at">Last indexed {{ document.processed_at | date:'medium' }}</span>
+        <div class="document-ready-summary" *ngIf="lifecycleStatus(document) === 'ready'">
+          <strong>Ready to use</strong>
+          <span *ngIf="document.processed_at">Prepared {{ document.processed_at | date:'medium' }}</span>
         </div>
 
-        <div class="pipeline" aria-label="Document indexing pipeline">
+        <div *ngIf="showPipeline(document)" class="pipeline" aria-label="Document processing progress">
           <span
             *ngFor="let step of pipelineSteps(document)"
             [ngClass]="pipelineStepClass(document, step)">
@@ -212,17 +188,30 @@
         </div>
 
         <div *ngIf="isPartial(document)" class="inline-alert warning-alert">
-          {{ selectedDocumentCounts().failed }} chunks could not be indexed. The remaining content is still available for retrieval.
+          Some content could not be prepared. The remaining content is still available.
           <button
             type="button"
             class="secondary"
             (click)="reprocessEmbeddings(document)"
             [disabled]="isDocumentActionBusy(document)">
-            {{ reprocessId() === document.id ? 'Retrying...' : 'Retry failed chunks' }}
+            {{ reprocessId() === document.id ? 'Retrying...' : 'Retry failed content' }}
           </button>
         </div>
 
-        <section class="chunk-explorer">
+        <details class="advanced-details">
+          <summary>Advanced document details</summary>
+          <div class="details-metrics">
+            <span>{{ selectedDocumentCounts().total }} chunks</span>
+            <span>{{ selectedDocumentCounts().ready }} embedded</span>
+            <span *ngIf="selectedDocumentCounts().failed">{{ selectedDocumentCounts().failed }} failed</span>
+            <span *ngIf="selectedDocumentCounts().pending">{{ selectedDocumentCounts().pending }} pending</span>
+            <span *ngIf="document.processed_at">Last indexed {{ document.processed_at | date:'medium' }}</span>
+          </div>
+        </details>
+
+        <details class="advanced-details chunk-details">
+          <summary>View indexed content</summary>
+          <section class="chunk-explorer">
           <div class="section-title-row">
             <div>
               <p class="eyebrow">Chunk Explorer</p>
@@ -284,7 +273,8 @@
             <span>Page {{ chunkPage() }} of {{ chunkPageCount() }}</span>
             <button type="button" class="secondary" (click)="goToChunkPage(chunkPage() + 1)" [disabled]="chunkPage() === chunkPageCount()">Next</button>
           </footer>
-        </section>
+          </section>
+        </details>
       </ng-container>
     </section>
   </section>
@@ -293,56 +283,13 @@
     <section class="panel advanced-panel">
       <button type="button" class="collapse-header secondary" (click)="toggleSettings()" [attr.aria-expanded]="settingsExpanded()">
         <span>
-          <p class="eyebrow">Retrieval Configuration</p>
+          <p class="eyebrow">Knowledge behavior</p>
           <strong>{{ retrievalConfigSummary() }}</strong>
         </span>
-        <span>{{ settingsExpanded() ? 'Hide' : 'Configure' }}</span>
+        <span>{{ settingsExpanded() ? 'Hide' : 'Edit' }}</span>
       </button>
 
       <div *ngIf="settingsExpanded()" class="settings-grid">
-        <label title="How the system finds relevant chunks before sending context to the AI.">
-          Retrieval mode
-          <select
-            [ngModel]="ragSettings().retrieval_mode"
-            (ngModelChange)="updateRagSetting('retrieval_mode', $event)">
-            <option value="auto">Auto: semantic then keyword fallback</option>
-            <option value="semantic">Semantic only</option>
-            <option value="keyword">Keyword only</option>
-          </select>
-        </label>
-
-        <label title="Maximum number of relevant knowledge chunks sent to the AI.">
-          Max chunks
-          <input
-            type="number"
-            min="1"
-            max="8"
-            [ngModel]="ragSettings().max_chunks"
-            (ngModelChange)="updateRagSetting('max_chunks', $event)">
-        </label>
-
-        <label title="Chunks below this relevance score are ignored.">
-          Minimum score
-          <input
-            type="number"
-            min="0"
-            max="1"
-            step="0.05"
-            [ngModel]="ragSettings().min_score"
-            (ngModelChange)="updateMinimumScore($event)">
-        </label>
-
-        <label>
-          Response length
-          <select
-            [ngModel]="ragSettings().response_length"
-            (ngModelChange)="updateRagSetting('response_length', $event)">
-            <option value="short">Short and fast</option>
-            <option value="normal">Normal</option>
-            <option value="detailed">Detailed</option>
-          </select>
-        </label>
-
         <label class="checkbox-row">
           <input
             type="checkbox"
@@ -350,6 +297,7 @@
             (ngModelChange)="updateRagSetting('show_sources', $event)">
           Show source references
         </label>
+        <p class="field-hint">Include document references with knowledge-backed answers.</p>
 
         <label class="checkbox-row" title="Prevents the assistant from answering outside indexed knowledge.">
           <input
@@ -358,6 +306,55 @@
             (ngModelChange)="updateRagSetting('strict_context', $event)">
           Answer only from documents
         </label>
+        <p class="field-hint">Use this when answers must stay within uploaded documents.</p>
+
+        <details class="advanced-details settings-advanced">
+          <summary>Advanced retrieval settings</summary>
+          <div class="settings-grid nested-settings">
+            <label title="How the system finds relevant content before sending context to the AI.">
+              Retrieval mode
+              <select
+                [ngModel]="ragSettings().retrieval_mode"
+                (ngModelChange)="updateRagSetting('retrieval_mode', $event)">
+                <option value="auto">Auto: semantic then keyword fallback</option>
+                <option value="semantic">Semantic only</option>
+                <option value="keyword">Keyword only</option>
+              </select>
+            </label>
+
+            <label title="Maximum number of relevant knowledge sections sent to the AI.">
+              Max knowledge sections
+              <input
+                type="number"
+                min="1"
+                max="8"
+                [ngModel]="ragSettings().max_chunks"
+                (ngModelChange)="updateRagSetting('max_chunks', $event)">
+            </label>
+
+            <label title="Lower values return more possible matches; higher values are stricter.">
+              Minimum similarity score
+              <input
+                type="number"
+                min="0"
+                max="1"
+                step="0.05"
+                [ngModel]="ragSettings().min_score"
+                (ngModelChange)="updateMinimumScore($event)">
+            </label>
+
+            <label>
+              Knowledge answer length
+              <select
+                [ngModel]="ragSettings().response_length"
+                (ngModelChange)="updateRagSetting('response_length', $event)">
+                <option value="short">Short</option>
+                <option value="normal">Normal</option>
+                <option value="detailed">Detailed</option>
+              </select>
+            </label>
+          </div>
+        </details>
 
         <div class="settings-actions">
           <button class="primary" type="button" (click)="saveRagSettings()" [disabled]="settingsLoading()">
@@ -370,26 +367,26 @@
     <section class="panel advanced-panel">
       <button type="button" class="collapse-header secondary" (click)="togglePlayground()" [attr.aria-expanded]="playgroundExpanded()">
         <span>
-          <p class="eyebrow">Retrieval Playground</p>
-          <strong>{{ retrievalResultSummary() || 'Test document retrieval' }}</strong>
+          <p class="eyebrow">Test knowledge retrieval</p>
+          <strong>{{ retrievalResultSummary() || 'Check whether documents can answer a question' }}</strong>
         </span>
         <span>{{ playgroundExpanded() ? 'Hide' : 'Open' }}</span>
       </button>
 
       <div *ngIf="playgroundExpanded()" class="playground-body">
         <div class="test-form">
-          <input [(ngModel)]="question" placeholder="Ask a question to test retrieval">
+          <input [(ngModel)]="question" placeholder="Ask a question covered by the uploaded documents">
           <button (click)="testRetrieval()" [disabled]="testLoading() || !question.trim() || !selectedVersionId()">
-            {{ testLoading() ? 'Testing...' : 'Test Retrieval' }}
+            {{ testLoading() ? 'Testing...' : 'Test knowledge' }}
           </button>
         </div>
 
         <div *ngIf="retrievalChunks().length === 0 && !testLoading()" class="empty-state small">
-          <strong>{{ documents().length === 0 ? 'No documents available' : 'No retrieved chunks yet' }}</strong>
-          <span>{{ documents().length === 0 ? 'Upload documents before testing retrieval.' : 'Run a question to inspect retrieval results.' }}</span>
+          <strong>{{ documents().length === 0 ? 'No documents available' : 'No results yet' }}</strong>
+          <span>{{ documents().length === 0 ? 'Upload documents before testing knowledge.' : 'Run a question to see which document sections are found.' }}</span>
         </div>
 
-        <p *ngIf="retrievalMode()" class="mode-pill">Retrieval mode: {{ retrievalMode() }}</p>
+        <p *ngIf="retrievalMode()" class="mode-pill">Search method: {{ retrievalMode() }}</p>
 
         <article *ngFor="let chunk of retrievalChunks(); let index = index" class="chunk-row result">
           <div class="result-title">
@@ -397,7 +394,7 @@
             <span class="score-pill">Relevance {{ chunk.score | number:'1.2-2' }}</span>
           </div>
           <small>{{ chunk.filename }}{{ chunk.section_type ? ' · ' + chunk.section_type : '' }}</small>
-          <small *ngIf="chunk.embedding_status">Embedding: {{ chunkStatusLabel(chunk) }}</small>
+          <small *ngIf="chunk.embedding_status">Status: {{ chunkStatusLabel(chunk) }}</small>
           <p>{{ chunk.text }}</p>
         </article>
       </div>
@@ -450,3 +447,4 @@
     </div>
   </div>
 </section>
+

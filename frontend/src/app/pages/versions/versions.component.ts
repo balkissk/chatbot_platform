@@ -18,17 +18,7 @@ export class VersionsComponent implements OnInit {
   versions = signal<any[]>([]);
   selectedVersionId = signal<number | undefined>(undefined);
   documents = signal<any[]>([]);
-  selectedFileName = '';
-  uploadError = signal('');
-  uploadLoading = signal(false);
-  chatQuestion = '';
-  chatAnswer = signal('');
-  chatMessages = signal<{ text: string; options?: string[] }[]>([]);
-  chatSources = signal<any[]>([]);
-  chatOptions = signal<string[]>([]);
-  chatSessionId = signal<number | undefined>(undefined);
-  chatLoading = signal(false);
-  chatError = signal('');
+  documentsError = signal('');
   configLoading = signal(false);
   configSaving = signal(false);
   configMessage = signal('');
@@ -41,7 +31,7 @@ export class VersionsComponent implements OnInit {
   smokeLoading = signal(false);
   smokeMessage = signal('');
   pendingConfirm = signal<{
-    type: 'version' | 'document' | 'publish-warning';
+    type: 'version' | 'publish-warning';
     item: any;
     title: string;
     message: string;
@@ -237,11 +227,6 @@ export class VersionsComponent implements OnInit {
 
   selectVersion(versionId: number) {
     this.selectedVersionId.set(versionId);
-    this.chatAnswer.set('');
-    this.chatSources.set([]);
-    this.chatMessages.set([]);
-    this.chatOptions.set([]);
-    this.chatSessionId.set(undefined);
     this.loadDocuments(versionId);
     this.loadLlmConfig(versionId);
     this.loadReadiness(versionId);
@@ -326,16 +311,25 @@ export class VersionsComponent implements OnInit {
   }
 
   loadDocuments(versionId: number) {
-    this.uploadError.set('');
+    this.documentsError.set('');
 
     this.api.getDocuments(versionId).subscribe({
       next: documents => {
         this.documents.set(documents);
       },
       error: err => {
-        this.uploadError.set(err.error?.detail || 'Could not load documents');
+        this.documents.set([]);
+        this.documentsError.set(err.error?.detail || 'Could not load documents');
       }
     });
+  }
+
+  totalChunks() {
+    return this.documents().reduce((total, document) => total + Number(document.chunks_count || 0), 0);
+  }
+
+  documentStatus(document: any) {
+    return document.embedding_status || document.processing_status || document.status || 'available';
   }
 
   loadReadiness(versionId = this.selectedVersionId()) {
@@ -374,31 +368,6 @@ export class VersionsComponent implements OnInit {
     });
   }
 
-  deleteDocument(document: any) {
-    if (!this.canManageWorkspace()) return;
-    this.pendingConfirm.set({
-      type: 'document',
-      item: document,
-      title: 'Delete document?',
-      message: `Are you sure you want to delete "${document.filename}"? This action cannot be undone.`,
-      actionLabel: 'Delete document'
-    });
-  }
-
-  private deleteDocumentNow(document: any) {
-    if (!this.canManageWorkspace()) return;
-    this.api.deleteDocument(document.id).subscribe({
-      next: () => {
-        this.pendingConfirm.set(null);
-        const selectedVersionId = this.selectedVersionId();
-        if (selectedVersionId) this.loadDocuments(selectedVersionId);
-      },
-      error: err => {
-        this.uploadError.set(err.error?.detail || 'Could not delete document');
-      }
-    });
-  }
-
   cancelPendingConfirm() {
     const pending = this.pendingConfirm();
     if (!pending) return;
@@ -418,7 +387,6 @@ export class VersionsComponent implements OnInit {
       this.publishNow(pending.item.id, true);
       return;
     }
-    this.deleteDocumentNow(pending.item);
   }
 
   readinessStatusClass(status: string) {
@@ -428,97 +396,6 @@ export class VersionsComponent implements OnInit {
   @HostListener('document:keydown.escape')
   onEscape() {
     this.cancelPendingConfirm();
-  }
-
-  onFileSelected(event: Event) {
-    if (!this.canManageWorkspace()) return;
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-
-    this.uploadError.set('');
-    this.selectedFileName = file?.name || '';
-
-    const selectedVersionId = this.selectedVersionId();
-    if (!file || !selectedVersionId) return;
-
-    this.uploadLoading.set(true);
-    const reader = new FileReader();
-
-    reader.onload = () => {
-      this.api.uploadDocument(selectedVersionId, {
-        filename: file.name,
-        content_type: file.type || 'text/plain',
-        content: String(reader.result || '')
-      }).subscribe({
-        next: () => {
-          this.loadDocuments(selectedVersionId);
-          input.value = '';
-          this.selectedFileName = '';
-          this.uploadLoading.set(false);
-        },
-        error: err => {
-          this.uploadError.set(err.error?.detail || 'Upload failed');
-          this.uploadLoading.set(false);
-        }
-      });
-    };
-
-    reader.onerror = () => {
-      this.uploadError.set('Could not read file');
-      this.uploadLoading.set(false);
-    };
-
-    reader.readAsText(file);
-  }
-
-  askChatbot() {
-    if (!this.chatQuestion.trim()) return;
-
-    this.chatLoading.set(true);
-    this.chatError.set('');
-    this.chatAnswer.set('');
-    this.chatMessages.set([]);
-    this.chatSources.set([]);
-    this.chatOptions.set([]);
-
-    this.api.chat({
-      chatbot_id: this.chatbotId,
-      message: this.chatQuestion,
-      session_id: this.chatSessionId(),
-      version_id: this.selectedVersionId()
-    }).subscribe({
-      next: res => {
-        this.chatAnswer.set(res.response);
-        this.chatMessages.set(this.toChatMessages(res));
-        this.chatSources.set(res.sources || []);
-        this.chatOptions.set(res.options || []);
-        this.chatSessionId.set(res.session_id);
-        this.chatLoading.set(false);
-      },
-      error: err => {
-        this.chatError.set(err.error?.detail || 'Chat failed');
-        this.chatLoading.set(false);
-      }
-    });
-  }
-
-  askOption(option: string) {
-    this.chatQuestion = option;
-    this.askChatbot();
-  }
-
-  private toChatMessages(response: any) {
-    if (Array.isArray(response.messages) && response.messages.length > 0) {
-      return response.messages.map((item: any) => ({
-        text: item.text || '',
-        options: item.options || []
-      }));
-    }
-
-    return [{
-      text: response.response || '',
-      options: response.options || []
-    }];
   }
 
   private publishError(err: any) {

@@ -1,0 +1,1202 @@
+ChatBot Factory - Inspection fonctionnelle READ-ONLY pour les diagrammes de sequence du Chapitre 4
+Chapitre 4 : Creation et gestion des assistants conversationnels
+
+Inspection basee sur l'implementation actuelle uniquement.
+Aucun comportement futur ou redesign de roles n'est considere comme implemente.
+
+Contraintes respectees :
+- Inspection read-only.
+- Aucun fichier source modifie.
+- Weekly Plan non touche.
+- Aucun test, build, linter, Docker, Git, GitHub Actions, deploiement ou CI/CD execute.
+- Contexte reutilise depuis les inspections precedentes.
+- Verification ciblee supplementaire uniquement sur le modele Chatbot pour confirmer les valeurs par defaut.
+
+================================================================================
+1. SEQUENCE DIAGRAM - CREER UN PROJET
+================================================================================
+
+A. CURRENT IMPLEMENTATION FLOW
+
+1. Le Manager ouvre la page Projects.
+   - Composant Angular : ProjectsComponent.
+   - Route frontend : /dashboard/projects.
+
+2. Le Manager ouvre le formulaire/modal de creation.
+   - Methode frontend : openCreateModal().
+   - Effet : createModalOpen = true.
+
+3. Le Manager saisit les champs du projet.
+   - newProjectName.
+   - newProjectDescription.
+
+4. Le Manager confirme la creation.
+   - Methode frontend : ProjectsComponent.createProject().
+
+5. Validation frontend minimale.
+   - Le nom est trimme.
+   - Si le nom est vide, la methode retourne immediatement.
+   - Aucun appel backend n'est envoye dans ce cas.
+
+6. Appel du service frontend.
+   - ProjectsComponent appelle ApiService.createProject(data).
+
+7. Appel HTTP.
+   - ApiService envoie POST /projects.
+
+8. Route backend.
+   - Fichier : backend/routes/project_routes.py.
+   - Fonction : create_project().
+
+9. Verification d'authentification et de role.
+   - Dependency : current_user = Depends(require_roles("admin", "manager")).
+   - Acteurs autorises dans le code actuel : Manager et Administrator.
+   - Si utilisateur non authentifie : 401.
+   - Si role non autorise : 403.
+
+10. Validation backend du nom.
+    - Le backend trimme project.name.
+    - Si le nom est vide : HTTP 400, detail "Project name is required".
+
+11. Valeurs appliquees cote backend.
+    - name = nom trimme.
+    - description = project.description.strip() or "No description".
+    - user_id = current_user.id.
+    - status = ProjectStatus.active.value, donc "active".
+
+12. Creation de l'entite Project.
+    - Modele : Project.
+    - Table : projects.
+    - Champs importants : id, name, description, user_id, status, created_at, archived_at, deleted_at.
+
+13. Ecriture base de donnees.
+    - db.add(new_project).
+    - db.commit().
+    - db.refresh(new_project).
+
+14. Creation de l'audit log.
+    - Service : record_audit_log().
+    - Action : PROJECT_CREATED.
+    - resource_type : project.
+    - resource_id : nouvel id du projet.
+    - resource_name : nom du projet.
+
+15. Reponse backend.
+    - Retourne serialize_project(new_project, stats).
+    - La reponse contient notamment id, name, description, user_id, status, created_at, counts/statistiques.
+
+16. Traitement frontend en succes.
+    - Vide newProjectName.
+    - Vide newProjectDescription.
+    - Ferme le modal : createModalOpen = false.
+    - creating = false.
+    - Affiche un toast : "Project created".
+    - Recharge la liste via loadProjects().
+
+17. Navigation apres creation.
+    - Pas de navigation automatique verifiee.
+    - La page reste sur la liste des projets et recharge les donnees.
+
+B. RECOMMENDED UML PARTICIPANTS
+
+Actor :
+- Manager
+
+Boundary :
+- Projects page / Project creation modal
+
+Control frontend :
+- ProjectsComponent
+
+Service frontend :
+- ApiService
+
+Control backend :
+- FastAPI Project Route : create_project()
+
+Control securite :
+- Auth / require_roles(admin, manager)
+
+Entities :
+- Project
+- AuditLog
+
+Database :
+- Database
+
+Participants recommandes dans le diagramme :
+
+Manager
+-> ProjectsComponent / Project creation modal
+-> ApiService
+-> FastAPI Project Route
+-> Auth / Role Check
+-> Project
+-> Database
+-> AuditLog
+
+C. MAIN MESSAGES
+
+1. Manager -> Projects UI : ouvrir le modal de creation.
+2. Manager -> Projects UI : saisir nom et description.
+3. Projects UI -> ProjectsComponent : soumettre la creation.
+4. ProjectsComponent -> ApiService : createProject(name, description).
+5. ApiService -> FastAPI Project Route : POST /projects.
+6. Project Route -> Auth : verifier role admin ou manager.
+7. Project Route -> Project Route : valider le nom.
+8. Project Route -> Project : creer l'objet Project.
+9. Project Route -> Database : inserer Project.
+10. Project Route -> AuditLog : creer PROJECT_CREATED.
+11. Project Route -> Database : inserer AuditLog.
+12. Project Route -> ApiService : retourner ProjectResponse.
+13. ApiService -> ProjectsComponent : succes.
+14. ProjectsComponent -> Projects UI : vider formulaire, fermer modal, afficher toast, recharger la liste.
+
+D. ALT / ERROR BLOCKS
+
+ALT 1 - Nom vide cote frontend :
+- ProjectsComponent.createProject() detecte un nom vide.
+- Aucun appel API.
+- A inclure si le diagramme montre la validation frontend.
+
+ALT 2 - Utilisateur non authentifie :
+- Backend retourne 401.
+- A inclure comme branche courte.
+
+ALT 3 - Role non autorise :
+- require_roles("admin", "manager") retourne 403.
+- A inclure comme branche courte.
+
+ALT 4 - Nom vide cote backend :
+- Backend retourne 400 "Project name is required".
+- Important car c'est la validation serveur.
+
+E. DO NOT INCLUDE
+
+Ne pas inclure dans le diagramme PFE :
+- Details internes de SQLAlchemy commit/refresh.
+- Calcul detaille des statistiques du projet.
+- Details du ToastService.
+- Details du cache ApiService.
+- Implementation exacte de project_stats_for_ids().
+
+F. EVIDENCE
+
+Fichiers et symboles :
+- frontend/src/app/pages/projects/projects.component.ts
+  - openCreateModal()
+  - createProject()
+  - loadProjects()
+- frontend/src/app/services/api.ts
+  - createProject(data)
+- backend/routes/project_routes.py
+  - create_project()
+  - project_query_for_user()
+- backend/models/project.py
+  - Project
+  - ProjectStatus
+- backend/services/auth.py
+  - require_roles()
+- backend/services/audit.py
+  - record_audit_log()
+
+================================================================================
+2. SEQUENCE DIAGRAM - CREER UN ASSISTANT CONVERSATIONNEL
+================================================================================
+
+A. CURRENT IMPLEMENTATION FLOW
+
+1. Le Manager ouvre la page des assistants d'un projet.
+   - Route frontend : /dashboard/projects/{projectId}/chatbots.
+   - Composant : ChatbotsComponent.
+
+2. Le Manager clique sur l'action de creation d'assistant.
+   - Methode : ChatbotsComponent.openWizard().
+
+3. Verification frontend du statut du projet.
+   - Si le projet est archive, openWizard() retourne sans ouvrir l'assistant creation wizard.
+   - Cette restriction est cote frontend.
+
+4. Ouverture du composant AssistantCreationWizardComponent.
+   - Le wizard est un composant enfant de ChatbotsComponent.
+
+5. STEP 1 - Assistant Purpose.
+   - Question UI : "What kind of assistant do you want to create?"
+   - Methode : selectAssistantType(value).
+   - Cette selection est uniquement un etat frontend a ce moment.
+   - Rien n'est persiste immediatement.
+
+6. Valeurs disponibles pour Assistant Purpose.
+   - Customer Support Assistant : customer_support.
+   - Employee Knowledge Assistant : employee_knowledge.
+   - Training & Certification Assistant : training_certification.
+   - Lead Generation Assistant : lead_generation.
+   - Custom Assistant : custom.
+
+7. Regle de validation STEP 1.
+   - canContinue() retourne true seulement si state.assistant_type est renseigne.
+   - Si aucune option n'est choisie, l'utilisateur ne peut pas passer a l'etape suivante.
+
+8. STEP 2 - Creation Mode.
+   - Question UI : "How do you want to start?"
+   - Methode : selectCreationMode(value).
+   - Cette selection est uniquement un etat frontend a ce moment.
+   - Rien n'est persiste immediatement.
+
+9. Valeurs disponibles pour Creation Mode.
+   - Start From Scratch : scratch.
+   - Use Template : template.
+   - Build With AI : ai.
+
+10. Effet du choix Start From Scratch.
+    - Pendant la creation backend, un assistant est cree avec une premiere version draft et un flow blank.
+    - Apres creation, le frontend redirige vers Flow Builder.
+
+11. Effet du choix Use Template.
+    - Pendant la creation backend, l'assistant est cree avec une premiere version draft et un flow blank.
+    - Le template n'est pas applique pendant la creation.
+    - Apres creation, le frontend redirige vers la page Template Selection.
+
+12. Effet du choix Build With AI.
+    - Pendant la creation backend, l'assistant est cree avec une premiere version draft et un flow blank.
+    - La generation IA n'est pas executee pendant la creation.
+    - Apres creation, le frontend redirige vers la page AI Generator.
+
+13. Regle de validation STEP 2.
+    - canContinue() retourne true seulement si state.creation_mode est renseigne.
+
+14. STEP 3 - Basic Configuration.
+    - Champs UI :
+      - Assistant Name.
+      - Description.
+      - Language.
+      - Channel.
+
+15. Valeurs de langue disponibles.
+    - English : en.
+    - French : fr.
+    - Valeur par defaut du wizard : fr.
+
+16. Valeurs de channel disponibles.
+    - Public Chat : public_chat.
+    - Web Widget : web_widget.
+    - REST Public API : rest_public_api.
+    - Valeur par defaut du wizard : web_widget.
+
+17. Regles de validation STEP 3.
+    - Le nom est obligatoire.
+    - La langue est obligatoire.
+    - Le channel est obligatoire.
+    - La description est optionnelle.
+
+18. Confirmation de creation dans le wizard.
+    - Methode : AssistantCreationWizardComponent.finish().
+    - Condition : canFinish() doit retourner true.
+    - Le wizard emet finishWizard avec l'etat normalise.
+
+19. Reception par ChatbotsComponent.
+    - Methode : ChatbotsComponent.finishWizard(state).
+
+20. Construction du payload frontend.
+    - assistant_type = state.assistant_type.
+    - creation_mode = state.creation_mode.
+    - name = state.name.trim().
+    - description = state.description?.trim() || "".
+    - language = normalizeAssistantLanguage(state.language).
+    - project_id = this.projectId.
+    - type = "builder".
+    - purpose = state.assistant_type.
+    - mode = "builder".
+    - channel = normalizeAssistantChannel(state.channel).
+    - build_method = state.creation_mode.
+    - template_key = null.
+    - status = "draft".
+    - published = false.
+
+21. Appel du service frontend.
+    - ApiService.createChatbot(data).
+
+22. Appel HTTP.
+    - POST /chatbots.
+
+23. Route backend.
+    - Fichier : backend/routes/chatbot_routes.py.
+    - Fonction : create_chatbot().
+
+24. Verification d'authentification et role.
+    - current_user = Depends(require_roles("admin", "manager")).
+    - Acteurs autorises dans le code actuel : Manager et Administrator.
+
+25. Verification d'ownership projet.
+    - Fonction : ensure_project_access(db, chatbot.project_id, current_user).
+    - Si current_user.role == "manager", la requete ajoute Project.user_id == current_user.id.
+    - Si le projet n'existe pas ou n'appartient pas au Manager : 404 "Project not found".
+
+26. Validation backend du nom.
+    - name = chatbot.name.strip().
+    - Si vide : 400 "Chatbot name is required".
+
+27. Validation backend du mode de creation.
+    - build_method = creation_mode ou build_method ou "scratch".
+    - Valeurs acceptees : scratch, template, ai, blank.
+    - Si build_method == "blank", il est transforme en scratch.
+    - Si valeur inconnue : 400 "Unsupported assistant creation mode".
+
+28. Validation backend du template.
+    - Si build_method == "template" et chatbot.template_key est fourni, la cle doit exister dans TEMPLATES.
+    - Dans le flux actuel du wizard, template_key est envoye a null.
+    - Donc aucun template n'est applique pendant la creation.
+
+29. Validation backend de la langue.
+    - Schema : ChatbotCreate.validate_language().
+    - Valeurs supportees : en, fr.
+    - Alias acceptes : english, anglais, french, francais.
+    - Valeur par defaut de fallback schema : fr.
+
+30. Validation backend du channel.
+    - Schema : ChatbotCreate.validate_channel().
+    - Valeurs supportees : public_chat, web_widget, rest_public_api.
+    - Alias acceptes : public, web, web_chat, widget, rest_api, public_api, api.
+    - Valeur par defaut de fallback schema : web_widget.
+
+31. Creation de l'entite Chatbot.
+    - Champs principaux :
+      - name.
+      - description.
+      - language.
+      - type.
+      - purpose.
+      - mode.
+      - channel.
+      - build_method.
+      - template_key.
+      - source_template_key.
+      - source_template_version.
+      - ai_assistant_goal.
+      - ai_business_context.
+      - ai_knowledge_base_description.
+      - public_api_key.
+      - public_api_enabled = True.
+      - project_id.
+    - is_active n'est pas fixe explicitement dans create_chatbot(), mais le modele Chatbot definit default=True.
+
+32. Ecriture base de donnees 1.
+    - Insert Chatbot.
+
+33. Creation de la premiere version.
+    - Entite : VersionChatbot.
+    - Champs :
+      - chatbot_id = new_chatbot.id.
+      - version_number = 1.
+      - status = "draft".
+      - created_by = current_user.id.
+
+34. Ecriture base de donnees 2.
+    - Insert VersionChatbot.
+
+35. Creation de la configuration LLM initiale.
+    - Entite : LLMConfig.
+    - Champs :
+      - version_id = first_version.id.
+      - model = "phi3".
+      - temperature = 0.7.
+      - system_prompt = chatbot_language_instruction(new_chatbot.language).
+
+36. Ecriture base de donnees 3.
+    - Insert LLMConfig.
+
+37. Creation du flow initial.
+    - Fonction : create_starter_flow(db, first_version.id, "blank", new_chatbot.language).
+    - Le flow initial est blank.
+
+38. Ecriture base de donnees 4.
+    - Insert Flow et structure starter associee.
+
+39. Audit log.
+    - Action : CHATBOT_CREATED.
+    - resource_type : chatbot.
+    - resource_id : new_chatbot.id.
+    - resource_name : new_chatbot.name.
+    - metadata : project_id.
+
+40. Reponse backend.
+    - Retourne serialize_chatbot(new_chatbot, stats).
+    - La reponse contient notamment :
+      - id.
+      - name.
+      - description.
+      - language.
+      - purpose / assistant_type.
+      - mode.
+      - channel.
+      - build_method / creation_mode.
+      - is_active.
+      - status calcule "draft" ou "published".
+      - published.
+      - active_version_id.
+      - public_api_key.
+      - public_api_enabled.
+      - rag_settings.
+      - project_id.
+      - compteurs de versions.
+
+41. Traitement frontend en succes.
+    - creating = false.
+    - wizardOpen = false.
+    - success = "Assistant created as draft. Assistant ID: {created.id}".
+    - Appel de navigateAfterCreation(state.creation_mode, created.id).
+
+42. Redirection selon le mode.
+    - Si scratch :
+      /dashboard/projects/{projectId}/chatbots/{chatbotId}/flow.
+    - Si template :
+      /dashboard/projects/{projectId}/chatbots/{chatbotId}/templates.
+    - Si ai :
+      /dashboard/projects/{projectId}/chatbots/{chatbotId}/ai-generator.
+
+B. RECOMMENDED UML PARTICIPANTS
+
+Actor :
+- Manager
+
+Boundary :
+- Chatbots page
+- Assistant Creation Wizard
+
+Control frontend :
+- ChatbotsComponent
+
+Service frontend :
+- ApiService
+
+Control backend :
+- FastAPI Chatbot Route : create_chatbot()
+- Project Access : ensure_project_access()
+
+Control securite :
+- Auth / require_roles(admin, manager)
+
+Entities :
+- Project
+- Chatbot
+- VersionChatbot
+- LLMConfig
+- Flow
+- AuditLog
+
+Database :
+- Database
+
+Participants recommandes pour un diagramme pedagogique :
+
+Manager
+-> ChatbotsComponent
+-> AssistantCreationWizard
+-> ApiService
+-> FastAPI Chatbot Route
+-> Auth / Role Check
+-> Project Access
+-> Database
+
+Dans le diagramme, Chatbot, VersionChatbot, LLMConfig, Flow et AuditLog peuvent apparaitre comme entites separees si vous voulez montrer les objets crees. Sinon, pour garder le diagramme lisible, les representer comme des messages vers Database :
+- Insert Chatbot.
+- Insert VersionChatbot v1 draft.
+- Insert default LLMConfig.
+- Insert blank Flow.
+- Insert AuditLog.
+
+C. MAIN MESSAGES
+
+1. Manager -> ChatbotsComponent : cliquer "Create assistant".
+2. ChatbotsComponent -> AssistantCreationWizard : ouvrir wizard.
+3. Manager -> Wizard : choisir l'objectif metier.
+4. Manager -> Wizard : choisir le mode de creation.
+5. Manager -> Wizard : renseigner nom, description, langue, channel.
+6. Wizard -> ChatbotsComponent : finishWizard(normalizedState).
+7. ChatbotsComponent -> ApiService : createChatbot(payload).
+8. ApiService -> Chatbot Route : POST /chatbots.
+9. Chatbot Route -> Auth : verifier role admin ou manager.
+10. Chatbot Route -> Project Access : verifier acces au projet.
+11. Project Access -> Database : lire Project.
+12. Chatbot Route -> Chatbot Route : valider nom, mode, langue, channel.
+13. Chatbot Route -> Database : inserer Chatbot.
+14. Chatbot Route -> Database : inserer VersionChatbot v1 draft.
+15. Chatbot Route -> Database : inserer LLMConfig par defaut.
+16. Chatbot Route -> Database : creer Flow blank.
+17. Chatbot Route -> Database : inserer AuditLog CHATBOT_CREATED.
+18. Chatbot Route -> ApiService : retourner assistant serialise.
+19. ApiService -> ChatbotsComponent : success.
+20. ChatbotsComponent -> Router : rediriger selon creation_mode.
+
+D. ALT / ERROR BLOCKS
+
+ALT 1 - Projet archive :
+- ChatbotsComponent.openWizard() ne lance pas le wizard si isArchivedProject().
+- A inclure si vous voulez montrer la restriction UI.
+
+ALT 2 - Objectif metier manquant :
+- Wizard bloque le passage a l'etape suivante.
+
+ALT 3 - Mode de creation manquant :
+- Wizard bloque le passage a l'etape suivante.
+
+ALT 4 - Configuration obligatoire incomplete :
+- Wizard bloque la finition si name, language ou channel manquent.
+
+ALT 5 - Utilisateur non authentifie :
+- Backend retourne 401.
+
+ALT 6 - Role non autorise :
+- require_roles("admin", "manager") retourne 403.
+
+ALT 7 - Projet introuvable ou non possede par Manager :
+- ensure_project_access() retourne 404 "Project not found".
+
+ALT 8 - Nom vide cote backend :
+- Backend retourne 400 "Chatbot name is required".
+
+ALT 9 - Mode de creation non supporte :
+- Backend retourne 400 "Unsupported assistant creation mode".
+
+ALT 10 - Template inconnu :
+- Applicable seulement si build_method == template et template_key est fourni.
+- Dans le wizard actuel, template_key est null, donc cette branche est possible cote backend mais pas declenchee par le flux UI actuel.
+
+ALT 11 - Start From Scratch :
+- Creation de l'assistant, version v1, LLMConfig, Flow blank.
+- Redirection vers Flow Builder.
+
+ALT 12 - Use Template :
+- Creation de l'assistant, version v1, LLMConfig, Flow blank.
+- Redirection vers Template Selection.
+- Le template n'est pas applique pendant la creation.
+- L'application du template doit etre traitee dans Chapter 5 ou dans un diagramme separe.
+
+ALT 13 - Build With AI :
+- Creation de l'assistant, version v1, LLMConfig, Flow blank.
+- Redirection vers AI Generator.
+- La generation IA n'est pas executee pendant la creation.
+- La generation du flow IA doit etre traitee dans Chapter 5.
+
+E. DO NOT INCLUDE
+
+Ne pas inclure dans le diagramme PFE :
+- Algorithme exact de generation public_api_key.
+- Details du system_prompt complet.
+- Details internes de create_starter_flow().
+- Catalogue complet des templates.
+- Prompt ou logique interne de generation IA.
+- Details des signaux Angular.
+- Details de cache frontend.
+- Multiples db.commit()/db.refresh(), sauf sous forme simplifiee "persist".
+
+F. EVIDENCE
+
+Fichiers et symboles :
+- frontend/src/app/pages/chatbots/assistant-creation-wizard.component.ts
+  - selectAssistantType()
+  - selectCreationMode()
+  - updateField()
+  - canContinue()
+  - canFinish()
+  - finish()
+- frontend/src/app/pages/chatbots/assistant-creation-wizard.component.html
+  - Step 1 Assistant Purpose.
+  - Step 2 Creation Mode.
+  - Step 3 Basic Configuration.
+- frontend/src/app/shared/assistant-options.ts
+  - ASSISTANT_LANGUAGE_OPTIONS.
+  - ASSISTANT_CHANNEL_OPTIONS.
+  - ASSISTANT_PURPOSE_OPTIONS.
+  - normalizeAssistantLanguage().
+  - normalizeAssistantChannel().
+- frontend/src/app/pages/chatbots/chatbots.component.ts
+  - openWizard().
+  - finishWizard().
+  - navigateAfterCreation().
+  - isArchivedProject().
+- frontend/src/app/services/api.ts
+  - createChatbot(data).
+- backend/routes/chatbot_routes.py
+  - create_chatbot().
+  - ensure_project_access().
+  - new_public_api_key().
+- backend/models/chatbot.py
+  - Chatbot.
+  - is_active default True.
+  - public_api_enabled default True.
+- backend/models/chatbot_schema.py
+  - ChatbotCreate.
+  - validate_language().
+  - validate_channel().
+- backend/models/version.py
+  - VersionChatbot.
+- backend/models/llm_config.py
+  - LLMConfig.
+- backend/services/templates.py
+  - create_starter_flow().
+- backend/services/audit.py
+  - record_audit_log().
+
+G. WHAT BELONGS IN CHAPTER 4 VS CHAPTER 5
+
+To include in Chapter 4:
+- Choisir l'objectif metier.
+- Choisir le mode de creation.
+- Configurer les informations generales.
+- Creer l'assistant.
+- Initialiser la premiere version draft.
+- Initialiser la configuration LLM par defaut.
+- Initialiser un flow blank.
+- Rediriger selon le mode choisi.
+
+To defer to Chapter 5:
+- Appliquer un template au flow.
+- Generer un flow avec IA.
+- Modifier les noeuds et transitions du flow.
+- Valider le flow conversationnel en detail.
+- Tester le comportement conversationnel du flow.
+
+================================================================================
+3. SEQUENCE DIAGRAM - MODIFIER LA CONFIGURATION GENERALE D'UN ASSISTANT
+================================================================================
+
+A. CURRENT IMPLEMENTATION FLOW
+
+1. Le Manager ouvre la page Assistant Settings.
+   - Route frontend :
+     /dashboard/projects/{projectId}/chatbots/{chatbotId}/settings.
+   - Composant : AssistantSettingsComponent.
+
+2. Initialisation de la page.
+   - Methode : ngOnInit().
+   - Lit projectId et chatbotId depuis les parametres de route.
+   - Appelle loadPage().
+
+3. Chargement du projet.
+   - AssistantSettingsComponent appelle ApiService.getProject(projectId).
+   - Endpoint backend : GET /projects/{project_id}.
+   - Utilise la verification d'ownership projet pour Manager.
+
+4. Chargement de l'assistant.
+   - AssistantSettingsComponent appelle ApiService.getChatbot(chatbotId).
+   - Endpoint backend : GET /chatbots/{id}.
+
+5. Verification backend pour lire l'assistant.
+   - Route : get_chatbot_details().
+   - Permission : require_roles("admin", "manager").
+   - Ownership : get_accessible_chatbot().
+   - Pour Manager, get_accessible_chatbot() appelle ensure_project_access() sur le projet de l'assistant.
+   - ensure_project_access() verifie Project.user_id == current_user.id pour Manager.
+
+6. Reponse backend de l'assistant.
+   - Retourne les details serialises de l'assistant.
+
+7. Remplissage du formulaire.
+   - Methode frontend : populateForm(assistant).
+   - Champs charges :
+     - name.
+     - description.
+     - language.
+     - channel.
+     - type = "builder".
+     - purpose.
+     - mode = "builder".
+     - template_key.
+
+8. Champs editables selon le code actuel.
+   - name : editable.
+   - description : editable.
+   - language : editable.
+   - channel : editable.
+   - purpose : le backend accepte la modification et le formulaire conserve cette valeur.
+
+9. Champ immutable selon le backend.
+   - creation mode / build_method.
+   - Si build_method ou creation_mode est envoye et different de chatbot.build_method, backend retourne 400 "Assistant creation mode cannot be changed after creation".
+
+10. Le Manager modifie la configuration generale.
+
+11. Le Manager clique sur Save.
+    - Methode : AssistantSettingsComponent.saveSettings().
+
+12. Validation frontend du nom.
+    - name = this.form.name.trim().
+    - Si vide : error = "Assistant name is required", aucun appel API.
+
+13. Construction du payload frontend.
+    - Envoie les champs du formulaire avec :
+      - type = "builder".
+      - mode = "builder".
+      - name trimme.
+      - description trimmee.
+      - language normalisee.
+      - channel normalise.
+
+14. Appel du service frontend.
+    - ApiService.updateChatbot(chatbotId, data).
+
+15. Appel HTTP.
+    - PUT /chatbots/{id}.
+
+16. Route backend.
+    - Fichier : backend/routes/chatbot_routes.py.
+    - Fonction : update_chatbot().
+
+17. Verification d'authentification et role.
+    - current_user = Depends(require_roles("admin", "manager")).
+
+18. Verification ownership assistant.
+    - Fonction : get_accessible_chatbot(db, id, current_user).
+    - Verifie que l'assistant existe.
+    - Verifie que son projet est accessible.
+    - Pour Manager : le projet doit avoir Project.user_id == current_user.id.
+
+19. Validation backend du nom.
+    - name = payload.name.strip().
+    - Si vide : 400 "Chatbot name is required".
+
+20. Validation backend langue/channel.
+    - Schema : ChatbotUpdate.
+    - Langues supportees : en, fr.
+    - Channels supportes : public_chat, web_widget, rest_public_api.
+
+21. Validation de l'immutabilite du mode de creation.
+    - requested_build_method = payload.creation_mode or payload.build_method.
+    - Si requested_build_method existe et differe de chatbot.build_method :
+      400 "Assistant creation mode cannot be changed after creation".
+
+22. Mise a jour backend.
+    - chatbot.name = name.
+    - chatbot.description = payload.description.strip().
+    - chatbot.language = payload.language.
+    - chatbot.type = payload.type.
+    - chatbot.purpose = payload.purpose.
+    - chatbot.mode = payload.mode.
+    - chatbot.channel = payload.channel.
+
+23. Ecriture base de donnees.
+    - db.commit().
+    - db.refresh(chatbot).
+
+24. Audit log.
+    - Action : CHATBOT_UPDATED.
+    - resource_type : chatbot.
+    - resource_id : chatbot.id.
+    - resource_name : chatbot.name.
+    - metadata : project_id.
+
+25. Reponse backend.
+    - Retourne serialize_chatbot(chatbot).
+
+26. Traitement frontend succes.
+    - Met a jour assistant signal.
+    - Repopule le formulaire avec les valeurs retour.
+    - saving = false.
+    - message = "Assistant settings saved".
+    - toast success "Assistant settings saved".
+
+B. RECOMMENDED UML PARTICIPANTS
+
+Actor :
+- Manager
+
+Boundary :
+- Assistant Settings page
+
+Control frontend :
+- AssistantSettingsComponent
+
+Service frontend :
+- ApiService
+
+Control backend :
+- FastAPI Chatbot Route : update_chatbot()
+- Access helper : get_accessible_chatbot() / ensure_project_access()
+
+Control securite :
+- Auth / require_roles(admin, manager)
+
+Entities :
+- Project
+- Chatbot
+- AuditLog
+
+Database :
+- Database
+
+Participants recommandes :
+
+Manager
+-> AssistantSettingsComponent
+-> ApiService
+-> FastAPI Chatbot Route
+-> Auth / Role Check
+-> Access Helper
+-> Database
+
+C. MAIN MESSAGES
+
+1. Manager -> AssistantSettingsComponent : ouvrir la page settings.
+2. AssistantSettingsComponent -> ApiService : getProject(projectId).
+3. AssistantSettingsComponent -> ApiService : getChatbot(chatbotId).
+4. ApiService -> Backend : GET /chatbots/{id}.
+5. Backend -> Auth : verifier role admin ou manager.
+6. Backend -> Access Helper : verifier assistant accessible.
+7. Access Helper -> Database : lire Chatbot + Project.
+8. Backend -> ApiService : retourner assistant.
+9. ApiService -> AssistantSettingsComponent : assistant details.
+10. AssistantSettingsComponent -> AssistantSettingsComponent : populateForm().
+11. Manager -> AssistantSettingsComponent : modifier champs generaux.
+12. Manager -> AssistantSettingsComponent : cliquer Save.
+13. AssistantSettingsComponent -> AssistantSettingsComponent : valider name.
+14. AssistantSettingsComponent -> ApiService : updateChatbot(chatbotId, payload).
+15. ApiService -> Backend : PUT /chatbots/{id}.
+16. Backend -> Auth : verifier role.
+17. Backend -> Access Helper : verifier ownership.
+18. Backend -> Backend : valider name, language, channel, creation mode immutable.
+19. Backend -> Database : update Chatbot.
+20. Backend -> Database : insert AuditLog CHATBOT_UPDATED.
+21. Backend -> ApiService : retourner assistant mis a jour.
+22. ApiService -> AssistantSettingsComponent : succes.
+23. AssistantSettingsComponent -> UI : mettre a jour l'etat, repopuler le formulaire, afficher succes.
+
+D. ALT / ERROR BLOCKS
+
+ALT 1 - Nom vide cote frontend :
+- saveSettings() bloque l'envoi.
+- Message : "Assistant name is required".
+
+ALT 2 - Utilisateur non authentifie :
+- Backend retourne 401.
+
+ALT 3 - Role non autorise :
+- Backend retourne 403.
+
+ALT 4 - Assistant introuvable ou non possede par Manager :
+- get_accessible_chatbot() retourne 404 "Chatbot not found".
+
+ALT 5 - Nom vide cote backend :
+- Backend retourne 400 "Chatbot name is required".
+
+ALT 6 - Langue ou channel non supporte :
+- Validation schema echoue.
+
+ALT 7 - Tentative de modification du mode de creation :
+- Backend retourne 400 "Assistant creation mode cannot be changed after creation".
+
+ALT 8 - Projet archive :
+- Le frontend expose isArchivedProject() et peut desactiver certaines actions.
+- La route backend update_chatbot() ne semble pas bloquer explicitement une mise a jour si le projet est archive.
+- A mentionner comme restriction UI, pas comme regle backend verifiee.
+
+E. DO NOT INCLUDE
+
+Ne pas inclure dans le diagramme PFE :
+- Details Angular signals.
+- ToastService.
+- Cache clearing dans ApiService.
+- Tous les champs serialises de la reponse.
+- API key, RAG settings ou deployment channels, car ils ne font pas partie de la configuration generale demandee.
+- Setup wizard edit-mode pour template/AI regeneration, car c'est un scenario distinct.
+
+F. EVIDENCE
+
+Fichiers et symboles :
+- frontend/src/app/pages/assistant-settings/assistant-settings.component.ts
+  - ngOnInit().
+  - loadPage().
+  - populateForm().
+  - saveSettings().
+  - isArchivedProject().
+- frontend/src/app/services/api.ts
+  - getProject().
+  - getChatbot().
+  - updateChatbot().
+- backend/routes/chatbot_routes.py
+  - get_chatbot_details().
+  - update_chatbot().
+  - get_accessible_chatbot().
+  - ensure_project_access().
+- backend/models/chatbot_schema.py
+  - ChatbotUpdate.
+  - validate_language().
+  - validate_channel().
+- backend/services/audit.py
+  - record_audit_log().
+
+================================================================================
+READY-TO-USE PLANTUML DRAFTS
+================================================================================
+
+-------------------------------------------------------------------------------
+PlantUML 1 - Creer un projet
+-------------------------------------------------------------------------------
+
+@startuml
+title Creer un projet
+
+actor Manager
+boundary "ProjectsComponent\n(Project creation modal)" as UI
+control "ApiService" as API
+control "FastAPI Project Route\ncreate_project()" as Route
+control "Auth\nrequire_roles(admin, manager)" as Auth
+entity "Project" as Project
+entity "AuditLog" as Audit
+database "Database" as DB
+
+Manager -> UI : Open creation modal
+Manager -> UI : Enter name and description
+Manager -> UI : Submit
+
+alt Empty name on frontend
+  UI -> UI : Stop submission\nshow validation state
+else Valid frontend form
+  UI -> API : createProject(payload)
+  API -> Route : POST /projects
+  Route -> Auth : Check authenticated role
+  Auth --> Route : current_user
+
+  alt User is not admin/manager
+    Route --> API : 403 Forbidden
+    API --> UI : Display error
+  else Authorized
+    Route -> Route : Trim and validate project name
+
+    alt Empty name on backend
+      Route --> API : 400 Project name is required
+      API --> UI : Display error
+    else Valid name
+      Route -> Project : Build Project\nuser_id = current_user.id\nstatus = active
+      Route -> DB : Insert Project
+      Route -> Audit : PROJECT_CREATED
+      Route -> DB : Insert AuditLog
+      Route --> API : Project response
+      API --> UI : Success response
+      UI -> UI : Clear form\nclose modal\nshow toast
+      UI -> API : Reload projects
+    end
+  end
+end
+@enduml
+
+-------------------------------------------------------------------------------
+PlantUML 2 - Creer un assistant conversationnel
+-------------------------------------------------------------------------------
+
+@startuml
+title Creer un assistant conversationnel
+
+actor Manager
+boundary "ChatbotsComponent\nAssistants page" as Page
+boundary "AssistantCreationWizard" as Wizard
+control "ApiService" as API
+control "FastAPI Chatbot Route\ncreate_chatbot()" as Route
+control "Auth\nrequire_roles(admin, manager)" as Auth
+control "Project Access\nensure_project_access()" as Access
+entity "Chatbot" as Chatbot
+entity "VersionChatbot" as Version
+entity "LLMConfig" as LLM
+entity "Flow" as Flow
+entity "AuditLog" as Audit
+database "Database" as DB
+
+Manager -> Page : Click create assistant
+Page -> Wizard : Open wizard
+
+Manager -> Wizard : Step 1 choose purpose
+note right of Wizard
+Values:
+customer_support
+employee_knowledge
+training_certification
+lead_generation
+custom
+
+Frontend state only.
+end note
+
+Manager -> Wizard : Step 2 choose creation mode
+note right of Wizard
+Values:
+scratch
+template
+ai
+
+Frontend state only.
+end note
+
+Manager -> Wizard : Step 3 enter basic configuration
+note right of Wizard
+Fields:
+name, description,
+language, channel
+end note
+
+alt Missing required wizard data
+  Wizard -> Wizard : Block next/finish
+else Valid wizard data
+  Wizard -> Page : finishWizard(normalized state)
+  Page -> API : createChatbot(payload)
+  API -> Route : POST /chatbots
+  Route -> Auth : Check role
+  Auth --> Route : current_user
+  Route -> Access : Verify project access
+
+  alt Project not owned by Manager
+    Access --> Route : Not found
+    Route --> API : 404 Project not found
+    API --> Page : Display error
+  else Project accessible
+    Route -> Route : Validate name, mode,\nlanguage, channel
+    alt Invalid data
+      Route --> API : 400/validation error
+      API --> Page : Display error
+    else Valid data
+      Route -> Chatbot : Create assistant\nis_active default true
+      Route -> DB : Insert Chatbot
+
+      Route -> Version : Create v1 draft
+      Route -> DB : Insert VersionChatbot
+
+      Route -> LLM : Create default LLM config\nmodel phi3
+      Route -> DB : Insert LLMConfig
+
+      Route -> Flow : Create blank starter flow
+      Route -> DB : Insert Flow
+
+      Route -> Audit : CHATBOT_CREATED
+      Route -> DB : Insert AuditLog
+
+      Route --> API : Serialized assistant
+      API --> Page : Created assistant
+      Page -> Page : Close wizard\nshow success
+
+      alt Start From Scratch
+        Page -> Page : Redirect to Flow Builder
+      else Use Template
+        Page -> Page : Redirect to Template Selection
+        note right
+        Template is not applied
+        during assistant creation.
+        end note
+      else Build With AI
+        Page -> Page : Redirect to AI Generator
+        note right
+        AI flow is not generated
+        during assistant creation.
+        end note
+      end
+    end
+  end
+end
+@enduml
+
+-------------------------------------------------------------------------------
+PlantUML 3 - Modifier la configuration generale d'un assistant
+-------------------------------------------------------------------------------
+
+@startuml
+title Modifier la configuration generale d'un assistant
+
+actor Manager
+boundary "AssistantSettingsComponent" as UI
+control "ApiService" as API
+control "FastAPI Chatbot Route\nupdate_chatbot()" as Route
+control "Auth\nrequire_roles(admin, manager)" as Auth
+control "Access Helper\nget_accessible_chatbot()" as Access
+entity "Chatbot" as Chatbot
+entity "AuditLog" as Audit
+database "Database" as DB
+
+Manager -> UI : Open assistant settings
+UI -> API : getProject(projectId)
+UI -> API : getChatbot(chatbotId)
+API -> Route : GET /chatbots/{id}
+Route -> Auth : Check role
+Auth --> Route : current_user
+Route -> Access : Verify assistant belongs\nto Manager project
+Access -> DB : Read Chatbot + Project
+Route --> API : Assistant details
+API --> UI : Populate form
+
+Manager -> UI : Edit general configuration
+note right of UI
+Editable:
+name, description,
+language, channel,
+purpose
+
+Immutable:
+creation mode / build method
+end note
+
+Manager -> UI : Save settings
+
+alt Empty name on frontend
+  UI -> UI : Stop submission\nshow error
+else Valid frontend form
+  UI -> API : updateChatbot(chatbotId, payload)
+  API -> Route : PUT /chatbots/{id}
+  Route -> Auth : Check role
+  Auth --> Route : current_user
+  Route -> Access : Verify ownership
+  Access -> DB : Read Chatbot + Project
+
+  alt Assistant not owned by Manager
+    Route --> API : 404 Chatbot not found
+    API --> UI : Display error
+  else Assistant accessible
+    Route -> Route : Validate name,\nlanguage, channel
+
+    alt Creation mode changed
+      Route --> API : 400 Creation mode cannot be changed
+      API --> UI : Display error
+    else Valid update
+      Route -> Chatbot : Update general fields
+      Route -> DB : Save Chatbot
+      Route -> Audit : CHATBOT_UPDATED
+      Route -> DB : Insert AuditLog
+      Route --> API : Serialized assistant
+      API --> UI : Update local state\nshow success
+    end
+  end
+end
+@enduml
+
+================================================================================
+FINAL NOTES FOR THE PFE REPORT
+================================================================================
+
+1. For Chapter 4, the three main sequence diagrams should stay readable and pedagogical.
+
+2. The project creation diagram should focus on :
+   - UI creation modal.
+   - ApiService request.
+   - backend role check.
+   - Project creation with current_user.id.
+   - audit logging.
+   - frontend reload.
+
+3. The assistant creation diagram should clearly show that the wizard collects data first and persists only when the Manager finishes the wizard.
+
+4. Use Template and Build With AI are alternative redirection branches after assistant creation.
+   They are not executed inside POST /chatbots in the current implementation.
+
+5. Template application belongs mainly to Chapter 5 because it modifies the conversational flow.
+
+6. AI generation belongs mainly to Chapter 5 because it generates and applies a conversational flow.
+
+7. General assistant configuration update should show name, description, language, channel, and purpose as editable according to backend behavior.
+
+8. Creation mode / build_method must be shown as immutable after creation.
+
+9. Current implementation allows both Manager and Administrator on shared project/assistant operational routes.
+   If the report focuses on Manager operational flows, use Manager as the main actor.
+   Mention Administrator only if you discuss current permissions.
+
+10. Ownership rule for Manager :
+    Manager resources are generally limited by Project.user_id == current_user.id through project/chatbot access helpers.
+
+11. Do not include future target role redesign as current behavior.
+
