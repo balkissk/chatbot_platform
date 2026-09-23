@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.testclient import TestClient
 
 from main import (
+    FastPreflightCORSMiddleware,
     PublicWidgetCORSMiddleware,
     allowed_origins,
     app as main_app,
@@ -78,6 +79,78 @@ class CorsConfigurationTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["access-control-allow-origin"], "https://frontend.azurewebsites.net")
         self.assertEqual(response.headers["access-control-allow-credentials"], "true")
+
+    def test_fast_preflight_handles_login_before_inner_app(self):
+        app = FastAPI()
+        calls = {"inner": 0, "login": 0}
+
+        @app.middleware("http")
+        async def count_inner_calls(request, call_next):
+            calls["inner"] += 1
+            return await call_next(request)
+
+        @app.post("/auth/login")
+        def login():
+            calls["login"] += 1
+            return {"ok": True}
+
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["https://frontend.azurewebsites.net"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+        app.add_middleware(
+            FastPreflightCORSMiddleware,
+            allowed_credentialed_origins=["https://frontend.azurewebsites.net"],
+            allowed_public_origins=[],
+        )
+
+        client = TestClient(app)
+        response = client.options(
+            "/auth/login",
+            headers={
+                "Origin": "https://frontend.azurewebsites.net",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["access-control-allow-origin"], "https://frontend.azurewebsites.net")
+        self.assertEqual(response.headers["access-control-allow-credentials"], "true")
+        self.assertEqual(response.headers["access-control-allow-methods"], "POST")
+        self.assertEqual(response.headers["access-control-allow-headers"], "content-type")
+        self.assertEqual(calls, {"inner": 0, "login": 0})
+
+    def test_fast_preflight_does_not_allow_unconfigured_dashboard_origin(self):
+        app = FastAPI()
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["https://frontend.azurewebsites.net"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+        app.add_middleware(
+            FastPreflightCORSMiddleware,
+            allowed_credentialed_origins=["https://frontend.azurewebsites.net"],
+            allowed_public_origins=[],
+        )
+
+        client = TestClient(app)
+        response = client.options(
+            "/auth/login",
+            headers={
+                "Origin": "https://evil.example",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertNotEqual(response.headers.get("access-control-allow-origin"), "https://evil.example")
 
     def test_public_widget_defaults_include_external_local_development_origins(self):
         with patch.dict(

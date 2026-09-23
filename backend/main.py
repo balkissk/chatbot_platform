@@ -10,6 +10,7 @@ from routes.project_routes import router as project_router
 from routes.version_routes import router as version_router
 from routes.llm_config_routes import router as llm_config_router
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.datastructures import Headers
 from starlette.middleware.base import BaseHTTPMiddleware
 from models import llm_config
 from routes.chat_routes import router as chat_router
@@ -181,6 +182,97 @@ class PublicWidgetCORSMiddleware(BaseHTTPMiddleware):
         return response
 
 
+class FastPreflightCORSMiddleware:
+    def __init__(
+        self,
+        app,
+        allowed_credentialed_origins: list[str],
+        allowed_public_origins: list[str],
+    ):
+        self.app = app
+        self.allowed_credentialed_origins = allowed_credentialed_origins
+        self.allowed_public_origins = allowed_public_origins
+
+    def _allowed_credentialed_origin(self, origin: str) -> str | None:
+        if not origin or origin == "null":
+            return None
+        if origin.rstrip("/") in self.allowed_credentialed_origins:
+            return origin
+        return None
+
+    def _allowed_public_origin(self, origin: str) -> str | None:
+        if not origin or origin == "null":
+            return None
+        if "*" in self.allowed_public_origins or origin.rstrip("/") in self.allowed_public_origins:
+            return origin
+        return None
+
+    def _preflight_headers(
+        self,
+        *,
+        origin: str,
+        requested_method: str,
+        requested_headers: str | None,
+        allow_credentials: bool,
+    ) -> dict[str, str]:
+        headers = {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Methods": requested_method.upper(),
+            "Access-Control-Allow-Headers": requested_headers or "content-type",
+            "Access-Control-Max-Age": "600",
+            "Vary": "Origin",
+        }
+        if allow_credentials:
+            headers["Access-Control-Allow-Credentials"] = "true"
+        return headers
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope.get("method") != "OPTIONS":
+            await self.app(scope, receive, send)
+            return
+
+        headers = Headers(scope=scope)
+        origin = headers.get("origin")
+        requested_method = headers.get("access-control-request-method")
+        if not origin or not requested_method:
+            await self.app(scope, receive, send)
+            return
+
+        requested_headers = headers.get("access-control-request-headers")
+        path = scope.get("path", "")
+
+        if _is_public_cors_path(path):
+            allowed_origin = self._allowed_public_origin(origin)
+            if allowed_origin:
+                response = Response(
+                    status_code=200,
+                    headers=self._preflight_headers(
+                        origin=allowed_origin,
+                        requested_method=requested_method,
+                        requested_headers=requested_headers,
+                        allow_credentials=False,
+                    ),
+                )
+                await response(scope, receive, send)
+                return
+
+        allowed_origin = self._allowed_credentialed_origin(origin)
+        if allowed_origin:
+            response = Response(
+                status_code=200,
+                headers=self._preflight_headers(
+                    origin=allowed_origin,
+                    requested_method=requested_method,
+                    requested_headers=requested_headers,
+                    allow_credentials=True,
+                ),
+            )
+            await response(scope, receive, send)
+            return
+
+        await self.app(scope, receive, send)
+
+
 app = FastAPI(
     title="ChatBot Factory API",
     description="Backend API for chatbot project management, flow building, knowledge bases, and public chat.",
@@ -224,6 +316,12 @@ app.add_middleware(
 
 app.add_middleware(
     PublicWidgetCORSMiddleware,
+    allowed_public_origins=public_widget_allowed_origins(),
+)
+
+app.add_middleware(
+    FastPreflightCORSMiddleware,
+    allowed_credentialed_origins=allowed_origins(),
     allowed_public_origins=public_widget_allowed_origins(),
 )
 
