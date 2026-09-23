@@ -1,9 +1,7 @@
 <section class="project-settings-page">
   <header class="settings-header">
     <div>
-      <p class="eyebrow">Project settings</p>
       <h2>{{ project()?.name || 'Project settings' }}</h2>
-      <p>Manage workspace identity and project-level metadata.</p>
     </div>
     <a class="secondary" [routerLink]="['/dashboard/projects', projectId]">Open Workspace</a>
   </header>

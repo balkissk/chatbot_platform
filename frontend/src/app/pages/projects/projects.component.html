@@ -3,21 +3,18 @@
     <main class="workspace-main">
       <section class="workspace-hero">
         <div class="hero-content">
-          <span class="workspace-label">Workspace</span>
           <p class="welcome">&#128075; Welcome back, {{ firstName() }}</p>
           <h2>Manage your AI Workspaces</h2>
-          <p class="hero-subtitle">Organize projects, assistants, knowledge bases and monitor runtime health.</p>
 
           <div *ngIf="!initialLoading(); else summarySkeleton" class="hero-metrics" aria-label="Workspace summary">
             <span><strong>{{ totalProjects() }}</strong> Projects</span>
             <span><strong>{{ totalAssistants() }}</strong> AI Assistants</span>
             <span><strong>{{ knowledgeBasesTotal() }}</strong> Knowledge Bases</span>
             <span><strong>{{ versionTotal() }}</strong> Versions</span>
-            <span class="runtime-pill"><strong>{{ runtimeHealthLabel() }}</strong> Runtime</span>
           </div>
           <ng-template #summarySkeleton>
             <div class="hero-metrics skeleton-summary" aria-hidden="true">
-              <span></span><span></span><span></span><span></span><span></span>
+              <span></span><span></span><span></span><span></span>
             </div>
           </ng-template>
         </div>
@@ -40,8 +37,8 @@
           <input
             [(ngModel)]="search"
             (ngModelChange)="updateSearch($event)"
-            placeholder="Search projects, assistants, knowledge..."
-            aria-label="Search projects">
+            placeholder="Search projects..."
+            aria-label="Search projects on this page">
           <button *ngIf="search" class="clear-button" type="button" (click)="resetSearch()">Clear</button>
         </div>
 
@@ -178,20 +175,8 @@
             <div class="project-metrics">
               <span><svg lucideBot size="14"></svg><b>{{ assistantCount(p) }}</b><small>Assistants</small></span>
               <span><svg lucideCheckCircle2 size="14"></svg><b>{{ publishedCount(p) }}</b><small>Published</small></span>
-              <span><svg lucideActivity size="14"></svg><b>{{ projectReadiness(p) }}</b><small>Health</small></span>
+              <span><svg lucideActivity size="14"></svg><b>{{ projectReadiness(p) }}</b><small>Readiness</small></span>
               <span><svg lucideClock3 size="14"></svg><b>{{ relativeDate(lastActivity(p) || p.created_at) }}</b><small>Activity</small></span>
-            </div>
-
-            <div class="activity-list" *ngIf="projectActivity(p).length">
-              <strong class="activity-heading">Recent Activity</strong>
-              <div class="activity-row" *ngFor="let item of projectActivity(p)" [class]="item.tone">
-                <svg lucideActivity size="13" aria-hidden="true"></svg>
-                <div>
-                  <strong>{{ item.title }}</strong>
-                  <small>{{ item.detail }}</small>
-                </div>
-                <time>{{ relativeDate(item.date) }}</time>
-              </div>
             </div>
 
             <div class="card-footer">
@@ -334,14 +319,12 @@
             <small>{{ workspaceHealthState() === 'Healthy' ? 'No critical issues' : 'Attention needed' }}</small>
           </div>
         </div>
-        <a class="side-link visual-only-link">View detailed health <svg lucideArrowRight size="13"></svg></a>
       </section>
 
       <section class="recent-activity-card">
         <div class="side-title">
           <span class="title-icon purple"><svg lucideClock3 size="16"></svg></span>
           <h3>Recent Activity</h3>
-          <a class="side-action visual-only-link">View all</a>
         </div>
         <div class="timeline" *ngIf="recentActivities().length; else noWorkspaceActivity">
           <div class="timeline-row" *ngFor="let item of recentActivities()" [class]="item.tone">
@@ -362,7 +345,6 @@
         <div class="side-title">
           <span class="title-icon indigo"><svg lucideSparkles size="16"></svg></span>
           <h3>AI Workspace Insights</h3>
-          <a class="side-action visual-only-link">View all</a>
         </div>
         <div class="insights" *ngIf="workspaceInsights().length; else noWorkspaceInsights">
           <a

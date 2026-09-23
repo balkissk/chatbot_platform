@@ -25,7 +25,6 @@ SUPPORTED_FLOW_NODE_TYPES = {
     "set_variable",
     "meeting_scheduler",
     "api_request",
-    "handoff",
     "action",
 }
 
@@ -60,6 +59,17 @@ def _clean_key(value) -> str:
     return str(value or "").strip()
 
 
+def normalize_generated_node_config(node_type: str, config: dict) -> dict:
+    normalized = {**(config or {})}
+    if node_type in {"rag_answer", "knowledge_search"}:
+        normalized.setdefault("answer_only_from_documents", False)
+        normalized.setdefault("strict_context", False)
+        normalized.setdefault("response_length", "medium")
+        if node_type == "knowledge_search":
+            normalized.setdefault("retrieval_only", True)
+    return normalized
+
+
 def normalize_generated_flow(nodes, transitions) -> tuple[list[NormalizedGeneratedNode], list[NormalizedGeneratedTransition]]:
     normalized_nodes: list[NormalizedGeneratedNode] = []
     seen_keys: set[str] = set()
@@ -79,11 +89,12 @@ def normalize_generated_flow(nodes, transitions) -> tuple[list[NormalizedGenerat
             start_count += 1
 
         seen_keys.add(key)
+        config = node.get("config") if isinstance(node.get("config"), dict) else {}
         normalized_nodes.append(NormalizedGeneratedNode(
             key=key,
             type=node_type,
             label=_clean_key(node.get("label")) or key.replace("_", " ").title(),
-            config=node.get("config") if isinstance(node.get("config"), dict) else {},
+            config=normalize_generated_node_config(node_type, config),
             position_x=int(node.get("position_x") if node.get("position_x") is not None else 80 + index * 260),
             position_y=int(node.get("position_y") if node.get("position_y") is not None else 120),
         ))

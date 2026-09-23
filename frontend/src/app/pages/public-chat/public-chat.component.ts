@@ -15,11 +15,12 @@ export class PublicChatComponent implements OnInit {
   chatbotId: number;
   chatbot = signal<any | null>(null);
   message = '';
-  messages = signal<{ role: 'user' | 'bot'; text: string; options?: string[]; feedback?: string }[]>([]);
+  messages = signal<{ role: 'user' | 'bot'; text: string; options?: string[] }[]>([]);
   sources = signal<any[]>([]);
   loading = signal(false);
   error = signal('');
   sessionId = signal<number | undefined>(undefined);
+  private hasStarted = false;
 
   constructor(
     private route: ActivatedRoute,
@@ -30,7 +31,10 @@ export class PublicChatComponent implements OnInit {
 
   ngOnInit() {
     this.api.getPublicChatbot(this.chatbotId).subscribe({
-      next: chatbot => this.chatbot.set(chatbot),
+      next: chatbot => {
+        this.chatbot.set(chatbot);
+        this.startConversation();
+      },
       error: err => this.error.set(err.error?.detail || 'Chatbot is not available')
     });
   }
@@ -39,8 +43,20 @@ export class PublicChatComponent implements OnInit {
     const text = option || this.message.trim();
     if (!text || this.loading()) return;
 
-    this.messages.update(messages => [...messages, { role: 'user', text }]);
-    this.message = '';
+    await this.runPublicChatStream(text, true);
+  }
+
+  private async startConversation() {
+    if (this.hasStarted || this.loading()) return;
+    this.hasStarted = true;
+    await this.runPublicChatStream('', false, true);
+  }
+
+  private async runPublicChatStream(text: string, showUserMessage: boolean, isInitialStart = false) {
+    if (showUserMessage) {
+      this.messages.update(messages => [...messages, { role: 'user', text }]);
+      this.message = '';
+    }
     this.loading.set(true);
     this.error.set('');
     this.sources.set([]);
@@ -77,10 +93,13 @@ export class PublicChatComponent implements OnInit {
         if (event.type === 'final') {
           this.sessionId.set(event.session_id);
           this.sources.set(event.sources || []);
-          const botMessages = this.toBotMessages(event);
+          const botMessages = this.toBotMessages(event).filter(item => item.text.trim() || (item.options?.length || 0) > 0);
 
           if (streamingIndex === undefined) {
-            this.messages.update(messages => [...messages, ...botMessages]);
+            this.messages.update(messages => [
+              ...messages,
+              ...(botMessages.length ? botMessages : (isInitialStart ? [{ role: 'bot' as const, text: 'Hi, how can I help?', options: [] }] : []))
+            ]);
             return;
           }
 
@@ -102,13 +121,14 @@ export class PublicChatComponent implements OnInit {
         }
       });
     } catch (err: any) {
+      if (isInitialStart) this.hasStarted = false;
       this.error.set(err?.message || 'Chat failed');
     } finally {
       this.loading.set(false);
     }
   }
 
-  private toBotMessages(response: any) {
+  private toBotMessages(response: any): { role: 'bot'; text: string; options: string[] }[] {
     if (Array.isArray(response.messages) && response.messages.length > 0) {
       return response.messages.map((item: any) => ({
         role: 'bot' as const,
@@ -124,21 +144,4 @@ export class PublicChatComponent implements OnInit {
     }];
   }
 
-  submitFeedback(index: number, rating: 'helpful' | 'not_helpful') {
-    const sessionId = this.sessionId();
-    if (!sessionId || this.messages()[index]?.feedback) return;
-
-    this.api.submitPublicFeedback({
-      chatbot_id: this.chatbotId,
-      session_id: sessionId,
-      rating
-    }).subscribe({
-      next: () => {
-        this.messages.update(messages => messages.map((item, itemIndex) => (
-          itemIndex === index ? { ...item, feedback: rating } : item
-        )));
-      },
-      error: err => this.error.set(err.error?.detail || 'Could not save feedback')
-    });
-  }
 }

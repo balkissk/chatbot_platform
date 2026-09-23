@@ -157,6 +157,7 @@ describe('KnowledgeBaseComponent', () => {
     fixture.detectChanges();
 
     component.openDocumentMenuId.set(processingDocument.id);
+    component.openDocumentMenu.set(processingDocument);
     fixture.detectChanges();
 
     const disabledButtons = Array.from(fixture.nativeElement.querySelectorAll('button:disabled'))
@@ -176,15 +177,13 @@ describe('KnowledgeBaseComponent', () => {
 
   it('opens the compact document action menu', () => {
     component.documents.set([readyDocument]);
-    fixture.detectChanges();
-
-    const menuButton = fixture.nativeElement.querySelector('.icon-button');
-    menuButton.click();
+    component.openDocumentMenuId.set(readyDocument.id);
+    component.openDocumentMenu.set(readyDocument);
     fixture.detectChanges();
 
     const text = fixture.nativeElement.textContent;
-    expect(text).toContain('View details');
-    expect(text).toContain('Rename');
+    expect(text).not.toContain('View details');
+    expect(text).not.toContain('Rename');
     expect(text).toContain('Reprocess');
     expect(text).toContain('Delete');
   });

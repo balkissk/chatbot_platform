@@ -1,8 +1,6 @@
 <div class="page-header">
   <div>
-    <p class="eyebrow">Assistant {{ chatbotId }}</p>
     <h2>Versions</h2>
-    <p class="muted">Manage assistant versions, configuration and publication readiness.</p>
   </div>
 
   <div class="actions">
@@ -26,7 +24,6 @@
 
 <section *ngIf="selectedVersion() as selected" class="version-identity">
   <div>
-    <p class="eyebrow">Selected Version</p>
     <h3>Version {{ selected.version_number }}</h3>
     <div class="identity-meta">
       <span class="status-badge" [class.status-published]="selected.status === 'published'" [class.status-archived]="selected.status === 'archived'">{{ selected.status }}</span>
@@ -36,18 +33,20 @@
     </div>
   </div>
   <div class="identity-actions">
-    <button *ngIf="canManageWorkspace()" (click)="publish(selected.id)" [disabled]="selected.status === 'published' || actionId() === selected.id">
+    <button *ngIf="canManageWorkspace() && selected.status !== 'archived'" (click)="publish(selected.id)" [disabled]="selected.status === 'published' || actionId() === selected.id">
       {{ actionId() === selected.id ? 'Working...' : 'Publish' }}
     </button>
-    <button *ngIf="canManageWorkspace()" class="secondary" (click)="duplicate(selected.id)" [disabled]="actionId() === selected.id">Duplicate</button>
-    <button *ngIf="canManageWorkspace()" class="secondary" (click)="archive(selected.id)" [disabled]="selected.status === 'archived' || actionId() === selected.id">Archive</button>
+    <button *ngIf="canManageWorkspace() && selected.status !== 'archived'" class="secondary" (click)="duplicate(selected.id)" [disabled]="actionId() === selected.id">Duplicate</button>
+    <button *ngIf="canManageWorkspace() && selected.status !== 'archived'" class="secondary" (click)="archive(selected.id)" [disabled]="actionId() === selected.id">Archive</button>
+    <button *ngIf="canManageWorkspace() && selected.status === 'archived'" class="secondary" (click)="restore(selected.id)" [disabled]="actionId() === selected.id">
+      {{ actionId() === selected.id ? 'Restoring...' : 'Restore' }}
+    </button>
   </div>
 </section>
 
 <section *ngIf="selectedVersionId()" class="panel readiness-panel">
   <div class="panel-header">
     <div>
-      <p class="eyebrow">Publication readiness</p>
       <h3>Checks before publish</h3>
     </div>
     <div class="readiness-actions">
@@ -73,7 +72,6 @@
     <article *ngFor="let check of report.checks" class="readiness-row" [ngClass]="readinessStatusClass(check.status)">
       <div>
         <strong>{{ check.label }}</strong>
-        <p>{{ check.message }}</p>
       </div>
       <span>{{ check.status }}</span>
     </article>
@@ -101,6 +99,9 @@
     <div class="card-actions">
       <button class="secondary" (click)="selectVersion(v.id)" [disabled]="selectedVersionId() === v.id">
         Select
+      </button>
+      <button *ngIf="canManageWorkspace() && v.status === 'archived'" class="secondary" (click)="restore(v.id)" [disabled]="actionId() === v.id">
+        {{ actionId() === v.id ? 'Restoring...' : 'Restore' }}
       </button>
       <button *ngIf="canManageWorkspace()" class="danger" (click)="deleteVersion(v)" [disabled]="actionId() === v.id || v.is_active || v.status === 'published'">
         Delete
@@ -166,39 +167,6 @@
     </div>
   </section>
 
-  <section class="panel knowledge-panel">
-    <div class="panel-header">
-      <div>
-        <p class="eyebrow">RAG</p>
-        <h3>Knowledge snapshot</h3>
-      </div>
-      <button class="secondary" type="button" [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId, 'knowledge']">Open Knowledge Base</button>
-    </div>
-
-    <p *ngIf="documentsError()" class="error">{{ documentsError() }}</p>
-
-    <div class="knowledge-summary">
-      <div>
-        <span>Documents</span>
-        <strong>{{ documents().length }}</strong>
-      </div>
-      <div>
-        <span>Chunks</span>
-        <strong>{{ totalChunks() }}</strong>
-      </div>
-    </div>
-
-    <div *ngIf="documents().length === 0" class="mini-empty">
-      No documents uploaded for this version.
-    </div>
-
-    <div *ngFor="let doc of documents()" class="document-row">
-      <div>
-        <strong>{{ doc.filename }}</strong>
-        <p>{{ doc.chunks_count || 0 }} chunks · {{ documentStatus(doc) }}</p>
-      </div>
-    </div>
-  </section>
 </section>
 
 <section

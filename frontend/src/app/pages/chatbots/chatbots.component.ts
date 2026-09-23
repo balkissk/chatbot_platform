@@ -1,5 +1,5 @@
 import { CommonModule, isPlatformBrowser } from '@angular/common';
-import { Component, HostListener, Inject, OnInit, PLATFORM_ID, computed, signal } from '@angular/core';
+import { Component, ElementRef, HostListener, Inject, OnDestroy, OnInit, PLATFORM_ID, ViewChild, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { ApiService } from '../../services/api';
@@ -13,7 +13,6 @@ import {
   LucideClock3,
   LucideFilter,
   LucideGlobe,
-  LucideGrid2X2,
   LucideLanguages,
   LucideLayers3,
   LucideMoreVertical,
@@ -24,9 +23,11 @@ import {
 import {
   ASSISTANT_CHANNEL_OPTIONS,
   ASSISTANT_LANGUAGE_OPTIONS,
+  ASSISTANT_PURPOSE_OPTIONS,
   channelLabel,
   normalizeAssistantChannel,
   normalizeAssistantLanguage,
+  normalizeAssistantPurpose,
   languageLabel,
   purposeLabel
 } from '../../shared/assistant-options';
@@ -44,7 +45,6 @@ import {
     LucideClock3,
     LucideFilter,
     LucideGlobe,
-    LucideGrid2X2,
     LucideLanguages,
     LucideLayers3,
     LucideMoreVertical,
@@ -55,7 +55,7 @@ import {
   templateUrl: './chatbots.component.html',
   styleUrls: ['./chatbots.component.css']
 })
-export class ChatbotsComponent implements OnInit {
+export class ChatbotsComponent implements OnInit, OnDestroy {
   projectId!: number;
   project = signal<any | null>(null);
   chatbots = signal<any[]>([]);
@@ -78,7 +78,13 @@ export class ChatbotsComponent implements OnInit {
   detailsLoading = signal(false);
   activeActionBot = signal<any | null>(null);
   actionMenuPosition = signal({ top: 0, left: 0 });
+  actionMenuReady = signal(false);
   statusFilter = signal<'all' | 'live' | 'draft' | 'attention'>('all');
+  purposeFilter = signal('all');
+  channelFilter = signal('all');
+  languageFilter = signal('all');
+  creationFilter = signal('all');
+  filtersOpen = signal(false);
   assistantSearch = signal('');
   currentPage = signal(1);
   readonly pageSize = 8;
@@ -98,9 +104,20 @@ export class ChatbotsComponent implements OnInit {
   channelTesting = signal<string | undefined>(undefined);
   languageOptions = ASSISTANT_LANGUAGE_OPTIONS;
   channelOptions = ASSISTANT_CHANNEL_OPTIONS;
+  purposeOptions = ASSISTANT_PURPOSE_OPTIONS;
+  creationOptions = [
+    { label: 'Start From Scratch', value: 'scratch' },
+    { label: 'Use Template', value: 'template' },
+    { label: 'Build With AI', value: 'ai' }
+  ];
   private isBrowser: boolean;
   private pendingPanelChatbotId: number | undefined;
   private pendingPanelMode: 'deploy' | 'settings' | undefined;
+  private actionMenuAnchor: HTMLElement | null = null;
+  private repositionFrame: number | undefined;
+  private readonly viewportChangeHandler = () => this.onViewportChange();
+
+  @ViewChild('actionPopover') actionPopover?: ElementRef<HTMLElement>;
 
   assistantCounts = computed(() => {
     const items = this.chatbots();
@@ -115,9 +132,17 @@ export class ChatbotsComponent implements OnInit {
   filteredChatbots = computed(() => {
     const query = this.assistantSearch().trim().toLowerCase();
     const filter = this.statusFilter();
+    const purpose = this.purposeFilter();
+    const channel = this.channelFilter();
+    const language = this.languageFilter();
+    const creation = this.creationFilter();
     return this.chatbots().filter(bot => {
       const status = this.assistantLifecycleStatus(bot);
       if (filter !== 'all' && status !== filter) return false;
+      if (purpose !== 'all' && this.normalizedPurpose(bot.purpose || bot.assistant_type) !== purpose) return false;
+      if (channel !== 'all' && this.normalizedChannel(bot.channel) !== channel) return false;
+      if (language !== 'all' && this.normalizedLanguage(bot.language) !== language) return false;
+      if (creation !== 'all' && this.normalizedCreationMode(bot.build_method || bot.creation_mode) !== creation) return false;
       if (!query) return true;
       const haystack = [
         bot.name,
@@ -129,6 +154,16 @@ export class ChatbotsComponent implements OnInit {
       ].filter(Boolean).join(' ').toLowerCase();
       return haystack.includes(query);
     });
+  });
+
+  activeFilterCount = computed(() => {
+    return [
+      this.statusFilter() !== 'all',
+      this.purposeFilter() !== 'all',
+      this.channelFilter() !== 'all',
+      this.languageFilter() !== 'all',
+      this.creationFilter() !== 'all'
+    ].filter(Boolean).length;
   });
 
   totalPages = computed(() => Math.max(1, Math.ceil(this.filteredChatbots().length / this.pageSize)));
@@ -176,6 +211,17 @@ export class ChatbotsComponent implements OnInit {
         replaceUrl: true
       });
     }
+    window.addEventListener('scroll', this.viewportChangeHandler, true);
+    window.addEventListener('resize', this.viewportChangeHandler);
+  }
+
+  ngOnDestroy() {
+    if (!this.isBrowser) return;
+    window.removeEventListener('scroll', this.viewportChangeHandler, true);
+    window.removeEventListener('resize', this.viewportChangeHandler);
+    if (this.repositionFrame !== undefined) {
+      window.cancelAnimationFrame(this.repositionFrame);
+    }
   }
 
   loadProject(force = false) {
@@ -193,6 +239,7 @@ export class ChatbotsComponent implements OnInit {
 
   loadChatbots(force = false, background = false) {
     if (!this.isBrowser) return;
+    if (this.loading() || this.refreshing()) return;
 
     const hasVisibleData = this.chatbots().length > 0;
     if (background || hasVisibleData) {
@@ -224,6 +271,51 @@ export class ChatbotsComponent implements OnInit {
   setStatusFilter(value: 'all' | 'live' | 'draft' | 'attention') {
     this.statusFilter.set(value);
     this.currentPage.set(1);
+  }
+
+  setPurposeFilter(value: string) {
+    this.purposeFilter.set(value || 'all');
+    this.currentPage.set(1);
+  }
+
+  setChannelFilter(value: string) {
+    this.channelFilter.set(value || 'all');
+    this.currentPage.set(1);
+  }
+
+  setLanguageFilter(value: string) {
+    this.languageFilter.set(value || 'all');
+    this.currentPage.set(1);
+  }
+
+  setCreationFilter(value: string) {
+    this.creationFilter.set(value || 'all');
+    this.currentPage.set(1);
+  }
+
+  clearFilters() {
+    this.statusFilter.set('all');
+    this.purposeFilter.set('all');
+    this.channelFilter.set('all');
+    this.languageFilter.set('all');
+    this.creationFilter.set('all');
+    this.currentPage.set(1);
+  }
+
+  toggleFilters(event: MouseEvent) {
+    event.stopPropagation();
+    if (!this.isBrowser) return;
+    if (this.filtersOpen()) {
+      this.filtersOpen.set(false);
+      return;
+    }
+    this.closeActionMenu();
+    this.filtersOpen.set(true);
+  }
+
+  applyFilters() {
+    this.currentPage.set(1);
+    this.filtersOpen.set(false);
   }
 
   setAssistantSearch(value: string) {
@@ -497,18 +589,25 @@ export class ChatbotsComponent implements OnInit {
       return;
     }
     this.activeActionBot.set(bot);
-    this.positionActionMenu(event.currentTarget as HTMLElement);
+    this.actionMenuAnchor = event.currentTarget as HTMLElement;
+    this.actionMenuReady.set(false);
+    this.positionActionMenu(this.actionMenuAnchor);
+    this.queueActionMenuPosition();
   }
 
   closeActionMenu() {
     this.activeActionBot.set(null);
+    this.actionMenuAnchor = null;
+    this.actionMenuReady.set(false);
   }
 
   @HostListener('document:click', ['$event'])
   onDocumentClick(event: MouseEvent) {
     const target = event.target as HTMLElement | null;
-    if (target?.closest('.action-popover, .more-actions-button')) return;
+    if (target?.closest('.filter-popover, .lifecycle-filter-button')) return;
+    if (target?.closest('.action-popover, .assistant-menu-button')) return;
     this.closeActionMenu();
+    this.filtersOpen.set(false);
   }
 
   @HostListener('document:keydown.escape')
@@ -522,25 +621,75 @@ export class ChatbotsComponent implements OnInit {
       return;
     }
     this.closeActionMenu();
+    this.filtersOpen.set(false);
   }
 
-  @HostListener('window:resize')
-  @HostListener('window:scroll')
   onViewportChange() {
-    this.closeActionMenu();
+    if (this.activeActionBot() && this.actionMenuAnchor) {
+      this.queueActionMenuPosition();
+    }
+    this.filtersOpen.set(false);
   }
 
-  private positionActionMenu(anchor: HTMLElement) {
+  private queueActionMenuPosition() {
+    if (!this.isBrowser || !this.actionMenuAnchor) return;
+    if (this.repositionFrame !== undefined) {
+      window.cancelAnimationFrame(this.repositionFrame);
+    }
+    this.repositionFrame = window.requestAnimationFrame(() => {
+      this.repositionFrame = undefined;
+      if (!this.actionMenuAnchor || !this.activeActionBot()) return;
+      this.positionActionMenu(this.actionMenuAnchor, this.actionPopover?.nativeElement);
+      this.actionMenuReady.set(true);
+    });
+  }
+
+  private positionActionMenu(anchor: HTMLElement, menu?: HTMLElement) {
     const rect = anchor.getBoundingClientRect();
-    const menuWidth = Math.min(204, window.innerWidth - 24);
-    const menuHeight = Math.min(320, Math.max(180, window.innerHeight - 120), 278);
     const margin = 12;
     const gap = 8;
+    const measured = menu?.getBoundingClientRect();
+    const fallbackWidth = 188;
+    const fallbackHeight = 204;
+    const menuWidth = Math.min(
+      Math.max(measured?.width || fallbackWidth, 1),
+      Math.max(1, window.innerWidth - margin * 2)
+    );
+    const menuHeight = Math.min(
+      Math.max(measured?.height || fallbackHeight, 1),
+      Math.max(1, window.innerHeight - margin * 2)
+    );
     const canOpenDown = rect.bottom + gap + menuHeight <= window.innerHeight - margin;
-    const top = canOpenDown ? rect.bottom + gap : Math.max(margin, rect.top - gap - menuHeight);
+    const preferredTop = canOpenDown ? rect.bottom + gap : rect.top - gap - menuHeight;
+    const top = Math.min(
+      Math.max(margin, preferredTop),
+      Math.max(margin, window.innerHeight - menuHeight - margin)
+    );
     const maxLeft = Math.max(margin, window.innerWidth - menuWidth - margin);
     const left = Math.min(Math.max(margin, rect.right - menuWidth), maxLeft);
     this.actionMenuPosition.set({ top, left });
+  }
+
+  private normalizedPurpose(value: unknown) {
+    const raw = String(value || '').trim();
+    return raw ? normalizeAssistantPurpose(raw) : '';
+  }
+
+  private normalizedChannel(value: unknown) {
+    const raw = String(value || '').trim();
+    return raw ? normalizeAssistantChannel(raw) : '';
+  }
+
+  private normalizedLanguage(value: unknown) {
+    const raw = String(value || '').trim();
+    return raw ? normalizeAssistantLanguage(raw) : '';
+  }
+
+  private normalizedCreationMode(value: unknown) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'blank' || normalized === 'manual') return 'scratch';
+    if (normalized === 'scratch' || normalized === 'template' || normalized === 'ai') return normalized;
+    return '';
   }
 
   startEdit(bot: any) {

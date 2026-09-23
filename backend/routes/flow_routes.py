@@ -123,7 +123,6 @@ VISIBLE_TEMPLATE_BLOCK_TYPES = {
     "condition",
     "set_variable",
     "meeting_scheduler",
-    "handoff",
 }
 
 HIDDEN_TEMPLATE_BLOCK_TYPES = {
@@ -703,6 +702,127 @@ def _has_any(text: str, terms: set[str]) -> bool:
     return False
 
 
+def _explicitly_mentions(text: str, *terms: str) -> bool:
+    return _has_any(text.lower(), set(terms))
+
+
+def _extract_quoted_value(text: str, nearby: str) -> str:
+    lowered = text.lower()
+    index = lowered.find(nearby.lower())
+    search_area = text[index:index + 300] if index >= 0 else text
+    match = re.search(r'"([^"]+)"|' + r"'([^']+)'", search_area)
+    return _compact((match.group(1) or match.group(2)) if match else "")
+
+
+def _extract_variable_name(text: str, fallback: str) -> str:
+    patterns = [
+        r"save(?:\s+response)?\s+to\s*:?\s*([a-zA-Z_][\w.]*)",
+        r"storing\s+([a-zA-Z_][\w.]*)",
+        r"store(?:\s+the)?(?:\s+user'?s)?(?:\s+response)?\s+(?:in|as|to)\s+([a-zA-Z_][\w.]*)",
+        r"variable\s+([a-zA-Z_][\w.]*)",
+        r"field\s+([a-zA-Z_][\w.]*)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            return match.group(1).strip().rstrip(".,;:")
+    return fallback
+
+
+def _extract_condition_spec(text: str, fallback_field: str = "choice") -> dict | None:
+    patterns = [
+        r"condition(?:\s+block)?[^.\n:;]*[:\s]+([a-zA-Z_][\w.]*)\s+(?:==|=|equals?|is)\s+['\"]?([^'\"\n.;]+)['\"]?",
+        r"if\s+([a-zA-Z_][\w.]*)\s+(?:==|=|equals?|is)\s+['\"]?([^'\"\n.;]+)['\"]?",
+        r"checking\s+([a-zA-Z_][\w.]*)\s+(?:==|=|equals?|is)\s+['\"]?([^'\"\n.;]+)['\"]?",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            return {
+                "field": match.group(1).strip(),
+                "operator": "equals",
+                "value": _compact(match.group(2)).strip('"\''),
+            }
+
+    if _explicitly_mentions(text, "condition", "if") and re.search(r"\burgent\b", text, re.IGNORECASE):
+        return {"field": fallback_field, "operator": "equals", "value": "urgent"}
+    return None
+
+
+def _extract_buttons(text: str) -> list[str]:
+    match = re.search(r"buttons?(?:\s+with|\s*:)?\s+([^\n.]+)", text, re.IGNORECASE)
+    if not match:
+        return []
+    candidates = re.split(r",|/|\bor\b|\band\b", match.group(1), flags=re.IGNORECASE)
+    buttons = []
+    for candidate in candidates:
+        label = _compact(candidate.strip(" -:;\"'"))
+        if label.lower().startswith("then "):
+            break
+        if label and len(label) <= 40 and label.lower() not in {"different valid paths", "valid paths"}:
+            buttons.append(label)
+    return buttons[:4]
+
+
+def _extract_set_variable(text: str) -> dict | None:
+    patterns = [
+        r"set\s+(?:variable\s+)?([a-zA-Z_][\w.]*)\s+(?:to|=)\s+['\"]?([^'\"\n.;]+)['\"]?",
+        r"set\s+variable\s+([a-zA-Z_][\w.]*)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            value = _compact(match.group(2)).strip('"\'') if len(match.groups()) > 1 and match.group(2) else "true"
+            return {"field": match.group(1).strip(), "value": value}
+    return None
+
+
+def _message_after_label(text: str, label: str, fallback: str) -> str:
+    match = re.search(rf"\b{re.escape(label)}\b[^\"'\n]*[\"']([^\"']+)[\"']", text, re.IGNORECASE)
+    return _compact(match.group(1)) if match else fallback
+
+
+def _explicit_generation_requirements(payload: AiGenerateRequest, analysis: dict) -> dict:
+    text = f"{payload.assistant_goal}\n{payload.business_context}\n{payload.knowledge_base_description or ''}"
+    lowered = text.lower()
+    question_prompt = _extract_quoted_value(text, "question") or _localized_ai_text(
+        safe_chatbot_language(payload.language),
+        "What do you need?",
+        "De quoi avez-vous besoin ?",
+    )
+    question_field = _extract_variable_name(text, "user_question")
+    condition = _extract_condition_spec(text, question_field)
+    buttons = _extract_buttons(text)
+    set_variable = _extract_set_variable(text)
+    explicit_rag = _explicitly_mentions(lowered, "knowledge search", "knowledge base", "rag", "ai answer")
+
+    return {
+        "question": _explicitly_mentions(lowered, "question", "ask") or bool(condition),
+        "question_prompt": question_prompt,
+        "question_field": question_field,
+        "condition": condition,
+        "true_message": _message_after_label(
+            text,
+            "true",
+            _localized_ai_text(safe_chatbot_language(payload.language), "This request matches the condition.", "Votre demande correspond a la condition."),
+        ),
+        "false_message": _message_after_label(
+            text,
+            "false",
+            _localized_ai_text(safe_chatbot_language(payload.language), "This request will follow the standard path.", "Votre demande suivra le processus normal."),
+        ),
+        "buttons": buttons,
+        "set_variable": set_variable,
+        "collect_name": _explicitly_mentions(lowered, "collect name", "user name", "customer name"),
+        "collect_email": _explicitly_mentions(lowered, "collect email", "user email", "customer email", "email address"),
+        "collect_phone": _explicitly_mentions(lowered, "collect phone", "phone number", "telephone"),
+        "meeting_scheduler": _explicitly_mentions(lowered, "meeting preference", "meeting scheduler", "preferred meeting", "schedule a meeting", "ask for meeting preference"),
+        "rag": explicit_rag or bool(analysis.get("needs_rag")),
+        "end": _explicitly_mentions(lowered, "end", "finish", "close the conversation"),
+        "ai_router": _explicitly_mentions(lowered, "ai router", "intent routing", "route by intent", "classify intent"),
+    }
+
+
 def _extract_safe_http_url(*values: str) -> str:
     text = " ".join(value or "" for value in values)
     match = re.search(r"https?://[^\s\"'<>),]+", text)
@@ -783,6 +903,10 @@ def _ensure_generated_transition_uniqueness(transitions: list) -> None:
         seen.add(key)
 
 
+def _is_handoff_node_payload(node_type: str | None, config: dict | None = None) -> bool:
+    return str(node_type or "").strip() == "handoff" or str((config or {}).get("action_type") or "").strip() == "handoff"
+
+
 def _analyze_generation_context(goal: str, context: str, knowledge: str) -> dict:
     text = f"{goal} {context} {knowledge}".lower()
     api_url = _extract_safe_http_url(goal, context, knowledge)
@@ -806,7 +930,6 @@ def _analyze_generation_context(goal: str, context: str, knowledge: str) -> dict
 
     needs_rag = bool(knowledge) or _has_any(text, {"document", "knowledge base", "policy", "manual", "faq", "catalog", "documentation", "uploaded"})
     needs_lead = _has_any(text, {"lead", "sales", "prospect", "qualify", "capture", "contact", "quote", "consultation"})
-    needs_handoff = _has_any(text, {"handoff", "human", "agent", "escalate", "complex", "support team", "advisor"})
     needs_routing = _has_any(text, {"multiple", "topics", "route", "routing", "department", "category", "intent"})
     needs_booking = _has_any(text, {"appointment", "booking", "schedule", "meeting", "reservation", "consultation"})
     needs_api = False
@@ -820,11 +943,8 @@ def _analyze_generation_context(goal: str, context: str, knowledge: str) -> dict
         intents.append("capture and qualify leads")
     if needs_booking:
         intents.append("capture meeting preferences")
-    if needs_handoff:
-        intents.append("escalate to a human")
-
     variables = ["user_question"]
-    if needs_lead or needs_handoff or needs_booking:
+    if needs_lead or needs_booking:
         variables.extend(["user_name", "user_email"])
     if needs_lead or needs_booking:
         variables.append("user_phone")
@@ -844,9 +964,6 @@ def _analyze_generation_context(goal: str, context: str, knowledge: str) -> dict
         blocks.extend(["Confidence Check", "Lead Score"])
     if needs_booking:
         blocks.append("Meeting Preference")
-    if needs_handoff:
-        blocks.append("Human Handoff")
-
     flow_type = "simple_ai_chat"
     if needs_lead:
         flow_type = "lead_qualification"
@@ -870,7 +987,6 @@ def _analyze_generation_context(goal: str, context: str, knowledge: str) -> dict
         "recommended_flow_type": flow_type,
         "needs_rag": needs_rag,
         "needs_lead": needs_lead,
-        "needs_handoff": needs_handoff,
         "needs_routing": needs_routing,
         "needs_booking": needs_booking,
         "needs_api": needs_api,
@@ -882,7 +998,7 @@ def _analyze_generation_context(goal: str, context: str, knowledge: str) -> dict
             f"{detected_domain} FAQs",
             "Policies and procedures",
             "Product or service documentation",
-            "Escalation guidelines",
+            "Support guidelines",
         ] if needs_rag else [],
         "suggested_advanced_blocks": list(dict.fromkeys(blocks)),
         "generation_confidence": min(confidence, 0.92),
@@ -918,21 +1034,113 @@ def _localized_ai_text(language: str, english: str, french: str) -> str:
     return french if language == "fr" else english
 
 
-def _build_generated_flow(welcome_message: str, rag_prompt: str, analysis: dict, language: str = "en") -> tuple[list[dict], list[dict]]:
+def _build_generated_flow(
+    welcome_message: str,
+    rag_prompt: str,
+    analysis: dict,
+    language: str = "en",
+    requirements: dict | None = None,
+) -> tuple[list[dict], list[dict]]:
+    requirements = requirements or {}
     needs_rag = bool(analysis.get("needs_rag"))
     nodes = [_node("start", "message", "Welcome", {"text": welcome_message}, 80, 120)]
     edges = []
     previous = "start"
     x = 340
 
+    def key_exists(key: str) -> bool:
+        return any(node["key"] == key for node in nodes)
+
+    def append_node(key: str, node_type: str, label: str, config: dict, y: int = 120) -> str:
+        nonlocal x
+        base_key = key
+        suffix = 2
+        while key_exists(key):
+            key = f"{base_key}_{suffix}"
+            suffix += 1
+        nodes.append(_node(key, node_type, label, config, x, y))
+        x += 260
+        return key
+
     def add(key: str, node_type: str, label: str, config: dict):
         nonlocal previous, x
-        nodes.append(_node(key, node_type, label, config, x, 120))
+        key = append_node(key, node_type, label, config)
         edges.append(_edge(previous, key))
         previous = key
-        x += 260
+        return key
 
-    if analysis.get("needs_routing"):
+    if requirements.get("collect_name") or analysis.get("needs_lead") or analysis.get("needs_booking"):
+        add("collect_name", "collect_name", "Collect Name", {"prompt": _localized_ai_text(language, "What is your name?", "Quel est votre nom ?"), "field": "user_name"})
+    if requirements.get("collect_email") or analysis.get("needs_lead") or analysis.get("needs_booking"):
+        add("collect_email", "collect_email", "Collect Email", {"prompt": _localized_ai_text(language, "What email should we use?", "Quel email devons-nous utiliser ?"), "field": "user_email"})
+    if requirements.get("collect_phone") or analysis.get("needs_lead") or analysis.get("needs_booking"):
+        add("collect_phone", "collect_phone", "Collect Phone", {"prompt": _localized_ai_text(language, "What phone number can we use?", "Quel numero de telephone pouvons-nous utiliser ?"), "field": "user_phone"})
+
+    if requirements.get("buttons"):
+        button_key = add("buttons", "buttons", "Buttons", {
+            "text": _localized_ai_text(language, "Choose an option.", "Choisissez une option."),
+            "buttons": requirements["buttons"],
+            "field": "selected_option",
+        })
+        join_key = append_node("after_buttons", "message", "Continue", {
+            "text": _localized_ai_text(language, "Thanks. I will continue.", "Merci. Je continue."),
+        }, 120)
+        branch_x = nodes[-1]["position_x"] - 260
+        for index, button in enumerate(requirements["buttons"]):
+            branch_key = append_node(
+                f"button_{re.sub(r'[^a-z0-9]+', '_', button.lower()).strip('_') or index + 1}",
+                "message",
+                f"{button} Message",
+                {"text": _localized_ai_text(language, f"You selected {button}.", f"Vous avez choisi {button}.")},
+                40 + (index * 160),
+            )
+            nodes[-1]["position_x"] = branch_x
+            edges.append(_edge(button_key, branch_key, button))
+            edges.append(_edge(branch_key, join_key))
+        previous = join_key
+
+    if requirements.get("set_variable"):
+        spec = requirements["set_variable"]
+        add("set_variable", "set_variable", "Set Variable", {
+            "field": spec["field"],
+            "value": spec["value"],
+        })
+
+    if requirements.get("question"):
+        add("priority_question" if requirements.get("condition") else "question_capture", "question", "Priority Question" if requirements.get("condition") else "Question", {
+            "prompt": requirements["question_prompt"],
+            "field": requirements["question_field"],
+        })
+
+    if requirements.get("condition"):
+        condition = requirements["condition"]
+        condition_key = add("condition", "condition", "Condition", {
+            "field": condition["field"],
+            "operator": condition["operator"],
+            "value": condition["value"],
+            "message": _localized_ai_text(
+                language,
+                f"If {condition['field']} equals {condition['value']}, use True. Otherwise use False.",
+                f"Si {condition['field']} est egal a {condition['value']}, utiliser True. Sinon utiliser False.",
+            ),
+        })
+        true_key = append_node("true_message", "message", "TRUE Message", {"text": requirements["true_message"]}, 40)
+        false_key = append_node("false_message", "message", "FALSE Message", {"text": requirements["false_message"]}, 220)
+        join_key = append_node("after_condition", "message", "Continue", {
+            "text": _localized_ai_text(language, "Thanks. I can now help with your question.", "Merci. Je peux maintenant vous aider avec votre question."),
+        }, 120)
+        branch_x = nodes[-3]["position_x"]
+        nodes[-3]["position_x"] = branch_x
+        nodes[-2]["position_x"] = branch_x
+        nodes[-1]["position_x"] = branch_x + 260
+        edges.append(_edge(condition_key, true_key, "true", f"{condition['field']} == {condition['value']}"))
+        edges.append(_edge(condition_key, false_key, "false", f"{condition['field']} != {condition['value']}"))
+        edges.append(_edge(true_key, join_key))
+        edges.append(_edge(false_key, join_key))
+        previous = join_key
+        x = max(x, branch_x + 520)
+
+    if analysis.get("needs_routing") and requirements.get("ai_router") and not requirements.get("condition"):
         add("router", "ai_router", "AI Router", {
             "instructions": _localized_ai_text(language, "Classify the user's intent and route the conversation to the best next step.", "Classez l'intention de l'utilisateur et orientez la conversation vers la meilleure prochaine etape."),
             "output_variable": "detected_intent",
@@ -940,14 +1148,7 @@ def _build_generated_flow(welcome_message: str, rag_prompt: str, analysis: dict,
             "message": _localized_ai_text(language, "Let me route your request.", "Je vais orienter votre demande.")
         })
 
-    if analysis.get("needs_lead") or analysis.get("needs_booking") or analysis.get("needs_handoff"):
-        add("collect_name", "collect_name", "Collect Name", {"prompt": _localized_ai_text(language, "What is your name?", "Quel est votre nom ?"), "field": "user_name"})
-        add("collect_email", "collect_email", "Collect Email", {"prompt": _localized_ai_text(language, "What email should we use?", "Quel email devons-nous utiliser ?"), "field": "user_email"})
-
-    if analysis.get("needs_lead") or analysis.get("needs_booking"):
-        add("collect_phone", "collect_phone", "Collect Phone", {"prompt": _localized_ai_text(language, "What phone number can we use?", "Quel numero de telephone pouvons-nous utiliser ?"), "field": "user_phone"})
-
-    if analysis.get("needs_condition"):
+    if analysis.get("needs_condition") and not requirements.get("condition") and not requirements.get("set_variable"):
         add("lead_score", "lead_score", "Lead Score", {
             "input_variables": ["user_question", "user_email"],
             "score_variable": "lead_score",
@@ -959,7 +1160,7 @@ def _build_generated_flow(welcome_message: str, rag_prompt: str, analysis: dict,
             "message": "Checking confidence."
         })
 
-    if analysis.get("needs_booking"):
+    if requirements.get("meeting_scheduler") or analysis.get("needs_booking"):
         add("scheduler", "meeting_scheduler", "Meeting Preference", {
             "field": "preferred_time",
             "prompt": _localized_ai_text(language, "Share your preferred meeting time.", "Indiquez votre disponibilite preferee."),
@@ -967,44 +1168,47 @@ def _build_generated_flow(welcome_message: str, rag_prompt: str, analysis: dict,
             "success_message": _localized_ai_text(language, "Meeting preference saved.", "Preference de rendez-vous enregistree.")
         })
 
-    add("question", "question", "User Question", {
+    if requirements.get("end") and not requirements.get("rag"):
+        add("end", "end", "End", {
+            "message": _localized_ai_text(language, "Thanks. The conversation is complete.", "Merci. La conversation est terminee.")
+        })
+        return nodes, edges
+
+    add("question" if not key_exists("question") else "user_question", "question", "User Question", {
         "prompt": _localized_ai_text(language, "Ask me anything.", "Posez-moi votre question."),
         "field": "user_question",
         "silent": True,
         "hide_prompt": True
     })
 
-    if needs_rag:
+    if needs_rag or requirements.get("rag"):
         add("knowledge_search", "knowledge_search", "Knowledge Search", {
             "prompt": _localized_ai_text(language, "Retrieve relevant knowledge base context for the user's question.", "Recuperez le contexte pertinent de la base de connaissances pour la question de l'utilisateur."),
             "fallback": _localized_ai_text(language, "I could not find enough relevant knowledge.", "Je n'ai pas trouve assez d'informations pertinentes."),
             "use_knowledge_base": True,
+            "answer_only_from_documents": False,
+            "strict_context": False,
             "show_sources": True,
             "continue_rag": False,
             "retrieval_only": True,
+            "response_length": "medium",
             "message": _localized_ai_text(language, "Searching knowledge.", "Recherche dans les connaissances.")
         })
+        needs_rag = True
 
     add("answer", "rag_answer", "AI Answer", {
         "prompt": rag_prompt,
         "fallback": _localized_ai_text(language, "I do not have enough information to answer that yet.", "Je n'ai pas encore assez d'informations pour repondre."),
         "use_knowledge_base": needs_rag,
+        "answer_only_from_documents": False,
+        "strict_context": False,
         "show_sources": needs_rag,
         "continue_rag": False,
+        "response_length": "medium",
         "message": _localized_ai_text(language, "Searching knowledge and preparing an answer.", "Recherche dans les connaissances et preparation d'une reponse.") if needs_rag else _localized_ai_text(language, "Preparing an answer.", "Preparation d'une reponse.")
     })
 
-    edges.append(_edge("answer", "question"))
-
-    if analysis.get("needs_handoff"):
-        nodes.append(_node("handoff", "handoff", "Human Handoff", {
-            "message": "A teammate will review this request and follow up.",
-            "department": "Support",
-            "email_field": "user_email",
-            "phone_field": "user_phone",
-            "collect_email_if_missing": True
-        }, x, 300))
-        edges.append(_edge("answer", "handoff", "fallback", "low_confidence_or_human_requested"))
+    edges.append(_edge("answer", "question" if key_exists("question") else "user_question"))
 
     return nodes, edges
 
@@ -1066,15 +1270,33 @@ def _normalize_ai_generation(raw: dict, payload: AiGenerateRequest) -> AiGenerat
     analysis["needs_rag"] = use_knowledge_base
     if language == "fr" and "Always answer in French." not in rag_prompt:
         rag_prompt = f"Always answer in French. {rag_prompt}"
-    nodes, transitions = _build_generated_flow(welcome_message, rag_prompt, analysis, language)
+    requirements = _explicit_generation_requirements(payload, analysis)
+    if requirements.get("rag"):
+        analysis["needs_rag"] = True
+    nodes, transitions = _build_generated_flow(welcome_message, rag_prompt, analysis, language, requirements)
     detected_domain = _string_list(analysis.get("detected_domain") or analysis.get("domain_label") or fallback["domain_label"])[0]
-    detected_intents = _string_list(analysis.get("detected_intents") or fallback["detected_intents"])
+    detected_intents = [
+        item for item in _string_list(analysis.get("detected_intents") or fallback["detected_intents"])
+        if "handoff" not in item.lower()
+    ]
     suggested_variables = _string_list(analysis.get("suggested_variables") or fallback["suggested_variables"])
     suggested_kb_categories = _string_list(analysis.get("suggested_kb_categories") or fallback["suggested_kb_categories"])
     suggested_advanced_blocks = [
         block for block in _string_list(analysis.get("suggested_advanced_blocks") or fallback["suggested_advanced_blocks"])
-        if block != "API Call"
+        if block != "API Call" and "handoff" not in block.lower()
     ]
+    explicit_suggestions = []
+    if requirements.get("condition"):
+        explicit_suggestions.append("Condition")
+    if requirements.get("set_variable"):
+        explicit_suggestions.append("Set Variable")
+    if requirements.get("buttons"):
+        explicit_suggestions.append("Buttons")
+    if requirements.get("meeting_scheduler"):
+        explicit_suggestions.append("Meeting Preference")
+    if requirements.get("rag"):
+        explicit_suggestions.append("Knowledge Search")
+    suggested_advanced_blocks = list(dict.fromkeys([*suggested_advanced_blocks, *explicit_suggestions]))
     generation_confidence = max(0.1, min(float(analysis.get("generation_confidence") or fallback["generation_confidence"]), 0.98))
     explanation = _compact(analysis.get("generation_explanation"), fallback["generation_explanation"])[:800]
 
@@ -1141,7 +1363,8 @@ Rules:
 - rag_prompt must be instructions for the AI or AI/RAG answer node based on the context.
 - use_knowledge_base must be true only when uploaded documents are useful.
 - Do not assume any company, industry, or use case that is not provided.
-- Infer whether routing, lead capture, handoff, booking, API actions, or conditions are useful.
+- Infer whether routing, lead capture, booking, API actions, or conditions are useful.
+- Do not generate or suggest live-agent transfer blocks.
 
 Assistant goal:
 {goal}
@@ -1229,7 +1452,7 @@ def list_flow_templates(
 @router.get("/flow-templates/qa")
 def template_quality_report(
     db: Session = Depends(get_db),
-    current_user=Depends(require_roles("admin", "manager"))
+    current_user=Depends(require_roles("manager"))
 ):
     items = []
     for key, template in sorted(TEMPLATES.items()):
@@ -1263,7 +1486,7 @@ def get_flow_template_detail(
     template_key: str,
     revision: int | None = None,
     db: Session = Depends(get_db),
-    current_user=Depends(require_roles("admin", "manager"))
+    current_user=Depends(require_roles("manager"))
 ):
     custom = _template_from_db(db, template_key, current_user)
     if custom:
@@ -1366,7 +1589,7 @@ def run_flow_template_test(
     template_key: str,
     payload: FlowTemplateTestRun | None = None,
     db: Session = Depends(get_db),
-    current_user=Depends(require_roles("admin", "manager"))
+    current_user=Depends(require_roles("manager"))
 ):
     detail = get_flow_template_detail(template_key, db=db, current_user=current_user)
     scenarios = []
@@ -1395,7 +1618,7 @@ def run_flow_template_test(
 def list_flow_template_revisions(
     template_key: str,
     db: Session = Depends(get_db),
-    current_user=Depends(require_roles("admin", "manager"))
+    current_user=Depends(require_roles("manager"))
 ):
     custom = _template_from_db(db, template_key, current_user)
     if not custom:
@@ -1521,7 +1744,7 @@ def apply_flow_template(
         for node in nodes:
             _ensure_canvas_position(_item_value(node, "position_x"), _item_value(node, "position_y"))
         _ensure_generated_transition_uniqueness(transitions)
-        ensure_generated_flow_is_valid(
+        normalized_nodes, normalized_transitions = ensure_generated_flow_is_valid(
             db,
             version.chatbot_id if version else 0,
             nodes,
@@ -1533,23 +1756,23 @@ def apply_flow_template(
             db.query(FlowNode).filter(FlowNode.flow_id == flow.id).delete()
             flow.name = custom_template.name
             db.flush()
-            for node in nodes:
+            for node in normalized_nodes:
                 db.add(FlowNode(
                     flow_id=flow.id,
-                    node_key=_item_value(node, "key"),
-                    type=_item_value(node, "type"),
-                    label=_item_value(node, "label"),
-                    config=node.get("config") or {},
-                    position_x=_item_value(node, "position_x"),
-                    position_y=_item_value(node, "position_y"),
+                    node_key=node.key,
+                    type=node.type,
+                    label=node.label,
+                    config=node.config or {},
+                    position_x=node.position_x,
+                    position_y=node.position_y,
                 ))
-            for transition in transitions:
+            for transition in normalized_transitions:
                 db.add(FlowTransition(
                     flow_id=flow.id,
-                    source_node_key=_item_value(transition, "source_node_key"),
-                    target_node_key=_item_value(transition, "target_node_key"),
-                    label=transition.get("label"),
-                    condition=transition.get("condition"),
+                    source_node_key=transition.source_node_key,
+                    target_node_key=transition.target_node_key,
+                    label=transition.label,
+                    condition=transition.condition,
                 ))
             db.commit()
             db.refresh(flow)
@@ -1685,6 +1908,8 @@ def create_node(
     node_count = db.query(FlowNode).filter(FlowNode.flow_id == flow.id).count()
     if node_count >= MAX_FLOW_NODES:
         raise HTTPException(status_code=400, detail=f"Flow cannot exceed {MAX_FLOW_NODES} nodes")
+    if _is_handoff_node_payload(payload.type, payload.config):
+        raise HTTPException(status_code=400, detail="This block type is not available for new flows")
     _ensure_canvas_position(payload.position_x, payload.position_y)
 
     node = FlowNode(
@@ -1719,6 +1944,8 @@ def update_node(
     if payload.label is not None:
         node.label = payload.label
     if payload.config is not None:
+        if _is_handoff_node_payload(node.type, payload.config) and str(node.type or "").strip() != "handoff":
+            raise HTTPException(status_code=400, detail="This action type is not available for new flows")
         node.config = payload.config
     if payload.position_x is not None:
         node.position_x = payload.position_x

@@ -33,8 +33,11 @@ def create_or_update_config(
         config.model = data.model
         config.temperature = data.temperature
         config.system_prompt = data.system_prompt
+        config.tone = data.tone or "Professional"
+        config.language = data.language or "French"
+        config.response_style = data.response_style or "Concise"
     else:
-        config = LLMConfig(**data.dict())
+        config = LLMConfig(**data.model_dump())
         db.add(config)
 
     db.commit()

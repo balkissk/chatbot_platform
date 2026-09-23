@@ -74,12 +74,6 @@
             </a>
           </li>
           <li *ngIf="auth.currentUser()?.role === 'admin'" class="nav-item">
-            <a routerLink="/dashboard/template-qa" routerLinkActive="active">
-              <span class="pcoded-micon">T</span>
-              <span class="pcoded-mtext">Template QA</span>
-            </a>
-          </li>
-          <li *ngIf="auth.currentUser()?.role === 'admin'" class="nav-item">
             <a routerLink="/dashboard/profile" routerLinkActive="active">
               <span class="pcoded-micon">U</span>
               <span class="pcoded-mtext">Profile</span>
@@ -131,12 +125,6 @@
                   <a [routerLink]="['/dashboard/projects', pid, 'chatbots']" routerLinkActive="active" #projectAssistants="routerLinkActive" [attr.aria-current]="projectAssistants.isActive ? 'page' : null" aria-label="Assistants" title="Assistants">
                     <span class="pcoded-micon"><svg lucideBot size="16" aria-hidden="true"></svg></span>
                     <span class="pcoded-mtext">Assistants</span>
-                  </a>
-                </li>
-                <li class="nav-item">
-                  <a [routerLink]="['/dashboard/projects', pid, 'settings']" routerLinkActive="active" #projectSettings="routerLinkActive" [attr.aria-current]="projectSettings.isActive ? 'page' : null" aria-label="Project Settings" title="Project Settings">
-                    <span class="pcoded-micon"><svg lucideSettings size="16" aria-hidden="true"></svg></span>
-                    <span class="pcoded-mtext">Project settings</span>
                   </a>
                 </li>
               </ul>
@@ -269,15 +257,36 @@
         <svg lucideChevronRight size="13" aria-hidden="true"></svg>
         <strong>{{ topbarSecondaryLabel() }}</strong>
       </div>
-      <label class="topbar-search">
-        <svg lucideSearch size="15" aria-hidden="true"></svg>
-        <input type="search" placeholder="Search projects, assistants and knowledge" aria-label="Global search">
-      </label>
+      <div class="topbar-search-wrap">
+        <label class="topbar-search">
+          <svg lucideSearch size="15" aria-hidden="true"></svg>
+          <input
+            type="search"
+            placeholder="Search projects, assistants and knowledge"
+            aria-label="Global search"
+            autocomplete="off"
+            [value]="searchQuery()"
+            (input)="onSearchInput($event)"
+            (focus)="onSearchFocus()">
+        </label>
+        <div class="topbar-search-panel" *ngIf="searchPanelOpen()" role="listbox" aria-label="Global search results">
+          <div class="search-state" *ngIf="searchLoading()">Searching...</div>
+          <ng-container *ngIf="!searchLoading()">
+            <button
+              *ngFor="let result of searchResults()"
+              type="button"
+              class="search-result"
+              role="option"
+              (click)="selectSearchResult(result)">
+              <span class="search-type">{{ result.type }}</span>
+              <span class="search-title">{{ result.title }}</span>
+              <span class="search-subtitle" *ngIf="result.subtitle">{{ result.subtitle }}</span>
+            </button>
+            <div class="search-state" *ngIf="searchSubmitted() && searchResults().length === 0">No results found</div>
+          </ng-container>
+        </div>
+      </div>
       <div class="navbar-nav ms-auto topbar-actions">
-        <button class="notification-button menu-button" type="button" aria-label="Notifications" title="Notifications">
-          <svg lucideBell size="18" aria-hidden="true"></svg>
-          <span class="notification-dot" aria-hidden="true"></span>
-        </button>
         <button
           class="notification-button menu-button theme-toggle"
           type="button"
@@ -288,10 +297,6 @@
           <svg *ngIf="!darkMode()" lucideMoon size="17" aria-hidden="true"></svg>
           <svg *ngIf="darkMode()" lucideSun size="17" aria-hidden="true"></svg>
         </button>
-        <button class="notification-button menu-button" type="button" aria-label="Settings" title="Settings" routerLink="/dashboard/profile">
-          <svg lucideSettings size="17" aria-hidden="true"></svg>
-        </button>
-
         <div class="profile-menu">
           <button
             class="profile-toggle menu-button"

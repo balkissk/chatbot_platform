@@ -14,6 +14,7 @@ from services.generated_flow import (
     normalize_generated_flow,
     validate_generated_flow_candidate,
 )
+from routes.flow_routes import AiGenerateRequest, _normalize_ai_generation
 
 
 class FlowBlockCoverageTest(unittest.TestCase):
@@ -93,6 +94,32 @@ class FlowBlockCoverageTest(unittest.TestCase):
             self.assertIn(transition.target_node_key, node_keys)
         return normalized_nodes, normalized_transitions
 
+    def generated_flow_for(self, goal, context="Customer support", knowledge="", language="en"):
+        generated = _normalize_ai_generation(
+            {},
+            AiGenerateRequest(
+                assistant_goal=goal,
+                business_context=context,
+                knowledge_base_description=knowledge,
+                assistant_type="custom",
+                language=language,
+            ),
+        )
+        nodes = generated.initial_flow_structure["nodes"]
+        transitions = generated.initial_flow_structure["transitions"]
+        self.assert_flow_valid(nodes, transitions, "AI generated regression")
+        return nodes, transitions
+
+    def node_by_key(self, nodes):
+        return {node["key"]: node for node in nodes}
+
+    def transition_outputs(self, transitions, source):
+        return {
+            (transition.get("label") or "").lower(): transition["target_node_key"]
+            for transition in transitions
+            if transition["source_node_key"] == source
+        }
+
     def validation_codes(self, nodes, transitions):
         normalized_nodes, normalized_transitions = normalize_generated_flow(nodes, transitions)
         result = validate_generated_flow_candidate(
@@ -169,11 +196,6 @@ class FlowBlockCoverageTest(unittest.TestCase):
                 "success_message": "The request was sent.",
                 "error_message": "The request could not be sent.",
             },
-            "handoff": {
-                "message": "A teammate will follow up.",
-                "department": "Support",
-                "email_field": "user_email",
-            },
             "action": {"action_type": "set_variable", "field": "ticket_status", "value": "ready"},
         }
         return configs[node_type]
@@ -194,6 +216,155 @@ class FlowBlockCoverageTest(unittest.TestCase):
                 )
                 self.assertIn(node_type, {node.type for node in normalized_nodes})
 
+    def test_generated_flow_rejects_handoff_nodes(self):
+        nodes = [
+            self.node("start", "message", {"text": "Welcome."}, 80, 120),
+            self.node("legacy", "handoff", {}, 340, 120),
+        ]
+        transitions = [self.transition("start", "legacy", "next")]
+
+        with self.assertRaisesRegex(ValueError, "unsupported type 'handoff'"):
+            normalize_generated_flow(nodes, transitions)
+
+    def test_ai_generation_condition_request_creates_condition_not_router(self):
+        nodes, transitions = self.generated_flow_for(
+            'Question "What is the support priority?" save response to support_priority. '
+            'Condition support_priority equals "urgent". '
+            'TRUE Message "Votre demande est urgente." '
+            'FALSE Message "Votre demande suivra le processus de support normal." End.',
+            language="fr",
+        )
+        by_key = self.node_by_key(nodes)
+        node_types = [node["type"] for node in nodes]
+
+        self.assertIn("condition", node_types)
+        self.assertNotIn("ai_router", node_types)
+        self.assertEqual(by_key["priority_question"]["config"]["field"], "support_priority")
+        self.assertEqual(by_key["condition"]["config"]["field"], "support_priority")
+        self.assertEqual(by_key["condition"]["config"]["operator"], "equals")
+        self.assertEqual(by_key["condition"]["config"]["value"], "urgent")
+        outputs = self.transition_outputs(transitions, "condition")
+        self.assertIn("true", outputs)
+        self.assertIn("false", outputs)
+        self.assertEqual(by_key[outputs["true"]]["type"], "message")
+        self.assertEqual(by_key[outputs["false"]]["type"], "message")
+
+    def test_ai_generation_set_variable_can_feed_condition(self):
+        nodes, transitions = self.generated_flow_for(
+            'Set variable customer_tier to "vip". Condition customer_tier equals "vip". '
+            'TRUE Message "VIP path." FALSE Message "Standard path." End.'
+        )
+        by_key = self.node_by_key(nodes)
+
+        self.assertEqual(by_key["set_variable"]["type"], "set_variable")
+        self.assertEqual(by_key["set_variable"]["config"]["field"], "customer_tier")
+        self.assertEqual(by_key["set_variable"]["config"]["value"], "vip")
+        self.assertEqual(by_key["condition"]["config"]["field"], "customer_tier")
+        self.assertIn("true", self.transition_outputs(transitions, "condition"))
+        self.assertIn("false", self.transition_outputs(transitions, "condition"))
+
+    def test_ai_generation_buttons_have_complete_paths(self):
+        nodes, transitions = self.generated_flow_for(
+            "Offer buttons with Sales, Support and Billing, then use different valid paths, then End."
+        )
+        by_key = self.node_by_key(nodes)
+        outputs = self.transition_outputs(transitions, "buttons")
+
+        self.assertEqual(by_key["buttons"]["type"], "buttons")
+        self.assertEqual(by_key["buttons"]["config"]["buttons"], ["Sales", "Support", "Billing"])
+        self.assertEqual(set(outputs), {"sales", "support", "billing"})
+        for target in outputs.values():
+            self.assertEqual(by_key[target]["type"], "message")
+
+    def test_ai_generation_data_collection_uses_collect_blocks(self):
+        nodes, _ = self.generated_flow_for("Collect Name, Collect Email, Collect Phone, then End.")
+        by_key = self.node_by_key(nodes)
+
+        self.assertEqual(by_key["collect_name"]["config"]["field"], "user_name")
+        self.assertEqual(by_key["collect_email"]["config"]["field"], "user_email")
+        self.assertEqual(by_key["collect_phone"]["config"]["field"], "user_phone")
+        self.assertIn("end", by_key)
+
+    def test_ai_generation_meeting_preference_uses_scheduler_block(self):
+        nodes, _ = self.generated_flow_for(
+            "Ask for meeting preference using Meeting Preference, then End.",
+            context="Sales consultations",
+        )
+        by_key = self.node_by_key(nodes)
+
+        self.assertEqual(by_key["scheduler"]["type"], "meeting_scheduler")
+        self.assertEqual(by_key["scheduler"]["config"]["field"], "preferred_time")
+        self.assertTrue(by_key["scheduler"]["config"]["prompt"])
+
+    def test_ai_generation_rag_flow_uses_knowledge_search_answer_loop(self):
+        nodes, transitions = self.generated_flow_for(
+            "User Question -> Knowledge Search -> AI Answer -> User Question",
+            knowledge="Uploaded support documentation",
+        )
+        by_key = self.node_by_key(nodes)
+
+        self.assertEqual(by_key["question"]["type"], "question")
+        self.assertEqual(by_key["knowledge_search"]["type"], "knowledge_search")
+        self.assertEqual(by_key["knowledge_search"]["config"]["retrieval_only"], True)
+        self.assertEqual(by_key["answer"]["type"], "rag_answer")
+        self.assertTrue(by_key["answer"]["config"]["use_knowledge_base"])
+        self.assertIn(
+            {"source_node_key": "answer", "target_node_key": "question", "label": "next", "condition": None},
+            transitions,
+        )
+
+    def test_ai_generation_mixed_realistic_flow_preserves_requested_blocks(self):
+        nodes, transitions = self.generated_flow_for(
+            'Question: "What is the support priority?" save response to support_priority. '
+            'Condition: support_priority equals "urgent". '
+            'TRUE: Message "Urgent path." FALSE: Message "Normal path." '
+            'Both branches continue to User Question. '
+            'User Question -> Knowledge Search -> AI Answer -> User Question.',
+        )
+        by_key = self.node_by_key(nodes)
+        node_types = [node["type"] for node in nodes]
+
+        self.assertIn("question", node_types)
+        self.assertIn("condition", node_types)
+        self.assertIn("knowledge_search", node_types)
+        self.assertIn("rag_answer", node_types)
+        self.assertNotIn("ai_router", node_types)
+
+        self.assertIn("priority_question", by_key)
+        self.assertEqual(by_key["priority_question"]["config"]["field"], "support_priority")
+        self.assertEqual(by_key["priority_question"]["config"]["prompt"], "What is the support priority?")
+        self.assertEqual(by_key["condition"]["config"]["field"], "support_priority")
+        self.assertEqual(by_key["condition"]["config"]["operator"], "equals")
+        self.assertEqual(by_key["condition"]["config"]["value"], "urgent")
+        self.assertIn("support_priority", by_key["condition"]["config"]["message"])
+
+        condition_outputs = self.transition_outputs(transitions, "condition")
+        self.assertIn("true", condition_outputs)
+        self.assertIn("false", condition_outputs)
+        true_target = condition_outputs["true"]
+        false_target = condition_outputs["false"]
+        true_next = self.transition_outputs(transitions, true_target)
+        false_next = self.transition_outputs(transitions, false_target)
+        self.assertEqual(true_next["next"], false_next["next"])
+        self.assertEqual(true_next["next"], "after_condition")
+
+        self.assertIn("question", by_key)
+        self.assertIn(
+            {"source_node_key": "question", "target_node_key": "knowledge_search", "label": "next", "condition": None},
+            transitions,
+        )
+        self.assertIn(
+            {"source_node_key": "knowledge_search", "target_node_key": "answer", "label": "next", "condition": None},
+            transitions,
+        )
+        self.assertIn(
+            {"source_node_key": "answer", "target_node_key": "question", "label": "next", "condition": None},
+            transitions,
+        )
+        self.assertTrue(by_key["knowledge_search"]["config"]["use_knowledge_base"])
+        self.assertFalse(by_key["knowledge_search"]["config"]["strict_context"])
+        self.assertFalse(by_key["answer"]["config"]["strict_context"])
+
     def test_buttons_condition_and_variable_flow_is_valid(self):
         nodes = [
             self.node("start", "message", {"text": "Welcome."}, 80, 120),
@@ -207,7 +378,7 @@ class FlowBlockCoverageTest(unittest.TestCase):
             self.node("mark_support", "set_variable", {"field": "route", "value": "support"}, 580, 40),
             self.node("mark_docs", "set_variable", {"field": "route", "value": "docs"}, 580, 200),
             self.node("route_check", "condition", {"field": "route", "operator": "equals", "value": "support"}, 840, 120),
-            self.node("handoff", "handoff", {"department": "Support", "email_field": "user_email"}, 1100, 40),
+            self.node("support_end", "end", {"message": "Thanks. Your support request is saved."}, 1100, 40),
             self.node("docs_message", "message", {"text": "I can point you to documentation."}, 1100, 200),
             self.node("end", "end", {"message": "Done."}, 1360, 120),
         ]
@@ -217,14 +388,14 @@ class FlowBlockCoverageTest(unittest.TestCase):
             self.transition("intent", "mark_docs", "Docs"),
             self.transition("mark_support", "route_check", "next"),
             self.transition("mark_docs", "route_check", "next"),
-            self.transition("route_check", "handoff", "true", "route == support"),
+            self.transition("route_check", "support_end", "true", "route == support"),
             self.transition("route_check", "docs_message", "false", "route != support"),
             self.transition("docs_message", "end", "next"),
         ]
 
         self.assert_flow_valid(nodes, transitions, "Buttons condition set-variable workflow")
 
-    def test_capture_api_condition_handoff_flow_is_valid(self):
+    def test_capture_api_condition_fallback_flow_is_valid(self):
         nodes = [
             self.node("start", "message", {"text": "I will create a request."}, 80, 120),
             self.node("name", "collect_name", {"prompt": "Your name?", "field": "user_name"}, 320, 120),
@@ -243,7 +414,7 @@ class FlowBlockCoverageTest(unittest.TestCase):
             ),
             self.node("created", "condition", {"field": "ticket_response.status", "operator": "equals", "value": "created"}, 1040, 120),
             self.node("success", "message", {"text": "Your ticket is ready."}, 1280, 40),
-            self.node("handoff", "handoff", {"department": "Support", "email_field": "user_email"}, 1280, 200),
+            self.node("failed", "end", {"message": "The ticket request could not be completed."}, 1280, 200),
             self.node("end", "end", {"message": "Thanks."}, 1520, 120),
         ]
         transitions = [
@@ -252,11 +423,11 @@ class FlowBlockCoverageTest(unittest.TestCase):
             self.transition("email", "api", "next"),
             self.transition("api", "created", "next"),
             self.transition("created", "success", "true", "status created"),
-            self.transition("created", "handoff", "false", "status failed"),
+            self.transition("created", "failed", "false", "status failed"),
             self.transition("success", "end", "next"),
         ]
 
-        self.assert_flow_valid(nodes, transitions, "Capture API condition handoff workflow")
+        self.assert_flow_valid(nodes, transitions, "Capture API condition fallback workflow")
 
     def test_meeting_and_lead_scoring_flow_is_valid(self):
         nodes = [
@@ -334,12 +505,6 @@ class FlowBlockCoverageTest(unittest.TestCase):
                 self.node("block", "meeting_scheduler", {"prompt": "When?"}),
                 [self.transition("start", "block", "next"), self.transition("block", "end", "next")],
                 {"MEETING_VARIABLE_MISSING"},
-            ),
-            (
-                "handoff_missing_contact",
-                self.node("block", "handoff", {}),
-                [self.transition("start", "block", "next")],
-                {"HANDOFF_CONTACT_MISSING"},
             ),
             (
                 "router_missing_routes",

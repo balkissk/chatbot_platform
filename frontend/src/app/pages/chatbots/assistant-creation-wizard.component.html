@@ -3,7 +3,6 @@
     <button class="close-button" type="button" (click)="close()">x</button>
 
     <div class="wizard-header">
-      <p class="eyebrow">Assistant setup</p>
       <h2>{{ title }}</h2>
       <p class="muted">{{ description }}</p>
     </div>
@@ -31,7 +30,7 @@
           (click)="selectAssistantType('customer_support')">
           <span>CS</span>
           <strong>Customer Support Assistant</strong>
-          <small>Answer customer questions and escalate complex issues.</small>
+          <small>Answer customer questions and collect issue details.</small>
         </button>
         <button
           class="option-card secondary"

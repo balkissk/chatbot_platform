@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy import func, text
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.orm import Session
 from database.db import SessionLocal
 from models.chatbot import Chatbot
@@ -306,6 +307,8 @@ def serialize_conversation_session(db: Session, session: ConversationSession) ->
         "last_message": last_message.content if last_message else "",
         "last_user_message": next((message.content for message in reversed(messages) if message.role == "user"), ""),
         "last_bot_message": next((message.content for message in reversed(messages) if message.role == "bot"), ""),
+        "follow_up_status": normalize_follow_up_status(variables.get("__manager_status")),
+        "manager_note": variables.get("__manager_note") or "",
         "feedback_at": variables.get("__feedback_at"),
         "created_at": session.created_at,
         "updated_at": session.updated_at,
@@ -345,6 +348,8 @@ def serialize_conversation_summary(session: ConversationSession, messages: list[
         "last_message": last_message.content if last_message else "",
         "last_user_message": next((message.content for message in reversed(messages) if message.role == "user"), ""),
         "last_bot_message": next((message.content for message in reversed(messages) if message.role == "bot"), ""),
+        "follow_up_status": normalize_follow_up_status(variables.get("__manager_status")),
+        "manager_note": variables.get("__manager_note") or "",
         "feedback_at": variables.get("__feedback_at"),
         "created_at": session.created_at,
         "updated_at": session.updated_at,
@@ -568,8 +573,7 @@ def operation_recommendations(
     gaps: list[dict],
     failed_documents: int,
     flow_valid: bool,
-    published_version: VersionChatbot | None,
-    has_handoff: bool
+    published_version: VersionChatbot | None
 ) -> list[dict]:
     recommendations = []
     if gaps:
@@ -583,12 +587,6 @@ def operation_recommendations(
             "title": "Improve knowledge coverage",
             "message": "Many user questions are not answered with retrieved knowledge chunks.",
             "priority": "high"
-        })
-    if resolution_rate < 70 and not has_handoff:
-        recommendations.append({
-            "title": "Add Human Handoff",
-            "message": "Resolution is low and no handoff block is available for fallback cases.",
-            "priority": "medium"
         })
     if failed_documents:
         recommendations.append({
@@ -772,13 +770,6 @@ def get_chatbot_operations_dashboard(
         "errors": ["No version exists for this chatbot."]
     }
     llm_config = db.query(LLMConfig).filter(LLMConfig.version_id == draft_version.id).first() if draft_version else None
-    has_handoff = bool(
-        draft_version and db.query(FlowNode).join(Flow, FlowNode.flow_id == Flow.id).filter(
-            Flow.version_id == draft_version.id,
-            FlowNode.type == "handoff"
-        ).first()
-    )
-
     knowledge_gap_rows = unanswered_question_rows(db, chatbot.id)
     coverage_score = percent(len(source_backed_answers), len(user_messages))
     resolution_rate = percent(len(sessions) - len(handoff_sessions), len(sessions))
@@ -898,8 +889,7 @@ def get_chatbot_operations_dashboard(
             knowledge_gap_rows,
             failed_documents + failed_embeddings,
             bool(flow_validation.get("valid")),
-            last_published,
-            has_handoff
+            last_published
         ),
         "validation_center": validation_items,
         "recent_runtime_events": recent_events,
@@ -939,6 +929,27 @@ def get_chatbot_analytics(
     messages = db.query(ConversationMessage).filter(
         ConversationMessage.session_id.in_(session_ids)
     ).order_by(ConversationMessage.created_at.desc()).limit(1000).all() if session_ids else []
+    grouped_messages = messages_by_session(db, session_ids)
+    all_messages = [message for session_messages in grouped_messages.values() for message in session_messages]
+    rag_messages = [
+        message for message in all_messages
+        if message.role == "bot" and message.sources
+    ]
+    rag_session_ids = {
+        message.session_id for message in rag_messages
+    }
+    response_latencies = []
+    for session_messages in grouped_messages.values():
+        pending_user_message = None
+        for message in session_messages:
+            if message.role == "user":
+                pending_user_message = message
+                continue
+            if message.role == "bot" and pending_user_message:
+                value = latency_ms(pending_user_message, message)
+                if value is not None:
+                    response_latencies.append(value)
+                pending_user_message = None
 
     version_ids = [
         row.id for row in db.query(VersionChatbot.id).filter(
@@ -987,7 +998,9 @@ def get_chatbot_analytics(
             "total_conversations": len(sessions),
             "total_messages": total_messages,
             "total_documents": len(document_ids),
-            "average_response_time_ms": 0,
+            "average_response_time_ms": round(sum(response_latencies) / len(response_latencies)) if response_latencies else 0,
+            "rag_queries": len(rag_messages),
+            "conversations_using_knowledge": len(rag_session_ids),
             "positive_feedback_percent": round((positive_feedback / total_feedback) * 100, 1) if total_feedback else 0,
             "negative_feedback_percent": round((negative_feedback / total_feedback) * 100, 1) if total_feedback else 0,
             "total_chunks": db.query(Chunk).filter(Chunk.document_id.in_(document_ids)).count() if document_ids else 0,
@@ -1193,6 +1206,7 @@ def update_conversation_follow_up(
     variables["__manager_updated_at"] = datetime.utcnow().isoformat()
     variables["__manager_updated_by"] = current_user.id
     session.variables = variables
+    flag_modified(session, "variables")
     db.commit()
 
     return {

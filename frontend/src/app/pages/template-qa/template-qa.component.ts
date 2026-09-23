@@ -25,6 +25,11 @@ export class TemplateQaComponent implements OnInit {
   detailSaving = signal(false);
   detailError = signal('');
   detailSuccess = signal('');
+  detailExpanded = signal(false);
+  versionHistoryOpen = signal(false);
+  testRunnerOpen = signal(false);
+  metadataOpen = signal(false);
+  advancedExpectationsOpen = signal(false);
   detailForm = {
     name: '',
     description: '',
@@ -179,6 +184,10 @@ export class TemplateQaComponent implements OnInit {
         this.expectedFinalNode = firstScenario.expected_final_node_key || '';
         this.testResult.set(null);
         this.testError.set('');
+        this.versionHistoryOpen.set(false);
+        this.testRunnerOpen.set(false);
+        this.metadataOpen.set(false);
+        this.advancedExpectationsOpen.set(false);
         this.detailLoading.set(false);
         if (updateUrl) {
           this.router.navigate(['/dashboard/template-qa', templateKey], {
@@ -197,9 +206,38 @@ export class TemplateQaComponent implements OnInit {
     this.detail.set(null);
     this.detailError.set('');
     this.detailSuccess.set('');
+    this.detailExpanded.set(false);
+    this.versionHistoryOpen.set(false);
+    this.testRunnerOpen.set(false);
+    this.metadataOpen.set(false);
+    this.advancedExpectationsOpen.set(false);
     this.testResult.set(null);
     this.testError.set('');
     this.router.navigate(['/dashboard/template-qa']);
+  }
+
+  expandDetail() {
+    this.detailExpanded.set(true);
+  }
+
+  collapseDetail() {
+    this.detailExpanded.set(false);
+  }
+
+  toggleVersionHistory() {
+    this.versionHistoryOpen.update(value => !value);
+  }
+
+  toggleTestRunner() {
+    this.testRunnerOpen.update(value => !value);
+  }
+
+  toggleMetadata() {
+    this.metadataOpen.update(value => !value);
+  }
+
+  toggleAdvancedExpectations() {
+    this.advancedExpectationsOpen.update(value => !value);
   }
 
   saveDetail() {
@@ -224,6 +262,23 @@ export class TemplateQaComponent implements OnInit {
 
   nodeTypeSummary(detail: any) {
     return (detail?.block_types || []).map((block: any) => `${block.type} x${block.count}`).join(' · ');
+  }
+
+  flowStats(detail: any) {
+    const blocks = Number(detail?.nodes_count || 0);
+    const paths = Number(detail?.transitions_count || 0);
+    return `${blocks} block${blocks === 1 ? '' : 's'} • ${paths} path${paths === 1 ? '' : 's'}`;
+  }
+
+  transitionLabel(transition: any) {
+    const source = transition?.source_node_key || 'Start';
+    const target = transition?.target_node_key || 'End';
+    const label = transition?.label ? ` (${transition.label})` : '';
+    return `${source} → ${target}${label}`;
+  }
+
+  blockTypeCount(template: any) {
+    return (template?.block_types || []).length;
   }
 
   latestRevision(detail: any) {

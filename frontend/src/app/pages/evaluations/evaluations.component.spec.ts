@@ -54,7 +54,7 @@ describe('EvaluationsComponent edit mode', () => {
     minimum_answer_score: 0.75,
     minimum_source_count: 1,
     expected_fallback: false,
-    expected_handoff: true,
+    expected_handoff: null,
     expected_failure_category: 'policy_gap',
     critical: true,
     enabled: true,

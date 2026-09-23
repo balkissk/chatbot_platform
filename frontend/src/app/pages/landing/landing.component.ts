@@ -2,22 +2,19 @@ import { CommonModule, DOCUMENT } from '@angular/common';
 import { Component, HostListener, Inject, OnInit, signal } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import {
-  LucideArrowRight,
+  LucideActivity,
   LucideBarChart3,
   LucideBookOpen,
-  LucideBot,
-  LucideBrainCircuit,
-  LucideCheck,
+  LucideCheckCircle2,
   LucideDatabase,
   LucideGitBranch,
   LucideMenu,
-  LucideMessageSquareText,
+  LucideMessageSquare,
+  LucideMessagesSquare,
   LucideMoon,
-  LucidePlay,
-  LucideRocket,
-  LucideShieldCheck,
   LucideSun,
-  LucideUsers,
+  LucideTestTube2,
+  LucideUpload,
   LucideWorkflow,
   LucideX
 } from '@lucide/angular';
@@ -28,22 +25,19 @@ import {
   imports: [
     CommonModule,
     RouterModule,
-    LucideArrowRight,
+    LucideActivity,
     LucideBarChart3,
     LucideBookOpen,
-    LucideBot,
-    LucideBrainCircuit,
-    LucideCheck,
+    LucideCheckCircle2,
     LucideDatabase,
     LucideGitBranch,
     LucideMenu,
-    LucideMessageSquareText,
+    LucideMessageSquare,
+    LucideMessagesSquare,
     LucideMoon,
-    LucidePlay,
-    LucideRocket,
-    LucideShieldCheck,
     LucideSun,
-    LucideUsers,
+    LucideTestTube2,
+    LucideUpload,
     LucideWorkflow,
     LucideX
   ],
@@ -57,7 +51,9 @@ export class LandingComponent implements OnInit {
 
   private readonly themeStorageKey = 'chatbotFactoryLandingTheme';
 
-  constructor(@Inject(DOCUMENT) private readonly document: Document) {}
+  constructor(
+    @Inject(DOCUMENT) private readonly document: Document
+  ) {}
 
   ngOnInit() {
     const savedTheme = this.safeLocalStorage()?.getItem(this.themeStorageKey);

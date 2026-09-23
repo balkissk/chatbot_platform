@@ -1,7 +1,7 @@
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { Component, Inject, OnInit, PLATFORM_ID, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute } from '@angular/router';
 import { ApiService } from '../../services/api';
 
 @Component({
@@ -21,21 +21,25 @@ export class ChatbotConversationsComponent implements OnInit {
   detailsLoading = signal(false);
   unansweredLoading = signal(false);
   loadingMore = signal(false);
+  followUpSaving = signal(false);
   hasMore = signal(false);
   error = signal('');
+  message = signal('');
   search = '';
   dateFrom = '';
   dateTo = '';
   channel = '';
-  feedback = '';
   responseType = '';
+  followUpStatusDraft = 'new';
+  managerNoteDraft = '';
+  filtersOpen = false;
+  private requestedSessionId = 0;
   private readonly pageSize = 25;
   private offset = 0;
   private isBrowser: boolean;
 
   constructor(
     private route: ActivatedRoute,
-    private router: Router,
     private api: ApiService,
     @Inject(PLATFORM_ID) platformId: object
   ) {
@@ -46,11 +50,11 @@ export class ChatbotConversationsComponent implements OnInit {
     this.projectId = Number(this.route.snapshot.paramMap.get('projectId'));
     this.chatbotId = Number(this.route.snapshot.paramMap.get('chatbotId'));
     if (!this.isBrowser) return;
+    this.requestedSessionId = Number(this.route.snapshot.queryParamMap.get('sessionId') || 0);
     this.loadSessions();
     this.loadUnansweredQuestions();
-    const sessionId = Number(this.route.snapshot.queryParamMap.get('sessionId') || 0);
-    if (sessionId) {
-      this.openSessionById(sessionId);
+    if (this.requestedSessionId) {
+      this.openSessionById(this.requestedSessionId);
     }
   }
 
@@ -68,7 +72,6 @@ export class ChatbotConversationsComponent implements OnInit {
       date_from: this.dateFrom,
       date_to: this.dateTo,
       channel: this.channel,
-      feedback: this.feedback,
       response_type: this.responseType,
       limit: this.pageSize,
       offset: this.offset
@@ -77,6 +80,9 @@ export class ChatbotConversationsComponent implements OnInit {
         this.sessions.set(append ? [...this.sessions(), ...sessions] : sessions);
         this.hasMore.set((sessions || []).length === this.pageSize);
         this.offset += sessions.length;
+        if (!append) {
+          this.selectInitialConversation(sessions || []);
+        }
         this.loading.set(false);
         this.loadingMore.set(false);
       },
@@ -91,6 +97,11 @@ export class ChatbotConversationsComponent implements OnInit {
   loadMore() {
     if (this.loadingMore() || !this.hasMore()) return;
     this.loadSessions(true);
+  }
+
+  applyFilters() {
+    this.filtersOpen = false;
+    this.loadSessions();
   }
 
   loadUnansweredQuestions() {
@@ -110,9 +121,10 @@ export class ChatbotConversationsComponent implements OnInit {
   openSession(session: any) {
     this.detailsLoading.set(true);
     this.error.set('');
+    this.message.set('');
     this.api.getChatbotConversation(this.chatbotId, session.id).subscribe({
       next: details => {
-        this.selectedSession.set(details);
+        this.setSelectedSession(details);
         this.detailsLoading.set(false);
       },
       error: err => {
@@ -127,8 +139,8 @@ export class ChatbotConversationsComponent implements OnInit {
     this.dateFrom = '';
     this.dateTo = '';
     this.channel = '';
-    this.feedback = '';
     this.responseType = '';
+    this.filtersOpen = false;
     this.loadSessions();
   }
 
@@ -141,9 +153,10 @@ export class ChatbotConversationsComponent implements OnInit {
 
     this.detailsLoading.set(true);
     this.error.set('');
+    this.message.set('');
     this.api.getChatbotConversation(this.chatbotId, sessionId).subscribe({
       next: details => {
-        this.selectedSession.set(details);
+        this.setSelectedSession(details);
         this.detailsLoading.set(false);
       },
       error: err => {
@@ -176,13 +189,51 @@ export class ChatbotConversationsComponent implements OnInit {
     return labels[value] || value || 'Unknown';
   }
 
-  feedbackLabel(value: string) {
+  followUpStatusLabel(value: string) {
     const labels: any = {
-      positive: 'Helpful',
-      negative: 'Not helpful',
-      no_feedback: 'No feedback'
+      new: 'New',
+      followed_up: 'Followed up',
+      scheduled: 'Scheduled',
+      closed: 'Closed'
     };
-    return labels[value] || 'No feedback';
+    return labels[value] || 'New';
+  }
+
+  saveSelectedFollowUp() {
+    const session = this.selectedSession();
+    if (!session || this.followUpSaving()) return;
+
+    const payload = {
+      status: this.followUpStatusDraft || 'new',
+      note: this.managerNoteDraft || ''
+    };
+    this.followUpSaving.set(true);
+    this.error.set('');
+    this.message.set('');
+    this.api.updateConversationFollowUp(this.chatbotId, session.id, payload).subscribe({
+      next: result => {
+        const updatedSession = {
+          ...session,
+          follow_up_status: result.follow_up_status,
+          manager_note: result.manager_note
+        };
+        this.setSelectedSession(updatedSession);
+        this.sessions.update(sessions => sessions.map(item => item.id === session.id
+          ? {
+              ...item,
+              follow_up_status: result.follow_up_status,
+              manager_note: result.manager_note
+            }
+          : item
+        ));
+        this.message.set('Follow-up state saved.');
+        this.followUpSaving.set(false);
+      },
+      error: err => {
+        this.error.set(err.error?.detail || 'Could not save follow-up state');
+        this.followUpSaving.set(false);
+      }
+    });
   }
 
   groupedSessions() {
@@ -225,27 +276,41 @@ export class ChatbotConversationsComponent implements OnInit {
     return message ? this.truncate(message, 120) : 'No messages captured yet.';
   }
 
-  sessionOperationalStatus(session: any) {
-    if (session.feedback_status === 'negative') return 'Needs review';
-    if (session.response_type === 'fallback') return 'Fallback';
-    if (session.feedback_status === 'positive') return 'Helpful';
-    if (session.response_type === 'flow') return 'Flow';
-    if (session.response_type === 'ai_rag') return 'AI/RAG';
-    return 'Open';
-  }
-
-  sessionStatusClass(session: any) {
-    const label = this.sessionOperationalStatus(session).toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    return `status-${label}`;
-  }
-
   activeFilterSummary() {
     const filters = [
+      this.search ? 'Search' : '',
+      this.dateFrom || this.dateTo ? 'Date range' : '',
       this.channel ? this.channelLabel(this.channel) : '',
-      this.feedback ? this.feedbackLabel(this.feedback) : '',
       this.responseType ? this.responseLabel(this.responseType) : ''
     ].filter(Boolean);
-    return filters.length ? filters.join(' · ') : 'All sessions';
+    return filters.length ? filters.join(' · ') : 'All conversations';
+  }
+
+  hasActiveFilters() {
+    return Boolean(this.search || this.dateFrom || this.dateTo || this.channel || this.responseType);
+  }
+
+  advancedFilterCount() {
+    return [this.channel, this.responseType].filter(Boolean).length;
+  }
+
+  toggleFilters() {
+    this.filtersOpen = !this.filtersOpen;
+  }
+
+  private selectInitialConversation(sessions: any[]) {
+    if (this.requestedSessionId || !sessions.length || !this.isDesktopViewport()) return;
+    this.openSession(sessions[0]);
+  }
+
+  private setSelectedSession(session: any) {
+    this.selectedSession.set(session);
+    this.followUpStatusDraft = session.follow_up_status || 'new';
+    this.managerNoteDraft = session.manager_note || '';
+  }
+
+  private isDesktopViewport() {
+    return this.isBrowser && window.matchMedia('(min-width: 941px)').matches;
   }
 
   private cleanMessage(value: unknown) {
@@ -258,11 +323,10 @@ export class ChatbotConversationsComponent implements OnInit {
 
   exportConversationsCsv() {
     const rows = [
-      ['Session ID', 'Channel', 'Feedback', 'Response Type', 'Messages', 'Created At', 'Last Activity', 'Last Message'],
+      ['Session ID', 'Channel', 'Response Type', 'Messages', 'Created At', 'Last Activity', 'Last Message'],
       ...this.sessions().map(session => [
         session.id,
         this.channelLabel(session.channel),
-        this.feedbackLabel(session.feedback_status),
         this.responseLabel(session.response_type),
         session.message_count,
         session.created_at,
@@ -290,7 +354,6 @@ export class ChatbotConversationsComponent implements OnInit {
     const transcript = [
       `Session #${session.id}`,
       `Channel: ${this.channelLabel(session.channel)}`,
-      `Feedback: ${this.feedbackLabel(session.feedback_status)}`,
       `Response type: ${this.responseLabel(session.response_type)}`,
       '',
       ...(session.messages || []).map((message: any) => (
@@ -309,9 +372,5 @@ export class ChatbotConversationsComponent implements OnInit {
     link.download = filename;
     link.click();
     URL.revokeObjectURL(url);
-  }
-
-  goBack() {
-    this.router.navigate(['/dashboard/projects', this.projectId, 'chatbots']);
   }
 }

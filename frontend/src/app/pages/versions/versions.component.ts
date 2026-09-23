@@ -17,8 +17,6 @@ export class VersionsComponent implements OnInit {
   chatbotId!: number;
   versions = signal<any[]>([]);
   selectedVersionId = signal<number | undefined>(undefined);
-  documents = signal<any[]>([]);
-  documentsError = signal('');
   configLoading = signal(false);
   configSaving = signal(false);
   configMessage = signal('');
@@ -81,11 +79,9 @@ export class VersionsComponent implements OnInit {
         this.loading.set(false);
 
         if (selectedVersionId) {
-          this.loadDocuments(selectedVersionId);
           this.loadLlmConfig(selectedVersionId);
           this.loadReadiness(selectedVersionId);
         } else {
-          this.documents.set([]);
           this.readiness.set(null);
         }
       },
@@ -182,6 +178,21 @@ export class VersionsComponent implements OnInit {
     });
   }
 
+  restore(versionId: number) {
+    if (!this.canManageWorkspace()) return;
+    this.actionId.set(versionId);
+    this.api.restoreVersion(versionId).subscribe({
+      next: () => {
+        this.actionId.set(undefined);
+        this.loadVersions();
+      },
+      error: err => {
+        this.error.set(err.error?.detail || 'Could not restore version');
+        this.actionId.set(undefined);
+      }
+    });
+  }
+
   duplicate(versionId: number) {
     if (!this.canManageWorkspace()) return;
     this.actionId.set(versionId);
@@ -227,7 +238,6 @@ export class VersionsComponent implements OnInit {
 
   selectVersion(versionId: number) {
     this.selectedVersionId.set(versionId);
-    this.loadDocuments(versionId);
     this.loadLlmConfig(versionId);
     this.loadReadiness(versionId);
   }
@@ -270,7 +280,10 @@ export class VersionsComponent implements OnInit {
       version_id: versionId,
       model: this.aiInstructions.model || 'llama3',
       temperature: Number(this.aiInstructions.temperature) || 0.7,
-      system_prompt: this.buildSystemPrompt()
+      system_prompt: this.cleanSystemInstructions(this.aiInstructions.system_instructions) || 'You are a helpful assistant.',
+      tone: this.aiInstructions.tone || 'Professional',
+      language: this.aiInstructions.language || 'French',
+      response_style: this.aiInstructions.response_style || 'Concise'
     }).subscribe({
       next: () => {
         this.configSaving.set(false);
@@ -285,51 +298,63 @@ export class VersionsComponent implements OnInit {
 
   private parseSystemPrompt(config: any) {
     const prompt = config.system_prompt || '';
+    const parsedPrompt = this.splitStructuredPromptMetadata(prompt);
     return {
       model: config.model || 'llama3',
       temperature: config.temperature ?? 0.7,
-      system_instructions: prompt,
-      tone: this.extractPromptValue(prompt, 'Tone') || 'Professional',
-      language: this.extractPromptValue(prompt, 'Language') || 'French',
-      response_style: this.extractPromptValue(prompt, 'Response style') || 'Concise'
+      system_instructions: parsedPrompt.body,
+      tone: config.tone || parsedPrompt.metadata.tone || 'Professional',
+      language: config.language || parsedPrompt.metadata.language || 'French',
+      response_style: config.response_style || parsedPrompt.metadata.response_style || 'Concise'
     };
   }
 
-  private extractPromptValue(prompt: string, label: string) {
-    const line = prompt.split('\n').find(item => item.toLowerCase().startsWith(`${label.toLowerCase()}:`));
-    return line ? line.split(':').slice(1).join(':').trim() : '';
+  private cleanSystemInstructions(prompt: string) {
+    return this.splitStructuredPromptMetadata(prompt).body.trim();
   }
 
-  private buildSystemPrompt() {
-    const base = this.aiInstructions.system_instructions.trim() || 'You are a helpful assistant.';
-    return [
-      base,
-      `Tone: ${this.aiInstructions.tone}`,
-      `Language: ${this.aiInstructions.language}`,
-      `Response style: ${this.aiInstructions.response_style}`
-    ].join('\n');
-  }
+  private splitStructuredPromptMetadata(prompt: string) {
+    const lines = (prompt || '').split(/\r?\n/);
+    const metadata: any = {};
+    let index = lines.length - 1;
+    let metadataLineCount = 0;
 
-  loadDocuments(versionId: number) {
-    this.documentsError.set('');
+    while (index >= 0 && !lines[index].trim()) {
+      index -= 1;
+    }
 
-    this.api.getDocuments(versionId).subscribe({
-      next: documents => {
-        this.documents.set(documents);
-      },
-      error: err => {
-        this.documents.set([]);
-        this.documentsError.set(err.error?.detail || 'Could not load documents');
+    while (index >= 0) {
+      const line = lines[index].trim();
+      const separatorIndex = line.indexOf(':');
+      if (separatorIndex < 0) break;
+
+      const label = line.slice(0, separatorIndex).trim().toLowerCase();
+      const value = line.slice(separatorIndex + 1).trim();
+      if (label === 'tone') {
+        metadata.tone = value;
+      } else if (label === 'language') {
+        metadata.language = value;
+      } else if (label === 'response style') {
+        metadata.response_style = value;
+      } else {
+        break;
       }
-    });
-  }
 
-  totalChunks() {
-    return this.documents().reduce((total, document) => total + Number(document.chunks_count || 0), 0);
-  }
+      metadataLineCount += 1;
+      index -= 1;
+      while (index >= 0 && !lines[index].trim()) {
+        index -= 1;
+      }
+    }
 
-  documentStatus(document: any) {
-    return document.embedding_status || document.processing_status || document.status || 'available';
+    if (metadataLineCount < 2) {
+      return { body: prompt || '', metadata: {} };
+    }
+
+    return {
+      body: lines.slice(0, index + 1).join('\n').trim(),
+      metadata
+    };
   }
 
   loadReadiness(versionId = this.selectedVersionId()) {

@@ -132,6 +132,65 @@ class FlowRuntimeBlocksTest(unittest.TestCase):
         self.assertEqual(closed["mode_used"], "end")
         self.assertTrue(closed["variables"]["__ended"])
 
+    def test_message_to_collect_blocks_do_not_expose_internal_next_options(self):
+        self.create_flow(
+            [
+                self.node("start", "message", {"text": "Welcome."}),
+                self.node("name", "collect_name", {"prompt": "Quel est votre nom ?", "field": "user_name"}),
+                self.node("email", "collect_email", {"prompt": "Quel email devons-nous utiliser ?", "field": "user_email"}),
+                self.node("question", "question", {"prompt": "Quelle est votre question ?", "field": "user_question"}),
+                self.node("end", "end", {"message": "Merci."}),
+            ],
+            [
+                self.edge("start", "name", "next"),
+                self.edge("name", "email", "next"),
+                self.edge("email", "question", "next"),
+                self.edge("question", "end", "next"),
+            ],
+        )
+
+        initial = execute_flow(self.db, self.version.id, "", "start", {})
+        self.assertEqual(initial["current_node_key"], "name")
+        self.assertEqual(initial["options"], [])
+        self.assertEqual(initial["messages"][1]["text"], "Quel est votre nom ?")
+        self.assertEqual(initial["messages"][1]["options"], [])
+
+        name_result = execute_flow(self.db, self.version.id, "Jean Dupont", "name", initial["variables"])
+        self.assertEqual(name_result["current_node_key"], "email")
+        self.assertEqual(name_result["response"], "Quel email devons-nous utiliser ?")
+        self.assertEqual(name_result["options"], [])
+        self.assertEqual(name_result["variables"]["user_name"], "Jean Dupont")
+
+        email_result = execute_flow(self.db, self.version.id, "jean@example.com", "email", name_result["variables"])
+        self.assertEqual(email_result["current_node_key"], "question")
+        self.assertEqual(email_result["response"], "Quelle est votre question ?")
+        self.assertEqual(email_result["options"], [])
+        self.assertEqual(email_result["variables"]["user_email"], "jean@example.com")
+
+        question_result = execute_flow(self.db, self.version.id, "Quels sont vos horaires ?", "question", email_result["variables"])
+        self.assertEqual(question_result["mode_used"], "end")
+        self.assertEqual(question_result["variables"]["user_question"], "Quels sont vos horaires ?")
+
+    def test_buttons_block_can_still_render_transition_label_options(self):
+        self.create_flow(
+            [
+                self.node("start", "message", {"text": "Welcome."}),
+                self.node("intent", "buttons", {"text": "Choose a path.", "field": "intent"}),
+                self.node("support", "end", {"message": "Support selected."}),
+                self.node("docs", "end", {"message": "Docs selected."}),
+            ],
+            [
+                self.edge("start", "intent", "next"),
+                self.edge("intent", "support", "Support"),
+                self.edge("intent", "docs", "Docs"),
+            ],
+        )
+
+        initial = execute_flow(self.db, self.version.id, "", "start", {})
+        self.assertEqual(initial["current_node_key"], "intent")
+        self.assertEqual(initial["options"], ["Support", "Docs"])
+        self.assertEqual(initial["messages"][1]["options"], ["Support", "Docs"])
+
     def test_buttons_condition_can_route_to_handoff(self):
         self.create_flow(
             [

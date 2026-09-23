@@ -341,6 +341,43 @@ export class ProjectOverviewComponent implements OnInit, OnDestroy {
     return this.metricByLabel(label)?.helper || fallback;
   }
 
+  compactProjectSummary() {
+    const summary = this.workspaceSummary();
+    const parts = [
+      `${summary.total_assistants} ${this.pluralize('Assistant', summary.total_assistants)}`,
+      `${summary.published_assistants} Published`,
+      `${summary.draft_only_assistants} Draft`
+    ];
+    const updated = this.updatedSummaryLabel();
+    if (updated) {
+      parts.push(updated);
+    }
+    return parts.join(' • ');
+  }
+
+  compactMetricHelper(label: string, fallback: string) {
+    const metric = this.metricByLabel(label);
+    const helper = String(metric?.helper || '');
+    if (!helper) return fallback;
+
+    if (label === 'Runtime Success Rate') {
+      const latency = helper.match(/(\d+)\s*ms/i);
+      return latency ? `${latency[1]} ms avg` : helper.replace(/\s*·\s*all time/i, '');
+    }
+
+    if (label === 'Knowledge Answer Coverage') {
+      const coverage = helper.match(/(\d+)\s+of\s+(\d+)/i);
+      return coverage ? `${coverage[1]} / ${coverage[2]} retrieved` : helper;
+    }
+
+    if (label === 'Runtime Requests') {
+      const failed = helper.match(/(\d+)\s+failed/i);
+      return failed ? `${failed[1]} failed` : helper.replace(/\s*·\s*all time/i, '');
+    }
+
+    return helper;
+  }
+
   healthStripItems() {
     const version = this.versionInfo();
     const liveVersion = version?.published_version ? `v${version.published_version.version_number}` : 'None';
@@ -395,6 +432,10 @@ export class ProjectOverviewComponent implements OnInit, OnDestroy {
     return this.workspaceDashboard()?.knowledge_gaps || [];
   }
 
+  visibleKnowledgeGaps() {
+    return this.knowledgeGaps().slice(0, 3);
+  }
+
   recommendations() {
     return this.workspaceDashboard()?.recommended_actions || [];
   }
@@ -427,6 +468,41 @@ export class ProjectOverviewComponent implements OnInit, OnDestroy {
 
   replayRows() {
     return this.workspaceDashboard()?.quality_signals || [];
+  }
+
+  qualitySignalGroups() {
+    const grouped = new Map<string, any>();
+    for (const signal of this.replayRows()) {
+      const key = [
+        signal.issue_type || 'Quality signal',
+        signal.reason || '',
+        signal.severity || ''
+      ].join('|');
+      const createdAt = signal.updated_at || signal.created_at;
+      const existing = grouped.get(key);
+      if (existing) {
+        existing.count += 1;
+        existing.records.push(signal);
+        if (this.dateValue(createdAt) > this.dateValue(existing.latest_at)) {
+          existing.latest_at = createdAt;
+          existing.session_id = signal.session_id;
+          existing.latency_ms = signal.latency_ms;
+          existing.retrieved_chunks = signal.retrieved_chunks || [];
+        }
+      } else {
+        grouped.set(key, {
+          ...signal,
+          count: 1,
+          latest_at: createdAt,
+          records: [signal]
+        });
+      }
+    }
+    return Array.from(grouped.values()).sort((a, b) => this.dateValue(b.latest_at) - this.dateValue(a.latest_at));
+  }
+
+  visibleQualitySignalGroups() {
+    return this.qualitySignalGroups().slice(0, 4);
   }
 
   visibleReplayRows() {
@@ -535,5 +611,36 @@ export class ProjectOverviewComponent implements OnInit, OnDestroy {
 
   isManagerOnlyAction(action: string | null | undefined) {
     return new Set(['flow', 'knowledge', 'test']).has(String(action || ''));
+  }
+
+  qualitySignalMeta(signal: any) {
+    const session = signal?.session_id ? `Session #${signal.session_id}` : 'No session';
+    const latency = signal?.latency_ms === null || signal?.latency_ms === undefined ? 'No latency' : `${signal.latency_ms} ms`;
+    return `${session} • ${latency}`;
+  }
+
+  private updatedSummaryLabel() {
+    const value = this.lastUpdated();
+    if (!value) return '';
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return '';
+
+    const now = new Date();
+    const isToday =
+      date.getFullYear() === now.getFullYear() &&
+      date.getMonth() === now.getMonth() &&
+      date.getDate() === now.getDate();
+
+    if (isToday) return 'Updated today';
+    return `Updated ${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`;
+  }
+
+  private pluralize(label: string, count: number) {
+    return count === 1 ? label : `${label}s`;
+  }
+
+  private dateValue(value: any) {
+    const time = value ? new Date(value).getTime() : 0;
+    return Number.isFinite(time) ? time : 0;
   }
 }

@@ -1,18 +1,8 @@
 <section class="settings-page">
   <header class="settings-header">
     <div>
-      <nav class="breadcrumb" aria-label="Breadcrumb">
-        <a [routerLink]="['/dashboard/projects']">Projects</a>
-        <span>/</span>
-        <a [routerLink]="['/dashboard/projects', projectId, 'chatbots']">Assistants</a>
-        <span>/</span>
-        <a [routerLink]="['/dashboard/projects', projectId, 'chatbots', chatbotId]">{{ assistant()?.name || 'Assistant' }}</a>
-        <span>/</span>
-        <strong>Settings</strong>
-      </nav>
       <p class="eyebrow">Assistant Settings</p>
       <h1>{{ assistant()?.name || ('Assistant ' + chatbotId) }}</h1>
-      <p>Edit assistant identity, default channel, language, and operational status.</p>
     </div>
     <span class="status-badge" [class.live]="assistant()?.is_active">
       <svg lucideCheckCircle2 size="14" aria-hidden="true"></svg>
@@ -32,7 +22,6 @@
           <div>
             <p class="eyebrow">Identity</p>
             <h2>Assistant profile</h2>
-            <p>These values appear across the workspace and public channel surfaces.</p>
           </div>
         </div>
 
@@ -73,7 +62,6 @@
           <div>
             <p class="eyebrow">Operation</p>
             <h2>Availability</h2>
-            <p>Control whether this assistant is active for configured channels.</p>
           </div>
         </div>
 

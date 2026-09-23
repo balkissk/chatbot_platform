@@ -129,34 +129,6 @@ button:disabled {
   padding: 6px 10px;
 }
 
-.feedback-row {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.feedback-row button {
-  background: #fff;
-  border: 1px solid #cfe0e5;
-  color: #415766;
-  font-size: 12px;
-  min-height: 30px;
-  padding: 5px 9px;
-}
-
-.feedback-row button:hover:not(:disabled) {
-  background: #eef8f7;
-  border-color: #9ddbd4;
-  color: var(--brand-primary-hover);
-}
-
-.feedback-row small {
-  color: var(--brand-primary-hover);
-  font-weight: 700;
-}
-
 .composer {
   border-top: 1px solid #e4f0f2;
   display: grid;

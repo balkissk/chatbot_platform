@@ -1,18 +1,8 @@
 <section class="deployment-page" *ngIf="!loading(); else loadingState">
   <header class="deployment-header">
     <div class="header-copy">
-      <nav class="breadcrumb" aria-label="Breadcrumb">
-        <a [routerLink]="['/dashboard/projects']">Projects</a>
-        <span>/</span>
-        <a [routerLink]="['/dashboard/projects', projectId]">{{ project()?.name || 'Project' }}</a>
-        <span>/</span>
-        <a [routerLink]="['/dashboard/projects', projectId, 'chatbots']">Assistants</a>
-        <span>/</span>
-        <strong>Deployment</strong>
-      </nav>
       <p class="eyebrow">Assistant Deployment</p>
       <h1>{{ assistant()?.name || 'Assistant' }}</h1>
-      <p>Publish access points for public chat, embedded web widgets, and REST API integrations.</p>
     </div>
 
     <div class="header-actions">
@@ -35,19 +25,16 @@
     <div>
       <span>01</span>
       <strong>Flow Builder</strong>
-      <small>Draft and versioned assistant logic</small>
     </div>
     <i aria-hidden="true"></i>
     <div>
       <span>02</span>
       <strong>Unified Runtime</strong>
-      <small>One execution path for all channels</small>
     </div>
     <i aria-hidden="true"></i>
     <div>
       <span>03</span>
       <strong>Channel Adapters</strong>
-      <small>Public chat, widget and REST API</small>
     </div>
   </section>
 
@@ -58,7 +45,6 @@
         <div>
           <p class="technical-label">WEB CHAT</p>
           <h2>Public chat link</h2>
-          <p>Share a hosted chat page for this assistant.</p>
         </div>
         <span class="channel-status" [ngClass]="channelStatusClass('web')">
           <svg lucideCheckCircle2 size="13" aria-hidden="true"></svg>
@@ -93,7 +79,6 @@
         <div>
           <p class="technical-label">WEB WIDGET</p>
           <h2>Embed script</h2>
-          <p>Add this assistant to an existing website.</p>
         </div>
         <span class="channel-status" [ngClass]="channelStatusClass('widget')">
           <svg lucideCheckCircle2 size="13" aria-hidden="true"></svg>
@@ -110,8 +95,6 @@
           </button>
         </div>
       </label>
-
-      <p class="inline-note">Widget customization is configured in the assistant channel settings when available.</p>
     </article>
 
     <article class="channel-panel api-panel">
@@ -120,7 +103,6 @@
         <div>
           <p class="technical-label">REST API</p>
           <h2>Server integration</h2>
-          <p>Use the public runtime endpoint from your own application.</p>
         </div>
         <span class="channel-status" [ngClass]="channelStatusClass('api')">
           <svg lucideCheckCircle2 size="13" aria-hidden="true"></svg>

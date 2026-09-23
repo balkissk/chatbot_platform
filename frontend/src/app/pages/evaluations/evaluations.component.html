@@ -1,9 +1,7 @@
 <section class="evaluation-page">
   <header class="page-header">
     <div>
-      <p class="eyebrow">Evaluation Center</p>
       <h1>{{ headerTitle() }}</h1>
-      <p>Qualify assistant versions with deterministic cases, regression checks, and release gates.</p>
     </div>
   </header>
 
@@ -121,7 +119,6 @@
         <div class="panel-heading">
           <div>
             <h2>Release readiness details</h2>
-            <p class="muted">Uses the existing publication readiness API for this selected version.</p>
           </div>
           <button type="button" (click)="loadReadiness()" [disabled]="readinessLoading()">
             {{ readinessLoading() ? 'Checking...' : 'Refresh checks' }}
@@ -147,7 +144,6 @@
         <div class="panel-heading cases-heading">
           <div>
             <h2>Evaluation cases</h2>
-            <p class="muted">Primary working area for scenario coverage and expected behavior.</p>
           </div>
           <div class="cases-header-actions">
             <span>{{ dataset.cases?.length || 0 }} total</span>
@@ -208,7 +204,6 @@
         <div class="panel-heading">
           <div>
             <h2>Flow coverage</h2>
-            <p class="muted">Structure covered by the selected evaluation cases</p>
           </div>
           <span class="flow-version-chip" *ngIf="selectedVersion() as version">v{{ version.version_number }} · {{ version.status }}</span>
         </div>
@@ -641,12 +636,6 @@
             <label>
               Expected fallback
               <select [(ngModel)]="caseForm.expected_fallback">
-                <option *ngFor="let option of triStateOptions" [ngValue]="option.value">{{ option.label }}</option>
-              </select>
-            </label>
-            <label *ngIf="showExpectedHandoffControl()">
-              Expected handoff
-              <select [(ngModel)]="caseForm.expected_handoff">
                 <option *ngFor="let option of triStateOptions" [ngValue]="option.value">{{ option.label }}</option>
               </select>
             </label>

@@ -1,6 +1,8 @@
 import json
 import os
+import re
 import time
+import unicodedata
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -11,7 +13,7 @@ from models.chat_schema import ChatRequest, ChatSessionCreate
 from models.chatbot import Chatbot
 from models.chatbot_schema import chatbot_language_instruction, safe_chatbot_language
 from models.conversation import ConversationMessage, ConversationSession
-from models.llm_config import LLMConfig
+from models.llm_config import LLMConfig, effective_system_prompt
 from models.version import VersionChatbot
 from services.ai_provider import AIProviderError, configured_chat_model, generate_chat_completion, stream_chat_completion
 from services.auth import get_current_user
@@ -32,6 +34,55 @@ def int_env(name: str, default: int) -> int:
 
 RAG_CONTEXT_CHARS_PER_CHUNK = int_env("RAG_CONTEXT_CHARS_PER_CHUNK", 1400)
 CHAT_HISTORY_MESSAGES = max(0, min(int_env("CHAT_HISTORY_MESSAGES", 6), 20))
+
+CONVERSATIONAL_INPUTS = {
+    "hi",
+    "hello",
+    "hey",
+    "bonjour",
+    "bonsoir",
+    "salut",
+    "merci",
+    "merci beaucoup",
+    "thanks",
+    "thank you",
+    "ok",
+    "okay",
+    "daccord",
+    "d accord",
+    "au revoir",
+    "bye",
+    "goodbye",
+}
+
+CONVERSATIONAL_PREFIXES = (
+    "bonjour ",
+    "bonsoir ",
+    "salut ",
+    "merci ",
+    "thanks ",
+    "thank you ",
+    "au revoir ",
+)
+
+GROUNDING_MARKERS = {
+    "insomea",
+    "microsoft 365",
+    "outlook",
+    "teams",
+    "onedrive",
+    "azure",
+    "vpn",
+    "password",
+    "mot de passe",
+    "politique",
+    "procedure",
+    "procédure",
+    "service",
+    "support",
+    "company",
+    "entreprise",
+}
 
 
 def get_db():
@@ -186,6 +237,53 @@ def unique_prompt_lines(lines: list[str]) -> list[str]:
     return result
 
 
+def normalize_user_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value or "")
+    without_marks = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    return re.sub(r"\s+", " ", re.sub(r"[^\w\s]+", " ", without_marks.lower())).strip()
+
+
+def is_conversational_input(message: str) -> bool:
+    normalized = normalize_user_text(message)
+    if not normalized:
+        return False
+    if normalized in CONVERSATIONAL_INPUTS:
+        return True
+    if any(normalized.startswith(prefix) for prefix in CONVERSATIONAL_PREFIXES):
+        return len(normalized.split()) <= 5
+    return False
+
+
+def requires_grounded_answer(message: str) -> bool:
+    normalized = normalize_user_text(message)
+    if not normalized or is_conversational_input(message):
+        return False
+    if "?" in (message or ""):
+        return True
+    if any(marker in normalized for marker in GROUNDING_MARKERS):
+        return True
+    question_starters = (
+        "what ",
+        "how ",
+        "why ",
+        "when ",
+        "where ",
+        "who ",
+        "which ",
+        "comment ",
+        "pourquoi ",
+        "quand ",
+        "ou ",
+        "où ",
+        "qui ",
+        "quel ",
+        "quelle ",
+        "quels ",
+        "quelles ",
+    )
+    return normalized.startswith(question_starters)
+
+
 def prompt_variables(variables: dict) -> dict:
     excluded = {
         "__knowledge_search_sources",
@@ -269,13 +367,12 @@ def merge_node_rag_settings(rag_settings: dict, node_config: dict | None) -> dic
         settings["strict_context"] = False
         settings["show_sources"] = False
 
-    global_strict_context = bool(settings.get("strict_context"))
-    node_strict_context = global_strict_context
+    node_strict_context = bool(settings.get("strict_context"))
     if "answer_only_from_documents" in node_config:
         node_strict_context = _bool_setting(node_config.get("answer_only_from_documents"), node_strict_context)
     if "strict_context" in node_config:
         node_strict_context = _bool_setting(node_config.get("strict_context"), node_strict_context)
-    settings["strict_context"] = bool(global_strict_context or node_strict_context)
+    settings["strict_context"] = bool(node_strict_context)
     if not settings["use_knowledge_base"]:
         settings["strict_context"] = False
     if "show_sources" in node_config:
@@ -311,8 +408,9 @@ def prepare_rag_generation(
         normalize_rag_settings(chatbot.rag_settings if chatbot else None),
         node_config
     )
+    conversational_input = is_conversational_input(message)
     retrieval_started_at = time.perf_counter()
-    if rag_settings.get("use_knowledge_base", True):
+    if rag_settings.get("use_knowledge_base", True) and not conversational_input:
         retrieval = retrieve_relevant_chunks_with_mode(
             db=db,
             version_id=version.id,
@@ -333,7 +431,7 @@ def prepare_rag_generation(
         )
 
     context = "\n\n".join(context_blocks)
-    system_prompt = config.system_prompt or "You are a helpful assistant"
+    system_prompt = effective_system_prompt(config)
     language_instruction = chatbot_language_instruction(chatbot.language if chatbot else None)
     vars_value = variables or {}
     history_text = format_history(history or [])
@@ -342,15 +440,19 @@ def prepare_rag_generation(
     previous_answer = vars_value.get("__last_ai_answer", "")
     feedback = vars_value.get("__feedback", "")
     missing_context_instruction = (
-        "If the knowledge context does not contain the answer, say that the available knowledge base does not contain enough information."
-        if rag_settings["strict_context"]
-        else "If the knowledge context is weak or missing, answer from general knowledge and clearly say that the answer is not confirmed by the uploaded documents."
+        "This is a conversational greeting, acknowledgement, thanks, or farewell. Respond naturally and briefly without using document context or inventing company facts."
+        if conversational_input
+        else (
+            "If the knowledge context does not contain the answer, say that the available knowledge base does not contain enough information."
+            if rag_settings["strict_context"]
+            else "If the knowledge context is weak or missing, answer from general knowledge and clearly say that the answer is not confirmed by the uploaded documents."
+        )
     )
     response_profile = response_profile_for(rag_settings["response_length"])
     instructions = unique_prompt_lines([
         system_prompt,
         language_instruction,
-        "Use the knowledge context to answer the user directly.",
+        "Use the knowledge context to answer the user directly." if not conversational_input else "Answer the conversational message directly.",
         rag_settings.get("instructions") or "",
         response_profile["instruction"],
         "Use the conversation history and variables only as background context.",
@@ -393,7 +495,15 @@ User question:
         for chunk, document, score in retrieved_chunks
     ] if rag_settings["show_sources"] else []
 
-    fallback_response = rag_settings.get("fallback") if not retrieved_chunks and rag_settings.get("strict_context") else ""
+    should_use_fallback = (
+        not retrieved_chunks
+        and not conversational_input
+        and (
+            rag_settings.get("strict_context")
+            or (rag_settings.get("use_knowledge_base", True) and requires_grounded_answer(message))
+        )
+    )
+    fallback_response = rag_settings.get("fallback") if should_use_fallback else ""
     if fallback_response and chatbot:
         fallback_response = localize_text(fallback_response, chatbot.language)
 

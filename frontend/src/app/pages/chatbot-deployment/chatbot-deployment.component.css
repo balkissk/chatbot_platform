@@ -39,29 +39,6 @@
   min-width: 0;
 }
 
-.breadcrumb {
-  align-items: center;
-  color: var(--deploy-faint);
-  display: flex;
-  flex-wrap: wrap;
-  font-size: 12px;
-  font-weight: 750;
-  gap: 7px;
-}
-
-.breadcrumb a {
-  color: var(--deploy-muted);
-  text-decoration: none;
-}
-
-.breadcrumb a:hover {
-  color: var(--deploy-blue);
-}
-
-.breadcrumb strong {
-  color: var(--deploy-ink);
-}
-
 .eyebrow,
 .technical-label {
   color: var(--deploy-teal-hover);

@@ -16,7 +16,6 @@ describe('TemplateSelectionComponent', () => {
       customer_support: [
         { key: 'customer_support_basic', name: 'Customer Support Basic', description: 'Basic support flow.' },
         { key: 'customer_support_rag', name: 'Customer Support + RAG', description: 'Support flow with knowledge.' },
-        { key: 'customer_support_handoff', name: 'Customer Support + Human Handoff', description: 'Support flow with handoff.' },
         { key: 'customer_support_ticket_creation', name: 'Customer Support + Ticket Creation', description: 'Support flow with ticket intake.' }
       ],
       lead_generation: [
@@ -85,7 +84,6 @@ describe('TemplateSelectionComponent', () => {
     expect(component.templates().map(template => template.key)).toEqual([
       'customer_support_basic',
       'customer_support_rag',
-      'customer_support_handoff',
       'customer_support_ticket_creation'
     ]);
   });

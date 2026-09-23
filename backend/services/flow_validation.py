@@ -428,19 +428,6 @@ def validate_flow_version(db: Session, version_id: int) -> dict:
                 node=node,
             ))
 
-        if node.type == "handoff":
-            email_field = str(config.get("email_field") or "").strip()
-            phone_field = str(config.get("phone_field") or "").strip()
-            collect_missing = bool(config.get("collect_email_if_missing") or config.get("collect_phone_if_missing"))
-            team_method = str(config.get("department") or config.get("team") or "").strip()
-            if not email_field and not phone_field and not collect_missing and not team_method:
-                validation_errors.append(_error(
-                    "HANDOFF_CONTACT_MISSING",
-                    f"Choose at least one contact method for handoff block '{_node_name(node)}'.",
-                    "Configure an email field, phone field, collection prompt, team, or department.",
-                    node=node,
-                ))
-
         if node.type == "ai_router":
             if not _string_items(config.get("routes")):
                 validation_errors.append(_error(

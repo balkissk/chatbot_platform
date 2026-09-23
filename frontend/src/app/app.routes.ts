@@ -34,6 +34,24 @@ export const routes: Routes = [
         .then(m => m.PrivacyPolicyComponent)
   },
   {
+    path: 'documentation',
+    loadComponent: () =>
+      import('./pages/documentation/documentation.component')
+        .then(m => m.DocumentationComponent)
+  },
+  {
+    path: 'terms',
+    loadComponent: () =>
+      import('./pages/terms/terms.component')
+        .then(m => m.TermsComponent)
+  },
+  {
+    path: 'data-deletion',
+    loadComponent: () =>
+      import('./pages/data-deletion/data-deletion.component')
+        .then(m => m.DataDeletionComponent)
+  },
+  {
     path: 'dashboard',
     canActivate: [authGuard, roleGuard],
     data: { roles: ['admin', 'manager'] },
@@ -50,12 +68,16 @@ export const routes: Routes = [
       },
       {
         path: 'template-qa',
+        canActivate: [roleGuard],
+        data: { roles: ['manager'], redirectTo: '/admin/dashboard' },
         loadComponent: () =>
           import('./pages/template-qa/template-qa.component')
             .then(m => m.TemplateQaComponent)
       },
       {
         path: 'template-qa/:templateKey',
+        canActivate: [roleGuard],
+        data: { roles: ['manager'], redirectTo: '/admin/dashboard' },
         loadComponent: () =>
           import('./pages/template-qa/template-qa.component')
             .then(m => m.TemplateQaComponent)

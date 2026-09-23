@@ -106,12 +106,12 @@ def upsert_assistant(db: Session, project: Project, name: str, mode: str, publis
         add_edge(db, flow, "start", "ask")
         add_edge(db, flow, "ask", "done")
     elif mode == "hybrid":
-        add_node(db, flow, "route", "buttons", "Route", {"text": "Choose a path.", "buttons": ["AI", "Handoff"], "field": "path"}, 340, 120)
+        add_node(db, flow, "route", "buttons", "Route", {"text": "Choose a path.", "buttons": ["AI", "Support"], "field": "path"}, 340, 120)
         add_node(db, flow, "answer", "rag_answer", "AI Answer", {"prompt": "Answer directly.", "fallback": "No answer.", "use_knowledge_base": False, "continue_rag": True}, 600, 60)
-        add_node(db, flow, "handoff", "handoff", "Handoff", {"department": "Support", "collect_email_if_missing": True}, 600, 220)
+        add_node(db, flow, "support_end", "end", "Support Intake", {"message": "Your support request details are saved."}, 600, 220)
         add_edge(db, flow, "start", "route")
         add_edge(db, flow, "route", "answer", "AI")
-        add_edge(db, flow, "route", "handoff", "Handoff")
+        add_edge(db, flow, "route", "support_end", "Support")
     elif mode == "rag":
         add_node(db, flow, "answer", "rag_answer", "RAG Answer", {"prompt": "Answer from knowledge.", "fallback": "No matching knowledge.", "use_knowledge_base": True, "show_sources": True, "continue_rag": True}, 340, 120)
         add_edge(db, flow, "start", "answer")
@@ -170,12 +170,11 @@ def upsert_customer_support_evaluations(db: Session, project: Project) -> None:
             "tags": ["risk", "refund"],
         },
         {
-            "name": "Human escalation",
-            "input_message": "I want to speak to a human.",
-            "expected_handoff": True,
-            "expected_flow_node_ids": ["handoff"],
+            "name": "Support route",
+            "input_message": "I need support with this issue.",
+            "expected_flow_node_ids": ["support_end"],
             "critical": True,
-            "tags": ["handoff"],
+            "tags": ["support"],
         },
         {
             "name": "Unknown product",

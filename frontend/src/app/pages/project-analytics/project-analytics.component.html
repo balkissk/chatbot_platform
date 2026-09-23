@@ -1,9 +1,7 @@
 <section class="analytics-page">
   <header class="analytics-header">
     <div>
-      <p class="eyebrow">{{ analytics()?.project?.name || ('Project ' + projectId) }}</p>
       <h2>Project Analytics</h2>
-      <p>Monitor real conversation volume, runtime reliability, channel usage, and recent failures.</p>
     </div>
     <div class="actions">
       <button class="secondary" type="button" (click)="load()" [disabled]="loading()">

@@ -22,7 +22,7 @@ export const roleGuard: CanActivateFn = route => {
   return auth.loadCurrentUser().pipe(
     map(user => roles.includes(user.role)
       ? true
-      : router.createUrlTree([auth.homeForRole(user.role)])
+      : router.createUrlTree([route.data?.['redirectTo'] || auth.homeForRole(user.role)])
     ),
     catchError(() => of(router.createUrlTree(['/login'])))
   );

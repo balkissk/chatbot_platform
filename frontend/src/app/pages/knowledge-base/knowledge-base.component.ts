@@ -31,6 +31,8 @@ export class KnowledgeBaseComponent implements OnInit, OnDestroy {
   settingsExpanded = signal(false);
   playgroundExpanded = signal(false);
   openDocumentMenuId = signal<number | undefined>(undefined);
+  openDocumentMenu = signal<any | null>(null);
+  documentMenuPosition = signal({ top: 0, left: 0 });
   expandedChunkIds = signal<number[]>([]);
   ragSettings = signal<any>({
     retrieval_mode: 'auto',
@@ -50,8 +52,6 @@ export class KnowledgeBaseComponent implements OnInit, OnDestroy {
   settingsLoading = signal(false);
   reprocessId = signal<number | undefined>(undefined);
   reprocessChunksId = signal<number | undefined>(undefined);
-  editingDocumentId = signal<number | undefined>(undefined);
-  savingDocumentId = signal<number | undefined>(undefined);
   pendingConfirm = signal<{
     type: 'delete' | 'reprocess_chunks';
     document: any;
@@ -65,13 +65,14 @@ export class KnowledgeBaseComponent implements OnInit, OnDestroy {
   } | null>(null);
   error = signal('');
   message = signal('');
-  documentEdit = {
-    filename: '',
-    content_type: ''
-  };
 
   private isBrowser: boolean;
   private documentStatusPoll?: ReturnType<typeof setInterval>;
+  private documentMenuAnchor?: HTMLElement;
+  private readonly repositionDocumentMenu = () => {
+    if (!this.openDocumentMenu() || !this.documentMenuAnchor) return;
+    this.positionDocumentMenu(this.documentMenuAnchor);
+  };
 
   constructor(
     private route: ActivatedRoute,
@@ -87,11 +88,21 @@ export class KnowledgeBaseComponent implements OnInit, OnDestroy {
     this.projectId = Number(this.route.snapshot.paramMap.get('projectId'));
     this.chatbotId = Number(this.route.snapshot.paramMap.get('chatbotId'));
     if (!this.isBrowser) return;
+    document.addEventListener('scroll', this.repositionDocumentMenu, true);
     this.loadChatbot();
   }
 
   ngOnDestroy() {
     this.stopDocumentStatusPolling();
+    if (this.isBrowser) {
+      document.removeEventListener('scroll', this.repositionDocumentMenu, true);
+    }
+  }
+
+  private closeDocumentMenu() {
+    this.openDocumentMenuId.set(undefined);
+    this.openDocumentMenu.set(null);
+    this.documentMenuAnchor = undefined;
   }
 
   loadChatbot() {
@@ -259,12 +270,29 @@ export class KnowledgeBaseComponent implements OnInit, OnDestroy {
     const updated = documents.find(document => document.id === selected.id);
     if (updated) {
       this.selectedDocument.set(updated);
+      if (this.shouldReloadSelectedDocumentChunks(selected, updated)) {
+        this.openDocument(updated);
+      }
     } else if (documents.length) {
       this.openDocument(documents[0]);
     } else {
       this.selectedDocument.set(null);
       this.chunks.set([]);
     }
+  }
+
+  private shouldReloadSelectedDocumentChunks(previous: any, updated: any) {
+    if (this.chunksLoading()) return false;
+    if (previous?.id !== updated?.id) return false;
+    const previousStatus = this.lifecycleStatus(previous);
+    const updatedStatus = this.lifecycleStatus(updated);
+    const countsChanged = Number(previous?.chunks_count || 0) !== Number(updated?.chunks_count || 0)
+      || Number(previous?.embeddings_count || 0) !== Number(updated?.embeddings_count || 0)
+      || Number(previous?.failed_embeddings_count || 0) !== Number(updated?.failed_embeddings_count || 0)
+      || Number(previous?.pending_embeddings_count || 0) !== Number(updated?.pending_embeddings_count || 0);
+    const completedProcessing = this.isProcessing(previous) && !this.isProcessing(updated);
+    const selectedChunksAreStale = this.chunks().length === 0 && Number(updated?.chunks_count || 0) > 0;
+    return countsChanged || completedProcessing || selectedChunksAreStale || previousStatus !== updatedStatus;
   }
 
   private updateDocumentStatusPolling() {
@@ -290,7 +318,7 @@ export class KnowledgeBaseComponent implements OnInit, OnDestroy {
   openDocument(document: any) {
     const documentId = document.id;
     this.selectedDocument.set(document);
-    this.openDocumentMenuId.set(undefined);
+    this.closeDocumentMenu();
     this.expandedChunkIds.set([]);
     this.chunkPage.set(1);
     this.chunks.set([]);
@@ -342,53 +370,8 @@ export class KnowledgeBaseComponent implements OnInit, OnDestroy {
     this.replaceDocument(updated);
   }
 
-  startDocumentEdit(document: any) {
-    this.openDocumentMenuId.set(undefined);
-    this.editingDocumentId.set(document.id);
-    this.documentEdit = {
-      filename: document.filename || '',
-      content_type: document.content_type || ''
-    };
-    this.error.set('');
-    this.message.set('');
-  }
-
-  cancelDocumentEdit() {
-    this.editingDocumentId.set(undefined);
-  }
-
-  saveDocument(document: any) {
-    const filename = this.documentEdit.filename.trim();
-    if (!filename) {
-      this.error.set('Document filename is required');
-      return;
-    }
-
-    this.savingDocumentId.set(document.id);
-    this.error.set('');
-    this.message.set('');
-    this.api.updateDocument(document.id, {
-      filename,
-      content_type: this.documentEdit.content_type.trim() || document.content_type
-    }).subscribe({
-      next: updated => {
-        this.documents.update(documents => documents.map(item => item.id === updated.id ? updated : item));
-        if (this.selectedDocument()?.id === updated.id) {
-          this.selectedDocument.set(updated);
-        }
-        this.savingDocumentId.set(undefined);
-        this.editingDocumentId.set(undefined);
-        this.message.set('Document updated');
-      },
-      error: err => {
-        this.error.set(err.error?.detail || 'Could not update document');
-        this.savingDocumentId.set(undefined);
-      }
-    });
-  }
-
   deleteDocument(document: any) {
-    this.openDocumentMenuId.set(undefined);
+    this.closeDocumentMenu();
     this.pendingConfirm.set({
       type: 'delete',
       document,
@@ -450,7 +433,7 @@ export class KnowledgeBaseComponent implements OnInit, OnDestroy {
   }
 
   reprocessChunks(document: any) {
-    this.openDocumentMenuId.set(undefined);
+    this.closeDocumentMenu();
     this.pendingConfirm.set({
       type: 'reprocess_chunks',
       document,
@@ -531,12 +514,17 @@ export class KnowledgeBaseComponent implements OnInit, OnDestroy {
   onEscape() {
     this.closeDuplicateModal();
     this.cancelPendingConfirm();
-    this.openDocumentMenuId.set(undefined);
+    this.closeDocumentMenu();
   }
 
   @HostListener('document:click')
   onDocumentClick() {
-    this.openDocumentMenuId.set(undefined);
+    this.closeDocumentMenu();
+  }
+
+  @HostListener('window:resize')
+  onViewportChange() {
+    this.repositionDocumentMenu();
   }
 
   testRetrieval() {
@@ -576,17 +564,78 @@ export class KnowledgeBaseComponent implements OnInit, OnDestroy {
     return this.documents().filter(document => String(document.filename || '').toLowerCase().includes(query));
   }
 
-  toggleDocumentMenu(document: any, event: Event) {
+  toggleDocumentMenu(document: any, event: MouseEvent) {
     event.stopPropagation();
-    this.openDocumentMenuId.set(this.openDocumentMenuId() === document.id ? undefined : document.id);
+    if (!this.isBrowser) return;
+    if (this.openDocumentMenuId() === document.id) {
+      this.closeDocumentMenu();
+      return;
+    }
+    this.openDocumentMenuId.set(document.id);
+    this.openDocumentMenu.set(document);
+    this.documentMenuAnchor = event.currentTarget as HTMLElement;
+    this.positionDocumentMenu(this.documentMenuAnchor);
+    requestAnimationFrame(this.repositionDocumentMenu);
   }
 
   menuIsOpen(document: any) {
     return this.openDocumentMenuId() === document.id;
   }
 
-  viewDocument(document: any) {
-    this.openDocument(document);
+  private positionDocumentMenu(anchor: HTMLElement) {
+    if (!anchor.isConnected) {
+      this.closeDocumentMenu();
+      return;
+    }
+    const rect = anchor.getBoundingClientRect();
+    if (
+      rect.bottom < 0 ||
+      rect.top > window.innerHeight ||
+      rect.right < 0 ||
+      rect.left > window.innerWidth
+    ) {
+      this.closeDocumentMenu();
+      return;
+    }
+    const menu = document.getElementById('document-actions-menu');
+    const margin = 12;
+    const gap = 8;
+    const menuWidth = Math.min(menu?.offsetWidth || 190, window.innerWidth - (margin * 2));
+    const menuHeight = Math.min(menu?.offsetHeight || 128, window.innerHeight - (margin * 2));
+    const opensDown = rect.bottom + gap + menuHeight <= window.innerHeight - margin;
+    const viewportTop = opensDown
+      ? rect.bottom + gap
+      : Math.max(margin, rect.top - gap - menuHeight);
+    const maxLeft = Math.max(margin, window.innerWidth - menuWidth - margin);
+    const viewportLeft = Math.min(Math.max(margin, rect.right - menuWidth), maxLeft);
+    const containingRect = this.fixedContainingBlockRect(menu);
+    const top = viewportTop - containingRect.top;
+    const left = viewportLeft - containingRect.left;
+    this.documentMenuPosition.set({ top, left });
+  }
+
+  private fixedContainingBlockRect(menu: HTMLElement | null) {
+    if (!menu) return { top: 0, left: 0 };
+    let parent = menu.parentElement;
+    while (parent && parent !== document.body && parent !== document.documentElement) {
+      const style = getComputedStyle(parent);
+      const hasFixedContainingBlock =
+        style.transform !== 'none' ||
+        style.perspective !== 'none' ||
+        style.filter !== 'none' ||
+        style.backdropFilter !== 'none' ||
+        style.contain.includes('paint') ||
+        style.contain.includes('layout') ||
+        style.willChange.includes('transform') ||
+        style.willChange.includes('perspective') ||
+        style.willChange.includes('filter');
+      if (hasFixedContainingBlock) {
+        const rect = parent.getBoundingClientRect();
+        return { top: rect.top, left: rect.left };
+      }
+      parent = parent.parentElement;
+    }
+    return { top: 0, left: 0 };
   }
 
   statusLabel(document: any) {
@@ -622,7 +671,7 @@ export class KnowledgeBaseComponent implements OnInit, OnDestroy {
 
   managerStatusDetail() {
     const documents = this.documents();
-    if (!documents.length) return 'Upload source documents to make knowledge available.';
+    if (!documents.length) return '';
     if (documents.some(document => ['failed', 'partially_ready'].includes(this.lifecycleStatus(document)))) {
       return 'One or more documents need review.';
     }
@@ -689,6 +738,9 @@ export class KnowledgeBaseComponent implements OnInit, OnDestroy {
   selectedDocumentCounts() {
     const document = this.selectedDocument();
     if (!document) return { total: 0, ready: 0, failed: 0, pending: 0 };
+    if (!this.chunks().length && Number(document.chunks_count || 0) > 0) {
+      return this.documentCounts(document);
+    }
     return this.countsFromChunks(this.chunks());
   }
 

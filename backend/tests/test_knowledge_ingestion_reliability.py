@@ -1,4 +1,6 @@
 import unittest
+import base64
+from io import BytesIO
 from unittest.mock import MagicMock, patch
 
 from fastapi import BackgroundTasks, HTTPException
@@ -15,12 +17,53 @@ from models.user import User
 from models.version import VersionChatbot
 from routes import knowledge_routes
 from routes.knowledge_routes import (
+    document_response,
     ingest_document,
     reprocess_document_chunks,
     reprocess_document_embeddings,
+    process_document_background,
     sync_document_status,
 )
 from services import embeddings, rag
+from services.document_ingestion import DocumentExtractionError, extract_document_text
+
+
+def minimal_text_pdf(pages: list[str]) -> bytes:
+    objects: list[bytes] = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+    ]
+    page_refs = " ".join(f"{4 + index * 2} 0 R" for index in range(len(pages)))
+    objects.append(f"<< /Type /Pages /Kids [{page_refs}] /Count {len(pages)} >>".encode("ascii"))
+    objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+
+    for index, text in enumerate(pages):
+        page_object_id = 4 + index * 2
+        content_object_id = page_object_id + 1
+        escaped = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+        stream = f"BT /F1 12 Tf 72 720 Td ({escaped}) Tj ET".encode("latin-1")
+        objects.append(
+            f"<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 3 0 R >> >> /MediaBox [0 0 612 792] /Contents {content_object_id} 0 R >>".encode("ascii")
+        )
+        objects.append(
+            b"<< /Length " + str(len(stream)).encode("ascii") + b" >>\nstream\n" + stream + b"\nendstream"
+        )
+
+    pdf = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+    offsets = [0]
+    for object_id, body in enumerate(objects, start=1):
+        offsets.append(len(pdf))
+        pdf.extend(f"{object_id} 0 obj\n".encode("ascii"))
+        pdf.extend(body)
+        pdf.extend(b"\nendobj\n")
+    xref_offset = len(pdf)
+    pdf.extend(f"xref\n0 {len(objects) + 1}\n".encode("ascii"))
+    pdf.extend(b"0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        pdf.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+    pdf.extend(
+        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n".encode("ascii")
+    )
+    return bytes(pdf)
 
 
 class KnowledgeIngestionReliabilityTest(unittest.TestCase):
@@ -77,6 +120,122 @@ class KnowledgeIngestionReliabilityTest(unittest.TestCase):
         self.assertEqual(counts["ready"], 2)
         self.assertEqual(document.status, "ready")
         self.assertIsNone(document.error_message)
+
+    def test_processed_document_with_zero_chunks_is_reported_failed(self):
+        document = self.add_document(status="processed", raw_text="")
+
+        response = document_response(self.db, document)
+
+        self.assertEqual(response.status, "failed")
+        self.assertEqual(response.chunks_count, 0)
+        self.assertIn("no searchable chunks", response.error_message.lower())
+
+    def test_text_document_extraction_is_unchanged(self):
+        text, size_bytes = extract_document_text(
+            filename="doc.txt",
+            content_type="text/plain",
+            content="alpha beta gamma",
+        )
+
+        self.assertEqual(text, "alpha beta gamma")
+        self.assertEqual(size_bytes, len("alpha beta gamma".encode("utf-8")))
+
+    def test_text_pdf_extracts_all_pages(self):
+        pdf_bytes = minimal_text_pdf([
+            "alpha policy page one",
+            "beta warranty page two",
+        ])
+        text, size_bytes = extract_document_text(
+            filename="manual.pdf",
+            content_type="application/pdf",
+            content=base64.b64encode(pdf_bytes).decode("ascii"),
+            content_encoding="base64",
+        )
+
+        self.assertEqual(size_bytes, len(pdf_bytes))
+        self.assertIn("Page 1", text)
+        self.assertIn("alpha policy page one", text)
+        self.assertIn("Page 2", text)
+        self.assertIn("beta warranty page two", text)
+
+    def test_text_pdf_processing_creates_ready_chunks(self):
+        pdf_bytes = minimal_text_pdf([
+            "alpha policy page one",
+            "beta warranty page two",
+        ])
+        document = Document(
+            knowledge_base_id=self.kb.id,
+            filename="manual.pdf",
+            content_type="application/pdf",
+            storage_url="local://manual.pdf",
+            status="uploaded",
+            chunks_count=0,
+        )
+        self.db.add(document)
+        self.db.commit()
+        self.db.refresh(document)
+
+        class SessionProxy:
+            def __getattr__(self, name):
+                return getattr(self.db, name)
+
+            def __init__(self, db):
+                self.db = db
+
+            def close(self):
+                pass
+
+        def fake_embed(chunks):
+            for chunk in chunks:
+                chunk.embedding_status = "ready"
+                chunk.embedding = [0.1]
+
+        with patch.object(knowledge_routes, "SessionLocal", return_value=SessionProxy(self.db)), \
+             patch.object(knowledge_routes, "embed_chunks", side_effect=fake_embed):
+            process_document_background(
+                document.id,
+                document.filename,
+                document.content_type,
+                base64.b64encode(pdf_bytes).decode("ascii"),
+                "base64",
+            )
+
+        self.db.refresh(document)
+        chunks = self.db.query(Chunk).filter(Chunk.document_id == document.id).all()
+        self.assertGreater(len(chunks), 0)
+        self.assertEqual(document.status, "ready")
+        self.assertEqual(document.chunks_count, len(chunks))
+        self.assertTrue(all(chunk.embedding_status == "ready" for chunk in chunks))
+        self.assertIn("beta warranty page two", document.raw_text)
+
+    def test_empty_pdf_fails_without_ready_status(self):
+        from pypdf import PdfWriter
+
+        writer = PdfWriter()
+        writer.add_blank_page(width=612, height=792)
+        buffer = BytesIO()
+        writer.write(buffer)
+
+        with self.assertRaises(DocumentExtractionError) as error:
+            extract_document_text(
+                filename="empty.pdf",
+                content_type="application/pdf",
+                content=base64.b64encode(buffer.getvalue()).decode("ascii"),
+                content_encoding="base64",
+            )
+
+        self.assertIn("no extractable text", str(error.exception).lower())
+
+    def test_corrupted_pdf_fails_without_traceback_message(self):
+        with self.assertRaises(DocumentExtractionError) as error:
+            extract_document_text(
+                filename="broken.pdf",
+                content_type="application/pdf",
+                content=base64.b64encode(b"not a real pdf").decode("ascii"),
+                content_encoding="base64",
+            )
+
+        self.assertEqual(str(error.exception), "Could not extract readable text from PDF")
 
     def test_partial_failures_preserve_successful_chunks_and_mark_partially_ready(self):
         document = self.add_document()

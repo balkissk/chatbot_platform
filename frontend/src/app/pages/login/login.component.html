@@ -1,79 +1,88 @@
 <main class="auth-page">
-  <section class="auth-panel" aria-labelledby="login-title">
-    <header class="auth-header">
-      <a class="auth-brand" routerLink="/" aria-label="ChatBot Factory home">
-        <img src="/chatbot-factory-logo-cropped.png" alt="" width="194" height="246" decoding="async" fetchpriority="high">
-        <span class="auth-brand-text" aria-hidden="true">
-          <span class="auth-brand-chatbot">ChatBot</span>
-          <span class="auth-brand-factory">Factory</span>
-        </span>
-      </a>
-      <p class="eyebrow">WELCOME BACK</p>
-      <h1 id="login-title">Sign in to ChatBot Factory</h1>
-      <p class="subtitle">Continue building, testing and publishing your chatbot projects.</p>
-    </header>
+  <section class="auth-card" aria-labelledby="login-title">
+    <div class="auth-visual" aria-label="ChatBot Factory assistant illustration">
+      <img
+        src="/assets/images/chatbot-login-illustration.png"
+        alt="ChatBot Factory assistant illustration"
+        decoding="async"
+        fetchpriority="high">
+    </div>
 
-    <form #loginForm="ngForm" (ngSubmit)="login()" class="auth-form" novalidate>
-      <div class="field">
-        <label for="login-email">Email</label>
-        <input
-          id="login-email"
-          #emailField="ngModel"
-          [(ngModel)]="email"
-          name="email"
-          type="email"
-          email
-          autocomplete="email"
-          required
-          [attr.aria-invalid]="(emailField.invalid && (emailField.touched || submitted() || loginForm.submitted)) ? 'true' : null"
-          [attr.aria-describedby]="(emailField.invalid && (emailField.touched || submitted() || loginForm.submitted)) ? 'login-email-error' : null">
-        <p *ngIf="emailField.invalid && (emailField.touched || submitted() || loginForm.submitted)" id="login-email-error" class="field-error">Enter your email address.</p>
-      </div>
+    <div class="auth-panel">
+      <header class="auth-header">
+        <a class="auth-brand" routerLink="/" aria-label="ChatBot Factory home">
+          <img src="/chatbot-factory-logo-cropped.png" alt="" width="194" height="246" decoding="async" fetchpriority="high">
+          <span class="auth-brand-text" aria-hidden="true">
+            <span class="auth-brand-chatbot">ChatBot</span>
+            <span class="auth-brand-factory">Factory</span>
+          </span>
+        </a>
+        <p class="eyebrow">WELCOME BACK</p>
+        <h1 id="login-title">Sign in to ChatBot Factory</h1>
+      </header>
 
-      <div class="field">
-        <div class="label-row">
-          <label for="login-password">Password</label>
-          <a class="forgot-password-link" routerLink="/forgot-password">
-            <svg lucideKeyRound size="14" aria-hidden="true"></svg>
-            <span>Forgot password?</span>
-          </a>
-        </div>
-        <div class="password-control">
+      <form #loginForm="ngForm" (ngSubmit)="login()" class="auth-form" novalidate>
+        <div class="field">
+          <label for="login-email">Email</label>
           <input
-            id="login-password"
-            #passwordField="ngModel"
-            [(ngModel)]="password"
-            name="password"
-            [type]="showPassword() ? 'text' : 'password'"
-            autocomplete="current-password"
+            id="login-email"
+            #emailField="ngModel"
+            [(ngModel)]="email"
+            name="email"
+            type="email"
+            email
+            autocomplete="email"
             required
-            [attr.aria-invalid]="(passwordField.invalid && (passwordField.touched || submitted() || loginForm.submitted)) ? 'true' : null"
-            [attr.aria-describedby]="(passwordField.invalid && (passwordField.touched || submitted() || loginForm.submitted)) ? 'login-password-error' : null">
-          <button
-            class="password-toggle"
-            type="button"
-            [attr.aria-label]="showPassword() ? 'Hide password' : 'Show password'"
-            [attr.title]="showPassword() ? 'Hide password' : 'Show password'"
-            (click)="togglePasswordVisibility()">
-            <svg *ngIf="!showPassword()" lucideEye size="18" aria-hidden="true"></svg>
-            <svg *ngIf="showPassword()" lucideEyeOff size="18" aria-hidden="true"></svg>
-          </button>
+            [attr.aria-invalid]="(emailField.invalid && (emailField.touched || submitted() || loginForm.submitted)) ? 'true' : null"
+            [attr.aria-describedby]="(emailField.invalid && (emailField.touched || submitted() || loginForm.submitted)) ? 'login-email-error' : null">
+          <p *ngIf="emailField.invalid && (emailField.touched || submitted() || loginForm.submitted)" id="login-email-error" class="field-error">Enter your email address.</p>
         </div>
-        <p *ngIf="passwordField.invalid && (passwordField.touched || submitted() || loginForm.submitted)" id="login-password-error" class="field-error">Enter your password.</p>
-      </div>
 
-      <p *ngIf="error()" class="auth-alert error" role="alert">{{ error() }}</p>
-      <p *ngIf="message()" class="auth-alert success" role="status">{{ message() }}</p>
+        <div class="field">
+          <div class="label-row">
+            <label for="login-password">Password</label>
+            <a class="forgot-password-link" routerLink="/forgot-password">
+              <svg lucideKeyRound size="14" aria-hidden="true"></svg>
+              <span>Forgot password?</span>
+            </a>
+          </div>
+          <div class="password-control">
+            <input
+              id="login-password"
+              #passwordField="ngModel"
+              [(ngModel)]="password"
+              name="password"
+              [type]="showPassword() ? 'text' : 'password'"
+              autocomplete="current-password"
+              required
+              [attr.aria-invalid]="(passwordField.invalid && (passwordField.touched || submitted() || loginForm.submitted)) ? 'true' : null"
+              [attr.aria-describedby]="(passwordField.invalid && (passwordField.touched || submitted() || loginForm.submitted)) ? 'login-password-error' : null">
+            <button
+              class="password-toggle"
+              type="button"
+              [attr.aria-label]="showPassword() ? 'Hide password' : 'Show password'"
+              [attr.title]="showPassword() ? 'Hide password' : 'Show password'"
+              (click)="togglePasswordVisibility()">
+              <svg *ngIf="!showPassword()" lucideEye size="18" aria-hidden="true"></svg>
+              <svg *ngIf="showPassword()" lucideEyeOff size="18" aria-hidden="true"></svg>
+            </button>
+          </div>
+          <p *ngIf="passwordField.invalid && (passwordField.touched || submitted() || loginForm.submitted)" id="login-password-error" class="field-error">Enter your password.</p>
+        </div>
 
-      <button class="auth-submit" type="submit" [disabled]="loading() || loginForm.invalid">
-        {{ loading() ? 'Signing in...' : 'Sign in' }}
-      </button>
+        <p *ngIf="error()" class="auth-alert error" role="alert">{{ error() }}</p>
+        <p *ngIf="message()" class="auth-alert success" role="status">{{ message() }}</p>
 
-    </form>
+        <button class="auth-submit" type="submit" [disabled]="loading() || loginForm.invalid">
+          {{ loading() ? 'Signing in...' : 'Sign in' }}
+        </button>
 
-    <p class="secure-note">
-      <svg lucideLockKeyhole size="15" aria-hidden="true"></svg>
-      Secure workspace access
-    </p>
+      </form>
+
+      <p class="secure-note">
+        <svg lucideLockKeyhole size="15" aria-hidden="true"></svg>
+        Secure workspace access
+      </p>
+    </div>
   </section>
 </main>

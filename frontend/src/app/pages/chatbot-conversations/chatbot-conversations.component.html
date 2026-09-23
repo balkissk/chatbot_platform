@@ -1,69 +1,64 @@
 <div class="page-header hero-header">
   <div>
-    <p class="eyebrow">Assistant {{ chatbotId }}</p>
     <h2>Conversation History</h2>
-    <p>Review customer sessions, inspect RAG evidence, identify gaps, and export transcripts.</p>
   </div>
   <div class="actions">
-    <button class="secondary" (click)="loadSessions()" [disabled]="loading()">
-      {{ loading() ? 'Refreshing...' : 'Refresh' }}
-    </button>
     <button class="secondary" (click)="exportConversationsCsv()" [disabled]="sessions().length === 0">
       Export CSV
     </button>
-    <button class="secondary" (click)="goBack()">Back</button>
+    <button class="secondary compact-button" (click)="loadSessions()" [disabled]="loading()">
+      {{ loading() ? '...' : 'Refresh' }}
+    </button>
   </div>
 </div>
 
 <section class="filters-panel">
   <label class="wide">
     Search
-    <input [(ngModel)]="search" placeholder="Search message text or session ID">
+    <input [(ngModel)]="search" placeholder="Search conversations...">
   </label>
-  <label>
-    From
-    <input [(ngModel)]="dateFrom" type="date">
-  </label>
-  <label>
-    To
-    <input [(ngModel)]="dateTo" type="date">
-  </label>
-  <label>
-    Channel
-    <select [(ngModel)]="channel">
-      <option value="">All channels</option>
-      <option value="public">Public chat</option>
-      <option value="dashboard">Dashboard test</option>
-      <option value="widget">Widget</option>
-    </select>
-  </label>
-  <label>
-    Feedback
-    <select [(ngModel)]="feedback">
-      <option value="">All feedback</option>
-      <option value="positive">Helpful</option>
-      <option value="negative">Not helpful</option>
-      <option value="no_feedback">No feedback</option>
-    </select>
-  </label>
-  <label>
-    Response Type
-    <select [(ngModel)]="responseType">
-      <option value="">All types</option>
-      <option value="ai_rag">AI/RAG</option>
-      <option value="fallback">Fallback</option>
-      <option value="flow">Flow</option>
-    </select>
-  </label>
+  <div class="date-range">
+    <span>Date range</span>
+    <div>
+      <input [(ngModel)]="dateFrom" type="date" aria-label="Start date">
+      <input [(ngModel)]="dateTo" type="date" aria-label="End date">
+    </div>
+  </div>
+  <div class="filters-menu">
+    <button type="button" class="secondary" (click)="toggleFilters()" [attr.aria-expanded]="filtersOpen">
+      Filters<span *ngIf="advancedFilterCount()"> {{ advancedFilterCount() }}</span>
+    </button>
+    <div class="filters-popover" *ngIf="filtersOpen">
+      <label>
+        Channel
+        <select [(ngModel)]="channel">
+          <option value="">All channels</option>
+          <option value="public">Public chat</option>
+          <option value="dashboard">Dashboard test</option>
+          <option value="widget">Widget</option>
+        </select>
+      </label>
+      <label>
+        Response Type
+        <select [(ngModel)]="responseType">
+          <option value="">All types</option>
+          <option value="ai_rag">AI/RAG</option>
+          <option value="fallback">Fallback</option>
+          <option value="flow">Flow</option>
+        </select>
+      </label>
+    </div>
+  </div>
   <div class="filter-actions">
-    <button (click)="loadSessions()" [disabled]="loading()">Apply</button>
+    <button (click)="applyFilters()" [disabled]="loading()">Apply</button>
     <button class="secondary" (click)="clearFilters()">Clear</button>
   </div>
 </section>
 
 <p *ngIf="error()" class="error">{{ error() }}</p>
+<p *ngIf="message()" class="success">{{ message() }}</p>
 
-<section class="conversation-layout">
+<section class="conversation-layout" [class.detail-open]="selectedSession()">
   <article class="panel session-list">
     <div class="panel-header">
       <div>
@@ -71,7 +66,6 @@
         <h3>{{ sessions().length }} conversations</h3>
         <p class="list-context">{{ activeFilterSummary() }}</p>
       </div>
-      <span class="soft-badge">Manager view</span>
     </div>
 
     <ng-container *ngIf="loading()">
@@ -79,8 +73,8 @@
     </ng-container>
 
     <div *ngIf="!loading() && sessions().length === 0" class="empty-state">
-      <strong>{{ search || dateFrom || dateTo || channel || feedback || responseType ? 'No results found' : 'No conversations yet' }}</strong>
-      <p>{{ search || dateFrom || dateTo || channel || feedback || responseType ? 'Adjust filters to broaden the search.' : 'Conversations will appear here when users start chatting.' }}</p>
+      <strong>{{ hasActiveFilters() ? 'No results found' : 'No conversations yet' }}</strong>
+      <p>{{ hasActiveFilters() ? 'Adjust filters to broaden the search.' : 'Conversations will appear here when users start chatting.' }}</p>
     </div>
 
     <div *ngFor="let group of groupedSessions()" class="session-group">
@@ -94,15 +88,12 @@
         <div class="session-main">
           <div class="session-title">
             <strong>{{ conversationTitle(session) }}</strong>
-            <span class="session-status" [ngClass]="sessionStatusClass(session)">{{ sessionOperationalStatus(session) }}</span>
           </div>
           <p>{{ conversationPreview(session) }}</p>
           <div class="session-chips">
             <span>{{ session.message_count }} messages</span>
-            <span>{{ channelLabel(session.channel) }}</span>
-            <span>{{ responseLabel(session.response_type) }}</span>
+            <span>{{ followUpStatusLabel(session.follow_up_status) }}</span>
           </div>
-          <small class="session-id">Session #{{ session.id }}</small>
         </div>
         <div class="session-meta">
           <small>{{ session.updated_at | date:'MMM d' }}</small>
@@ -124,7 +115,7 @@
   <article class="panel detail-panel">
     <div *ngIf="!selectedSession() && !detailsLoading()" class="empty-state detail-empty">
       <strong>Select a conversation</strong>
-      <p>Open a session to review messages, timestamps, sources, response modes, and feedback.</p>
+      <p>Select a conversation to view its transcript.</p>
     </div>
 
     <div *ngIf="detailsLoading()" class="detail-loading">
@@ -137,20 +128,38 @@
       <div class="panel-header sticky">
         <div>
           <p class="eyebrow">{{ channelLabel(session.channel) }}</p>
-          <h3>Session #{{ session.id }}</h3>
+          <h3>{{ conversationTitle(session) }}</h3>
           <div class="detail-badges">
             <span class="badge">{{ session.message_count }} messages</span>
-            <span class="badge response">{{ responseLabel(session.response_type) }}</span>
-            <span class="badge" [class.negative]="session.feedback_status === 'negative'" [class.positive]="session.feedback_status === 'positive'">
-              {{ feedbackLabel(session.feedback_status) }}
-            </span>
+            <span class="badge">{{ followUpStatusLabel(session.follow_up_status) }}</span>
           </div>
-          <small>Created {{ session.created_at | date:'medium' }} - Last activity {{ session.updated_at | date:'medium' }}</small>
+          <small>Last activity {{ session.updated_at | date:'medium' }}</small>
+          <details class="technical-details">
+            <summary>Technical details</summary>
+            <dl>
+              <div>
+                <dt>Session</dt>
+                <dd>#{{ session.id }}</dd>
+              </div>
+              <div>
+                <dt>Channel</dt>
+                <dd>{{ channelLabel(session.channel) }}</dd>
+              </div>
+              <div>
+                <dt>Response type</dt>
+                <dd>{{ responseLabel(session.response_type) }}</dd>
+              </div>
+              <div>
+                <dt>Created</dt>
+                <dd>{{ session.created_at | date:'medium' }}</dd>
+              </div>
+            </dl>
+          </details>
         </div>
         <div class="detail-actions">
           <button class="secondary" (click)="exportSelected('txt')">Export TXT</button>
           <button class="secondary" (click)="exportSelected('json')">Export JSON</button>
-          <button class="secondary" (click)="closeDetails()">Close</button>
+          <button class="secondary detail-close" (click)="closeDetails()">Close</button>
         </div>
       </div>
 
@@ -168,8 +177,9 @@
             <p>{{ message.content }}</p>
 
             <div class="message-meta" *ngIf="message.role === 'bot'">
-              <span class="badge response">{{ responseLabel(message.response_mode) }}</span>
-              <span class="badge">{{ channelLabel(session.channel) }}</span>
+              <span class="badge response" *ngIf="message.response_mode && message.response_mode !== 'unknown'">
+                {{ responseLabel(message.response_mode) }}
+              </span>
             </div>
 
             <div class="sources-panel" *ngIf="message.sources?.length">
@@ -189,10 +199,9 @@
   </article>
 </section>
 
-<section class="panel unanswered-panel">
+<section class="panel unanswered-panel" *ngIf="unansweredLoading() || unansweredQuestions().length > 0">
   <div class="panel-header">
     <div>
-      <p class="eyebrow">Knowledge Gaps</p>
       <h3>Unanswered Questions</h3>
     </div>
     <button class="secondary" (click)="loadUnansweredQuestions()" [disabled]="unansweredLoading()">
@@ -204,18 +213,17 @@
     <div class="session-skeleton" *ngFor="let item of [1,2,3]"></div>
   </div>
 
-  <div *ngIf="!unansweredLoading() && unansweredQuestions().length === 0" class="empty-state compact">
-    <strong>No unanswered questions detected</strong>
-    <p>Fallback or low-confidence answers will be grouped here when they appear.</p>
-  </div>
-
   <div *ngIf="!unansweredLoading() && unansweredQuestions().length > 0" class="gap-grid">
     <button type="button" class="gap-card secondary" *ngFor="let item of unansweredQuestions()" (click)="openSessionById(item.session_id)">
       <strong>{{ item.question }}</strong>
       <div>
-        <span class="badge negative">{{ item.count }} times</span>
+        <span class="badge negative">{{ item.count }} {{ item.count === 1 ? 'occurrence' : 'occurrences' }}</span>
         <small>Last asked {{ item.last_asked_at | date:'medium' }}</small>
       </div>
     </button>
   </div>
 </section>
+
+<div *ngIf="!unansweredLoading() && unansweredQuestions().length === 0" class="gap-zero">
+  Knowledge gaps: 0
+</div>

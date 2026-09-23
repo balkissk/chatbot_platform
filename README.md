@@ -45,7 +45,6 @@ Deterministic assertions work without any extra AI model:
 - variable equals value or exists
 - maximum latency
 - expected fallback
-- expected handoff
 - expected runtime failure category
 - runtime completed without technical failure
 
@@ -93,7 +92,7 @@ When enabled, the pre-publish checklist requires a completed evaluation run for 
 2. Go to `Evaluations`.
 3. Create a dataset.
 4. Add cases with the expected answer/source/flow/runtime criteria you care about.
-5. For flow assistants, use **Suggested flow edge cases** to generate cases from buttons, collection blocks, handoff blocks and terminal paths.
+5. For flow assistants, use **Suggested flow edge cases** to generate cases from buttons, collection blocks and terminal paths.
 6. Select a version.
 7. Run the dataset.
 8. Inspect failed assertions, visual flow traces and compare against an older run when needed.
@@ -137,7 +136,7 @@ The Evaluation Center reads the selected version's flow and can:
 - show coverage by block
 - suggest button path cases
 - suggest invalid email and invalid phone cases
-- suggest handoff and terminal path cases
+- suggest terminal path cases
 - create multi-turn cases automatically
 - display run traces over the flow map with expected, actual, missing and forbidden blocks
 

@@ -1331,8 +1331,7 @@ textarea:focus {
 :host button.palette-block.type-lead-score,
 :host button.palette-block.type-set-variable,
 :host button.palette-block.type-meeting-scheduler,
-:host button.palette-block.type-api-request,
-:host button.palette-block.type-handoff {
+:host button.palette-block.type-api-request {
   background: #fff !important;
   border: 1px solid var(--border-default) !important;
   box-shadow: none !important;

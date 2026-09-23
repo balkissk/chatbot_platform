@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterModule } from '@angular/router';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { LucideEye, LucideEyeOff, LucideKeyRound, LucideLockKeyhole } from '@lucide/angular';
 import { AuthService } from '../../services/auth';
 
@@ -23,7 +23,8 @@ export class LoginComponent {
 
   constructor(
     private auth: AuthService,
-    private router: Router
+    private router: Router,
+    private route: ActivatedRoute
   ) {
     this.message.set(this.auth.consumeSessionMessage());
   }
@@ -42,7 +43,7 @@ export class LoginComponent {
       next: response => {
         this.auth.saveSession(response);
         this.loading.set(false);
-        void this.router.navigate([this.auth.homeForRole(response.user.role)]);
+        void this.navigateAfterLogin(response.user.role);
       },
       error: err => {
         this.error.set(err.error?.detail || 'Login failed');
@@ -53,5 +54,15 @@ export class LoginComponent {
 
   togglePasswordVisibility() {
     this.showPassword.update(show => !show);
+  }
+
+  private navigateAfterLogin(role: string) {
+    if (this.route.snapshot.queryParamMap.get('intent') === 'start-building') {
+      return this.router.navigate(['/dashboard/projects'], {
+        queryParams: { intent: 'start-building' }
+      });
+    }
+
+    return this.router.navigate([this.auth.homeForRole(role)]);
   }
 }

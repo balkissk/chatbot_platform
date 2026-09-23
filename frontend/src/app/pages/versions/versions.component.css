@@ -19,7 +19,6 @@
 .actions,
 .panel-header,
 .card-actions,
-.document-row,
 .identity-actions,
 .identity-meta,
 .confirm-actions {
@@ -213,11 +212,7 @@ button.danger {
 .manager-grid {
   display: grid;
   gap: 14px;
-  grid-template-columns: minmax(300px, 420px) minmax(0, 1fr);
-}
-
-.ai-panel {
-  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .panel {
@@ -351,38 +346,6 @@ textarea:focus {
   outline: 0;
 }
 
-.document-row,
-.mini-empty {
-  background: #fff;
-  border: 1px solid var(--border-soft);
-  border-radius: 13px;
-  padding: 11px;
-}
-
-.document-row {
-  display: grid;
-  gap: 12px;
-  grid-template-columns: minmax(0, 1fr) auto;
-  justify-content: stretch;
-  min-width: 0;
-}
-
-.document-row > div {
-  min-width: 0;
-}
-
-.document-row strong {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.document-row p {
-  line-height: 1.55;
-  margin: 6px 0 0;
-}
-
 .error,
 .success {
   border-radius: 12px;
@@ -443,14 +406,9 @@ textarea:focus {
   .page-header,
   .actions,
   .version-identity,
-  .identity-actions,
-  .document-row {
+  .identity-actions {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .document-row {
-    grid-template-columns: 1fr;
   }
 
   .version-grid {
@@ -552,26 +510,6 @@ textarea:focus {
   white-space: nowrap;
 }
 
-.knowledge-panel {
-  overflow: hidden;
-}
-
-.knowledge-panel .panel-header {
-  align-items: flex-start;
-  flex-wrap: wrap;
-}
-
-.knowledge-panel .panel-header button {
-  justify-self: start;
-}
-
 .manager-grid {
   align-items: start;
-  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.85fr);
-}
-
-@media (max-width: 1180px) {
-  .manager-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }

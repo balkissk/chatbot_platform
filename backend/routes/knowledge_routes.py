@@ -17,7 +17,7 @@ from models.user import User
 from models.version import VersionChatbot
 from services.auth import require_roles, require_workspace_manager
 from services.audit import record_audit_log
-from services.document_ingestion import DocumentExtractionError, decode_content_bytes, extract_document_text
+from services.document_ingestion import DocumentExtractionError, decode_content_bytes, extract_document_text, is_pdf
 from services.rag import chunk_document, embed_chunks, get_or_create_knowledge_base, retrieve_relevant_chunks_with_mode
 from services.rag_settings import normalize_rag_settings
 
@@ -68,10 +68,6 @@ def ensure_document_access(db: Session, document_id: int, current_user: User) ->
     return document
 
 
-def document_content_hash(content: str, content_encoding: str | None = None) -> str:
-    return hashlib.sha256(decode_content_bytes(content or "", content_encoding)).hexdigest()
-
-
 def uses_pgvector(db: Session) -> bool:
     bind = db.get_bind()
     return bool(bind and bind.dialect.name == "postgresql")
@@ -120,7 +116,9 @@ def status_from_counts(counts: dict[str, int], fallback_status: str | None = Non
     if fallback_status in {"uploaded", "processing"} and total == 0:
         return fallback_status
     if total == 0:
-        return "failed" if fallback_status == "failed" else (fallback_status or "uploaded")
+        if fallback_status in {"failed", "ready", "processed", "partially_ready"}:
+            return "failed"
+        return fallback_status or "uploaded"
     if ready == total:
         return "ready"
     if ready > 0 and failed > 0 and pending == 0:
@@ -142,6 +140,8 @@ def sync_document_status(db: Session, document: Document, commit: bool = False) 
         document.error_message = "Some chunks failed embedding generation"
     elif document.status == "failed" and counts["failed"]:
         document.error_message = "All chunks failed embedding generation"
+    elif document.status == "failed" and counts["total"] == 0 and not document.error_message:
+        document.error_message = "Document processing produced no searchable chunks"
     if commit:
         db.commit()
         db.refresh(document)
@@ -193,6 +193,17 @@ def process_document_background(
             return
         if document.status == "processing" and document.chunks_count:
             return
+        input_bytes = decode_content_bytes(content or "", content_encoding)
+        logger.info(
+            "knowledge_ingestion document_id=%s filename=%s content_type=%s storage_url=%s persisted_file=%s input_bytes=%s extractor=%s operation=start",
+            document.id,
+            filename,
+            content_type,
+            document.storage_url,
+            False,
+            len(input_bytes),
+            "pdf" if is_pdf(filename, content_type) else "text",
+        )
         document.status = "processing"
         document.error_message = None
         db.commit()
@@ -205,6 +216,12 @@ def process_document_background(
                 content_encoding=content_encoding
             )
             chunks = chunk_document(extracted_text)
+            logger.info(
+                "knowledge_ingestion document_id=%s operation=chunk extracted_chars=%s generated_chunks=%s",
+                document.id,
+                len((extracted_text or "").strip()),
+                len(chunks),
+            )
             if not chunks:
                 raise DocumentExtractionError("Document has no readable text")
         except DocumentExtractionError as exc:
@@ -237,12 +254,25 @@ def process_document_background(
             db.add(chunk)
             new_chunks.append(chunk)
 
+        db.flush()
+        persisted_chunks = db.query(Chunk).filter(Chunk.document_id == document.id).count()
+        if persisted_chunks == 0:
+            raise DocumentExtractionError("Document processing produced no searchable chunks")
+        logger.info(
+            "knowledge_ingestion document_id=%s operation=persist_chunks persisted_chunks=%s",
+            document.id,
+            persisted_chunks,
+        )
+
         embed_chunks(new_chunks)
         db.flush()
         counts = sync_document_status(db, document)
+        if counts["total"] == 0 or document.status == "failed":
+            if not document.error_message:
+                document.error_message = "Document processing produced no searchable chunks"
         db.commit()
         logger.info(
-            "knowledge_ingestion document_id=%s knowledge_base_id=%s operation=process status=%s total_chunks=%s ready=%s failed=%s pending=%s latency_ms=%s",
+            "knowledge_ingestion document_id=%s knowledge_base_id=%s operation=process status=%s total_chunks=%s ready_embeddings=%s failed_embeddings=%s pending_embeddings=%s latency_ms=%s",
             document.id,
             document.knowledge_base_id,
             document.status,
@@ -252,6 +282,15 @@ def process_document_background(
             counts["pending"],
             round((time.perf_counter() - started_at) * 1000),
         )
+    except Exception:
+        logger.exception("knowledge_ingestion document_id=%s operation=process status=failed", document_id)
+        document = db.query(Document).filter(Document.id == document_id).first()
+        if document:
+            document.status = "failed"
+            document.error_message = "Document processing failed. Please check the file and try again."
+            document.processed_at = datetime.utcnow()
+            document.chunks_count = chunk_state_counts(db, document.id)["total"]
+            db.commit()
     finally:
         db.close()
 
@@ -271,9 +310,18 @@ def ingest_document(
     if not filename:
         raise HTTPException(status_code=400, detail="Document filename is required")
     try:
-        content_hash = document_content_hash(payload.content or "", payload.content_encoding)
+        content_bytes = decode_content_bytes(payload.content or "", payload.content_encoding)
+        content_hash = hashlib.sha256(content_bytes).hexdigest()
     except DocumentExtractionError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    logger.info(
+        "knowledge_ingestion version_id=%s filename=%s content_type=%s content_encoding=%s upload_bytes=%s endpoint=documents_create",
+        version_id,
+        filename,
+        payload.content_type,
+        payload.content_encoding,
+        len(content_bytes),
+    )
 
     duplicate = db.query(Document).filter(
         Document.knowledge_base_id == knowledge_base.id,

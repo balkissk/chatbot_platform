@@ -56,6 +56,7 @@ class WorkspaceReadOnlyPermissionsTest(unittest.TestCase):
         self.assert_write_dependency(version_routes.router, "POST", "/versions/{version_id}/smoke-test")
         self.assert_write_dependency(version_routes.router, "PUT", "/versions/{version_id}/publish")
         self.assert_write_dependency(version_routes.router, "PUT", "/versions/{version_id}/archive")
+        self.assert_write_dependency(version_routes.router, "PUT", "/versions/{version_id}/restore")
         self.assert_write_dependency(version_routes.router, "DELETE", "/versions/{version_id}")
         self.assert_write_dependency(llm_config_routes.router, "POST", "/llm-config")
         self.assert_write_dependency(channel_routes.router, "POST", "/chatbots/{chatbot_id}/channels/{channel_type}")

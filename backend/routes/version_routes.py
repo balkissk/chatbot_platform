@@ -76,7 +76,10 @@ def create_default_llm_config(db: Session, version_id: int) -> None:
         version_id=version_id,
         model="llama3",
         temperature=0.7,
-        system_prompt="You are a helpful assistant"
+        system_prompt="You are a helpful assistant",
+        tone="Professional",
+        language="French",
+        response_style="Concise"
     ))
     db.commit()
 
@@ -91,7 +94,10 @@ def copy_llm_config(db: Session, source_version_id: int, target_version_id: int)
         version_id=target_version_id,
         model=source_config.model,
         temperature=source_config.temperature,
-        system_prompt=source_config.system_prompt
+        system_prompt=source_config.system_prompt,
+        tone=source_config.tone or "Professional",
+        language=source_config.language or "French",
+        response_style=source_config.response_style or "Concise"
     ))
     db.commit()
 
@@ -327,6 +333,9 @@ def archive_version(
     if chatbot.active_version_id == version.id:
         raise HTTPException(status_code=400, detail="Cannot archive the active version. Publish another version first.")
 
+    if version.status == "archived":
+        return {"message": "Version already archived", "version": serialize_version(version, chatbot)}
+
     version.status = "archived"
     version.archived_at = datetime.utcnow()
     version.archived_by = current_user.id
@@ -335,6 +344,38 @@ def archive_version(
     db.refresh(version)
 
     return {"message": "Version archived", "version": serialize_version(version, chatbot)}
+
+
+@router.put("/versions/{version_id}/restore")
+def restore_version(
+    version_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_workspace_manager)
+):
+    version = get_accessible_version(db, version_id, current_user)
+    chatbot = get_accessible_chatbot(db, version.chatbot_id, current_user)
+
+    if version.status != "archived":
+        return {"message": "Version already restored", "version": serialize_version(version, chatbot)}
+
+    version.status = "draft"
+    version.archived_at = None
+    version.archived_by = None
+
+    db.commit()
+    db.refresh(version)
+
+    record_audit_log(
+        db,
+        actor=current_user,
+        action="VERSION_RESTORED",
+        resource_type="version",
+        resource_id=version.id,
+        resource_name=f"v{version.version_number}",
+        metadata={"chatbot_id": chatbot.id},
+    )
+
+    return {"message": "Version restored", "version": serialize_version(version, chatbot)}
 
 
 @router.delete("/versions/{version_id}")

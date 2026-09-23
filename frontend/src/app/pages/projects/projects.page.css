@@ -98,7 +98,7 @@
   align-items: stretch;
   display: grid;
   gap: 0;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   margin-top: 9px;
   max-width: 610px;
   overflow: hidden;
@@ -136,11 +136,7 @@
   white-space: nowrap;
 }
 
-.runtime-pill strong {
-  color: #10b981;
-}
-
-.hero-actions {
+.projects-page .hero-actions {
   position: absolute;
   right: 18px;
   top: 16px;
@@ -381,14 +377,16 @@
 .grid {
   display: grid;
   gap: 14px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
 }
 
 .workspace-project-card {
+  aspect-ratio: 1.08 / 1;
   border-top: 2px solid #7c4dff;
   display: grid;
   gap: 8px;
-  min-height: 0;
+  grid-template-rows: auto minmax(32px, 1fr) auto auto;
+  min-height: 208px;
   padding: 12px;
   transition: box-shadow 180ms ease, transform 180ms ease;
 }
@@ -498,16 +496,16 @@
 .project-description {
   display: -webkit-box;
   font-size: 11.5px;
-  min-height: 16px;
+  min-height: 31px;
   overflow: hidden;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 1;
+  -webkit-line-clamp: 2;
 }
 
 .project-metrics {
   display: grid;
   gap: 7px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   padding: 1px 0 2px;
 }
 
@@ -638,6 +636,7 @@
 }
 
 .card-footer {
+  align-self: end;
   border-top: 1px solid #e4eaf2;
   margin-top: 1px;
   padding-top: 7px;
@@ -820,12 +819,6 @@
 .health-copy small {
   color: #10b981;
   font-weight: 800;
-}
-
-.workspace-health-card .side-link {
-  border-top: 1px solid #e4eaf2;
-  justify-content: flex-end;
-  padding-top: 8px;
 }
 
 .timeline-row {
@@ -1226,8 +1219,7 @@
     max-width: 190px;
   }
 
-  .workspace-aside,
-  .grid {
+  .workspace-aside {
     grid-template-columns: 1fr;
   }
 
@@ -1252,7 +1244,18 @@
     display: none;
   }
 
-  .hero-actions {
+  .projects-page .hero-actions {
     position: static;
+  }
+}
+
+@media (max-width: 640px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-project-card {
+    aspect-ratio: auto;
+    min-height: 0;
   }
 }

@@ -166,7 +166,6 @@ class FlowHardeningTest(unittest.TestCase):
         self._node("condition", "condition", {"field": "x"})
         self._node("rag", "rag_answer", {})
         self._node("api", "api_request", {"method": "PUT", "url": "not-a-url", "timeout": 0})
-        self._node("handoff", "handoff", {})
         self._node("router", "ai_router", {"routes": []})
         self._node("classifier", "ai_classifier", {"categories": []})
         self._node("setvar", "set_variable", {})
@@ -176,8 +175,7 @@ class FlowHardeningTest(unittest.TestCase):
         self._transition("buttons", "condition", label="next")
         self._transition("condition", "rag", label="true")
         self._transition("rag", "api")
-        self._transition("api", "handoff")
-        self._transition("handoff", "router")
+        self._transition("api", "router")
         self._transition("router", "classifier")
         self._transition("classifier", "setvar")
         self._transition("setvar", "badpos")
@@ -190,7 +188,6 @@ class FlowHardeningTest(unittest.TestCase):
             "API_METHOD_INVALID",
             "API_URL_INVALID",
             "API_TIMEOUT_INVALID",
-            "HANDOFF_CONTACT_MISSING",
             "AI_ROUTER_ROUTES_MISSING",
             "AI_CLASSIFIER_CATEGORIES_MISSING",
             "SET_VARIABLE_NAME_MISSING",

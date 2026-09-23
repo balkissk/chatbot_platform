@@ -65,6 +65,12 @@ export class ApiService {
     return this.http.get<any>(`${this.baseUrl}/projects/summary`);
   }
 
+  globalSearch(query: string, limit = 6) {
+    return this.http.get<any>(`${this.baseUrl}/search`, {
+      params: { q: query.trim(), limit }
+    });
+  }
+
   getProject(projectId: number, force = false) {
     this.ensureCacheScope();
     if (force || !this.projectCache.has(projectId)) {
@@ -136,9 +142,10 @@ export class ApiService {
   getChatbotsByProject(projectId: number, force = false) {
     this.ensureCacheScope();
     if (force || !this.projectChatbotsCache.has(projectId)) {
+      const options = force ? { params: { _refresh: Date.now() } } : undefined;
       this.projectChatbotsCache.set(
         projectId,
-        this.http.get<any[]>(`${this.baseUrl}/projects/${projectId}/chatbots`).pipe(
+        this.http.get<any[]>(`${this.baseUrl}/projects/${projectId}/chatbots`, options).pipe(
           tap(chatbots => this.projectChatbotsValueCache.set(projectId, chatbots)),
           shareReplay(1)
         )
@@ -391,6 +398,13 @@ export class ApiService {
   archiveVersion(versionId: number) {
     return this.http.put(
       `${this.baseUrl}/versions/${versionId}/archive`,
+      {}
+    );
+  }
+
+  restoreVersion(versionId: number) {
+    return this.http.put(
+      `${this.baseUrl}/versions/${versionId}/restore`,
       {}
     );
   }

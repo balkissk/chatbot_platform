@@ -20,27 +20,11 @@
 }
 
 .overview-header {
-  align-items: start;
+  align-items: center;
   display: flex;
   justify-content: space-between;
   gap: 18px;
   padding: 18px;
-}
-
-.breadcrumb {
-  align-items: center;
-  color: var(--ink-muted);
-  display: flex;
-  flex-wrap: wrap;
-  font-size: 12px;
-  font-weight: 750;
-  gap: 7px;
-  margin-bottom: 10px;
-}
-
-.breadcrumb a {
-  color: var(--ink-muted);
-  text-decoration: none;
 }
 
 .eyebrow {
@@ -124,13 +108,13 @@ h2 {
 }
 
 .workspace-card {
-  align-items: start;
+  align-items: center;
   color: inherit;
   display: grid;
   gap: 12px;
   grid-template-columns: auto minmax(0, 1fr);
-  min-height: 128px;
-  padding: 16px;
+  min-height: 76px;
+  padding: 14px 16px;
   text-decoration: none;
 }
 

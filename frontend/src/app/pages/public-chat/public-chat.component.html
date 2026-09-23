@@ -17,15 +17,6 @@
             {{ option }}
           </button>
         </div>
-        <div class="feedback-row" *ngIf="item.role === 'bot' && item.text">
-          <button type="button" (click)="submitFeedback(i, 'helpful')" [disabled]="!!item.feedback">
-            Helpful
-          </button>
-          <button type="button" (click)="submitFeedback(i, 'not_helpful')" [disabled]="!!item.feedback">
-            Not Helpful
-          </button>
-          <small *ngIf="item.feedback">Feedback saved</small>
-        </div>
       </div>
 
       <div *ngIf="loading() && messages()[messages().length - 1]?.role !== 'bot'" class="message typing">

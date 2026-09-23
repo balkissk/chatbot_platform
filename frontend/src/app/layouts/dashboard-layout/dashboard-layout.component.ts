@@ -1,8 +1,7 @@
 import { CommonModule, DOCUMENT } from '@angular/common';
-import { Component, HostListener, Inject, OnInit, signal } from '@angular/core';
+import { Component, HostListener, Inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, NavigationEnd, Router, RouterModule } from '@angular/router';
 import {
-  LucideBell,
   LucideBarChart3,
   LucideBot,
   LucideChevronDown,
@@ -19,13 +18,12 @@ import {
   LucideRocket,
   LucideScrollText,
   LucideSearch,
-  LucideSettings,
   LucideSlidersHorizontal,
   LucideSun,
   LucideUser,
   LucideWorkflow
 } from '@lucide/angular';
-import { filter } from 'rxjs';
+import { Subject, catchError, debounceTime, distinctUntilChanged, filter, of, switchMap, takeUntil } from 'rxjs';
 import { ApiService } from '../../services/api';
 import { AuthService } from '../../services/auth';
 import { ToastOutletComponent } from '../../components/toast-outlet.component';
@@ -35,13 +33,20 @@ type Breadcrumb = {
   link?: any[];
 };
 
+type GlobalSearchResult = {
+  type: 'Project' | 'Assistant' | 'Knowledge Base';
+  id: number;
+  title: string;
+  subtitle?: string;
+  route: any[];
+};
+
 @Component({
   selector: 'app-dashboard-layout',
   standalone: true,
   imports: [
     CommonModule,
     RouterModule,
-    LucideBell,
     LucideBarChart3,
     LucideBot,
     LucideChevronDown,
@@ -58,7 +63,6 @@ type Breadcrumb = {
     LucideRocket,
     LucideScrollText,
     LucideSearch,
-    LucideSettings,
     LucideSlidersHorizontal,
     LucideSun,
     LucideUser,
@@ -68,7 +72,7 @@ type Breadcrumb = {
   templateUrl: './dashboard-layout.component.html',
   styleUrls: ['./dashboard-layout.component.css']
 })
-export class DashboardLayoutComponent implements OnInit {
+export class DashboardLayoutComponent implements OnInit, OnDestroy {
   constructor(
     public auth: AuthService,
     private api: ApiService,
@@ -87,17 +91,54 @@ export class DashboardLayoutComponent implements OnInit {
   breadcrumbs = signal<Breadcrumb[]>([]);
   projectNavExpanded = signal(true);
   assistantNavExpanded = signal(true);
+  searchQuery = signal('');
+  searchResults = signal<GlobalSearchResult[]>([]);
+  searchLoading = signal(false);
+  searchPanelOpen = signal(false);
+  searchSubmitted = signal(false);
 
   private readonly navStorageKey = 'managerSidebarCollapsed';
   private readonly themeStorageKey = 'chatbotFactoryLandingTheme';
   private activeProjectNavId: number | null = null;
   private drawerReturnFocus: HTMLElement | null = null;
+  private readonly searchInput$ = new Subject<string>();
+  private readonly destroy$ = new Subject<void>();
 
   ngOnInit() {
     this.restoreThemePreference();
     this.restoreNavPreference();
     this.updateRouteContext();
-    this.router.events.pipe(filter(event => event instanceof NavigationEnd)).subscribe(() => this.updateRouteContext());
+    this.router.events.pipe(
+      filter(event => event instanceof NavigationEnd),
+      takeUntil(this.destroy$)
+    ).subscribe(() => this.updateRouteContext());
+    this.searchInput$.pipe(
+      debounceTime(250),
+      distinctUntilChanged(),
+      switchMap(query => {
+        const trimmed = query.trim();
+        this.searchSubmitted.set(Boolean(trimmed));
+        if (!trimmed) {
+          this.searchLoading.set(false);
+          this.searchResults.set([]);
+          return of({ results: [] });
+        }
+        this.searchLoading.set(true);
+        return this.api.globalSearch(trimmed).pipe(
+          catchError(() => of({ results: [] }))
+        );
+      }),
+      takeUntil(this.destroy$)
+    ).subscribe(response => {
+      this.searchResults.set(response?.results || []);
+      this.searchLoading.set(false);
+      this.searchPanelOpen.set(Boolean(this.searchQuery().trim()));
+    });
+  }
+
+  ngOnDestroy() {
+    this.destroy$.next();
+    this.destroy$.complete();
   }
 
   toggleNav() {
@@ -126,6 +167,31 @@ export class DashboardLayoutComponent implements OnInit {
 
   closeUserMenu() {
     this.userMenuOpen = false;
+  }
+
+  onSearchInput(event: Event) {
+    const value = event.target instanceof HTMLInputElement ? event.target.value : '';
+    this.searchQuery.set(value);
+    this.searchPanelOpen.set(Boolean(value.trim()));
+    this.searchInput$.next(value);
+  }
+
+  onSearchFocus() {
+    if (this.searchQuery().trim()) {
+      this.searchPanelOpen.set(true);
+    }
+  }
+
+  selectSearchResult(result: GlobalSearchResult) {
+    this.searchQuery.set('');
+    this.searchResults.set([]);
+    this.searchSubmitted.set(false);
+    this.searchPanelOpen.set(false);
+    this.router.navigate(result.route);
+  }
+
+  closeSearchPanel() {
+    this.searchPanelOpen.set(false);
   }
 
   toggleProjectNav() {
@@ -167,16 +233,21 @@ export class DashboardLayoutComponent implements OnInit {
 
   @HostListener('document:click', ['$event'])
   onDocumentClick(event: MouseEvent) {
-    if (!this.userMenuOpen) return;
     const target = event.target;
-    if (target instanceof Element && !target.closest('.profile-menu')) {
-      this.closeUserMenu();
+    if (target instanceof Element) {
+      if (this.userMenuOpen && !target.closest('.profile-menu')) {
+        this.closeUserMenu();
+      }
+      if (!target.closest('.topbar-search-wrap')) {
+        this.closeSearchPanel();
+      }
     }
   }
 
   @HostListener('document:keydown.escape')
   onEscape() {
     this.closeUserMenu();
+    this.closeSearchPanel();
     this.closeNavDrawer();
   }
 

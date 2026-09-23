@@ -1,0 +1,29 @@
+<main class="docs-page">
+  <header class="docs-header">
+    <a routerLink="/" class="back-link">ChatBot Factory</a>
+    <h1>Documentation</h1>
+    <p>Learn how to create, test, publish, and monitor AI assistants with ChatBot Factory.</p>
+  </header>
+
+  <section class="docs-shell" aria-label="ChatBot Factory documentation">
+    <aside class="toc" aria-label="Documentation sections">
+      <h2>Contents</h2>
+      <a
+        *ngFor="let section of sections"
+        [attr.href]="'#' + section.id"
+        [class.is-active]="activeSectionId === section.id"
+        (click)="navigateToSection($event, section.id)">
+        {{ section.title }}
+      </a>
+    </aside>
+
+    <div class="docs-content">
+      <section *ngFor="let section of sections" class="docs-section" [id]="section.id">
+        <h2>{{ section.title }}</h2>
+        <ul>
+          <li *ngFor="let item of section.items">{{ item }}</li>
+        </ul>
+      </section>
+    </div>
+  </section>
+</main>

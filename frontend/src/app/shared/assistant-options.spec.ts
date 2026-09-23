@@ -19,7 +19,6 @@ describe('assistant purpose and template options', () => {
     expect(keys).toEqual([
       'customer_support_basic',
       'customer_support_rag',
-      'customer_support_handoff',
       'customer_support_ticket_creation'
     ]);
   });

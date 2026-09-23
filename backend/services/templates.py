@@ -72,15 +72,14 @@ TEMPLATES = {
             ("start", "message", "Welcome", {"text": "Bonjour. Je suis l'assistant officiel de l'universite. Comment puis-je vous aider ?"}, 80, 120),
             ("topic", "buttons", "Choose topic", {"text": "Choisissez un sujet.", "buttons": ["Admissions", "Finance", "Internships", "Support"], "field": "subject"}, 360, 120),
             ("rag", "rag_answer", "Answer from documents", {"prompt": "Answer professionally in French.", "fallback": "Je n'ai pas trouve cette information dans les documents.", "use_knowledge_base": True, "show_sources": True, "continue_rag": True}, 660, 120),
-            ("handoff", "handoff", "Human handoff", {"message": "Un conseiller va examiner votre demande.", "department": "Admissions", "email_field": "user_email", "phone_field": "user_phone", "collect_email_if_missing": True}, 960, 40),
-            ("end", "end", "End", {"message": "Merci pour votre visite."}, 960, 220)
+            ("end", "end", "End", {"message": "Merci pour votre visite."}, 960, 120)
         ],
         "transitions": [
             ("start", "topic", "next", None),
             ("topic", "rag", "Admissions", None),
             ("topic", "rag", "Finance", None),
             ("topic", "rag", "Internships", None),
-            ("topic", "handoff", "Support", None),
+            ("topic", "rag", "Support", None),
             ("rag", "end", "next", None)
         ]
     },
@@ -92,14 +91,14 @@ TEMPLATES = {
             ("email", "collect_email", "Collect Email", {"prompt": "What email should admissions use?", "field": "user_email"}, 600, 120),
             ("program", "question", "Program Interest", {"prompt": "Which program are you interested in?", "field": "program_interest"}, 860, 120),
             ("rag", "rag_answer", "Admissions Answer", {"prompt": "Answer admissions questions clearly.", "fallback": "I could not find that admissions detail in the uploaded documents.", "use_knowledge_base": True, "show_sources": True}, 1120, 120),
-            ("handoff", "handoff", "Admissions Follow-up", {"message": "Admissions will follow up with you.", "department": "Admissions", "email_field": "user_email"}, 1380, 120)
+            ("end", "end", "Close", {"message": "Thanks. Your admissions question has been recorded."}, 1380, 120)
         ],
         "transitions": [
             ("start", "name", "next", None),
             ("name", "email", "next", None),
             ("email", "program", "next", None),
             ("program", "rag", "next", None),
-            ("rag", "handoff", "next", None)
+            ("rag", "end", "next", None)
         ]
     },
     "internship_bot": {
@@ -125,15 +124,14 @@ TEMPLATES = {
             ("issue", "question", "Issue", {"prompt": "What issue are you facing?", "field": "support_issue"}, 340, 120),
             ("rag", "rag_answer", "Support Answer", {"prompt": "Give concise support steps.", "fallback": "I could not find a confirmed support answer.", "use_knowledge_base": True, "show_sources": True}, 600, 120),
             ("solved", "buttons", "Solved?", {"text": "Did this solve the issue?", "buttons": ["Helpful", "Not Helpful"], "field": "support_feedback"}, 860, 120),
-            ("handoff", "handoff", "Support Handoff", {"message": "Support will follow up.", "department": "Support", "email_field": "user_email", "phone_field": "user_phone", "collect_email_if_missing": True}, 1120, 40),
-            ("end", "end", "Close", {"message": "Glad I could help."}, 1120, 220)
+            ("end", "end", "Close", {"message": "Thanks for sharing your feedback."}, 1120, 120)
         ],
         "transitions": [
             ("start", "issue", "next", None),
             ("issue", "rag", "next", None),
             ("rag", "solved", "next", None),
             ("solved", "end", "Helpful", None),
-            ("solved", "handoff", "Not Helpful", None)
+            ("solved", "end", "Not Helpful", None)
         ]
     },
     "lead_generation_bot": {
@@ -144,14 +142,14 @@ TEMPLATES = {
             ("email", "collect_email", "Email", {"prompt": "What is your email?", "field": "user_email"}, 600, 120),
             ("phone", "collect_phone", "Phone", {"prompt": "What phone number can we use?", "field": "user_phone"}, 860, 120),
             ("department", "set_variable", "Set Department", {"field": "department", "value": "Sales", "message": "Thanks. I saved your request."}, 1120, 120),
-            ("handoff", "handoff", "Sales Handoff", {"message": "A specialist will contact you.", "department": "Support", "email_field": "user_email", "phone_field": "user_phone"}, 1380, 120)
+            ("end", "end", "End", {"message": "Thanks. Your request details are saved."}, 1380, 120)
         ],
         "transitions": [
             ("start", "name", "next", None),
             ("name", "email", "next", None),
             ("email", "phone", "next", None),
             ("phone", "department", "next", None),
-            ("department", "handoff", "next", None)
+            ("department", "end", "next", None)
         ]
     },
     "customer_support_basic": {
@@ -180,22 +178,6 @@ TEMPLATES = {
             ("answer", "question", "next", None)
         ]
     },
-    "customer_support_handoff": {
-        "name": "Customer Support + Human Handoff",
-        "nodes": [
-            ("start", "message", "Welcome", {"text": "Hi. I can help or connect you to support."}, 80, 120),
-            ("question", "question", "Support Request", {"prompt": "What issue are you facing?", "field": "support_question"}, 340, 120),
-            ("answer", "rag_answer", "AI/RAG Answer", {"prompt": "Answer with support guidance.", "fallback": "I could not find a confirmed support answer.", "use_knowledge_base": True, "show_sources": True}, 600, 120),
-            ("handoff", "handoff", "Human Handoff", {"message": "A support teammate will follow up.", "department": "Support", "email_field": "user_email", "phone_field": "user_phone", "collect_email_if_missing": True}, 860, 120),
-            ("end", "end", "End", {"message": "Thanks. We will take it from here."}, 1120, 120)
-        ],
-        "transitions": [
-            ("start", "question", "next", None),
-            ("question", "answer", "next", None),
-            ("answer", "handoff", "next", None),
-            ("handoff", "end", "next", None)
-        ]
-    },
     "customer_support_ticket_creation": {
         "name": "Customer Support + Ticket Creation",
         "nodes": [
@@ -204,7 +186,7 @@ TEMPLATES = {
             ("email", "collect_email", "Contact Email", {"prompt": "What email should support use for follow-up?", "field": "user_email"}, 600, 120),
             ("priority", "buttons", "Priority", {"text": "How urgent is this request?", "buttons": ["Low", "Normal", "Urgent"], "field": "ticket_priority"}, 860, 120),
             ("ticket", "set_variable", "Create Ticket Draft", {"field": "ticket_status", "value": "ready_to_create", "message": "I saved your ticket details."}, 1120, 120),
-            ("handoff", "handoff", "Support Ticket Handoff", {"message": "Support will review your ticket request.", "department": "Support", "email_field": "user_email"}, 1380, 120)
+            ("end", "end", "End", {"message": "Thanks. Your ticket details are ready."}, 1380, 120)
         ],
         "transitions": [
             ("start", "issue", "next", None),
@@ -213,7 +195,7 @@ TEMPLATES = {
             ("priority", "ticket", "Low", None),
             ("priority", "ticket", "Normal", None),
             ("priority", "ticket", "Urgent", None),
-            ("ticket", "handoff", "next", None)
+            ("ticket", "end", "next", None)
         ]
     },
     "hr_knowledge_bot": {
@@ -233,7 +215,7 @@ TEMPLATES = {
             ("category", "buttons", "Issue Category", {"text": "What kind of IT issue do you have?", "buttons": ["Account access", "Device", "Microsoft 365", "Security"], "field": "it_category"}, 340, 120),
             ("details", "question", "Issue Details", {"prompt": "Please describe the issue.", "field": "it_issue"}, 600, 120),
             ("answer", "rag_answer", "Helpdesk Answer", {"prompt": "Give practical IT helpdesk guidance from the knowledge base.", "fallback": "I could not find a confirmed IT helpdesk answer.", "use_knowledge_base": True, "show_sources": True}, 860, 120),
-            ("handoff", "handoff", "IT Handoff", {"message": "The IT team can review this request.", "department": "Technical", "collect_email_if_missing": True, "email_field": "user_email"}, 1120, 120)
+            ("end", "end", "Close", {"message": "Thanks. Your IT request details are saved."}, 1120, 120)
         ],
         "transitions": [
             ("start", "category", "next", None),
@@ -242,7 +224,7 @@ TEMPLATES = {
             ("category", "details", "Microsoft 365", None),
             ("category", "details", "Security", None),
             ("details", "answer", "next", None),
-            ("answer", "handoff", "next", None)
+            ("answer", "end", "next", None)
         ]
     },
     "company_policies_bot": {
@@ -390,13 +372,13 @@ TEMPLATES = {
             ("name", "collect_name", "Name", {"prompt": "What is your name?", "field": "user_name"}, 340, 120),
             ("email", "collect_email", "Email", {"prompt": "What is your work email?", "field": "user_email"}, 600, 120),
             ("need", "question", "Need", {"prompt": "What are you looking for?", "field": "customer_need"}, 860, 120),
-            ("handoff", "handoff", "Sales Handoff", {"message": "A sales specialist will follow up.", "department": "Support", "email_field": "user_email"}, 1120, 120)
+            ("end", "end", "End", {"message": "Thanks. Your sales request has been recorded."}, 1120, 120)
         ],
         "transitions": [
             ("start", "name", "next", None),
             ("name", "email", "next", None),
             ("email", "need", "next", None),
-            ("need", "handoff", "next", None)
+            ("need", "end", "next", None)
         ]
     },
     "simple_lead_capture": {
@@ -423,14 +405,14 @@ TEMPLATES = {
             ("email", "collect_email", "Email", {"prompt": "What email should we use?", "field": "user_email"}, 600, 120),
             ("topic", "question", "Consultation Topic", {"prompt": "What would you like to discuss?", "field": "consultation_topic"}, 860, 120),
             ("date", "meeting_scheduler", "Meeting Preference", {"prompt": "What date or time works best for you?", "field": "preferred_time", "timezone": "local", "success_message": "Meeting preference saved."}, 1120, 120),
-            ("handoff", "handoff", "Consultation Handoff", {"message": "A consultant will follow up with you.", "department": "Support", "email_field": "user_email"}, 1380, 120)
+            ("end", "end", "End", {"message": "Thanks. Your consultation request has been saved."}, 1380, 120)
         ],
         "transitions": [
             ("start", "name", "next", None),
             ("name", "email", "next", None),
             ("email", "topic", "next", None),
             ("topic", "date", "next", None),
-            ("date", "handoff", "next", None)
+            ("date", "end", "next", None)
         ]
     },
     "cloud_assessment_lead_form": {
@@ -441,7 +423,7 @@ TEMPLATES = {
             ("email", "collect_email", "Email", {"prompt": "What is your work email?", "field": "user_email"}, 600, 120),
             ("cloud_area", "buttons", "Cloud Area", {"text": "Which area do you want to assess?", "buttons": ["Azure", "Microsoft 365", "Security", "Data & AI"], "field": "cloud_area"}, 860, 120),
             ("company_size", "question", "Company Size", {"prompt": "How many employees or users are in your organization?", "field": "company_size"}, 1120, 120),
-            ("handoff", "handoff", "Cloud Assessment Handoff", {"message": "A cloud consultant will review your request.", "department": "Technical", "email_field": "user_email"}, 1380, 120)
+            ("end", "end", "End", {"message": "Thanks. Your cloud assessment request has been saved."}, 1380, 120)
         ],
         "transitions": [
             ("start", "name", "next", None),
@@ -451,7 +433,7 @@ TEMPLATES = {
             ("cloud_area", "company_size", "Microsoft 365", None),
             ("cloud_area", "company_size", "Security", None),
             ("cloud_area", "company_size", "Data & AI", None),
-            ("company_size", "handoff", "next", None)
+            ("company_size", "end", "next", None)
         ]
     },
     "training_registration_bot": {
@@ -462,16 +444,16 @@ TEMPLATES = {
             ("email", "collect_email", "Email", {"prompt": "What email should we use for registration?", "field": "user_email"}, 600, 120),
             ("course", "question", "Course Interest", {"prompt": "Which course or certification are you interested in?", "field": "course_interest"}, 860, 120),
             ("schedule", "buttons", "Preferred Format", {"text": "Which format do you prefer?", "buttons": ["Online", "In person", "Hybrid"], "field": "training_format"}, 1120, 120),
-            ("handoff", "handoff", "Training Handoff", {"message": "A training advisor will contact you.", "department": "Support", "email_field": "user_email"}, 1380, 120)
+            ("end", "end", "End", {"message": "Thanks. Your training registration details are saved."}, 1380, 120)
         ],
         "transitions": [
             ("start", "name", "next", None),
             ("name", "email", "next", None),
             ("email", "course", "next", None),
             ("course", "schedule", "next", None),
-            ("schedule", "handoff", "Online", None),
-            ("schedule", "handoff", "In person", None),
-            ("schedule", "handoff", "Hybrid", None)
+            ("schedule", "end", "Online", None),
+            ("schedule", "end", "In person", None),
+            ("schedule", "end", "Hybrid", None)
         ]
     },
     "internal_knowledge_qa": {
@@ -583,13 +565,13 @@ TEMPLATES = {
             ("name", "collect_name", "Name", {"prompt": "What is your name?", "field": "user_name"}, 340, 120),
             ("email", "collect_email", "Email", {"prompt": "What is your work email?", "field": "user_email"}, 600, 120),
             ("need", "question", "Business Need", {"prompt": "What business challenge can we help with?", "field": "business_need"}, 860, 120),
-            ("handoff", "handoff", "Sales Handoff", {"message": "A specialist will contact you.", "department": "Support", "email_field": "user_email"}, 1120, 120)
+            ("end", "end", "End", {"message": "Thanks. Your business needs have been saved."}, 1120, 120)
         ],
         "transitions": [
             ("start", "name", "next", None),
             ("name", "email", "next", None),
             ("email", "need", "next", None),
-            ("need", "handoff", "next", None)
+            ("need", "end", "next", None)
         ]
     }
 }
@@ -606,13 +588,8 @@ TEMPLATE_METADATA = {
         "purposes": ["customer_support"],
         "exposed": True,
     },
-    "customer_support_handoff": {
-        "description": "Support answer flow with a handoff step for complex issues.",
-        "purposes": ["customer_support"],
-        "exposed": True,
-    },
     "customer_support_ticket_creation": {
-        "description": "Collect issue details and prepare a support ticket handoff.",
+        "description": "Collect issue details and prepare a support ticket draft.",
         "purposes": ["customer_support"],
         "exposed": True,
     },
@@ -854,9 +831,20 @@ def localize_config(config: dict, node_type: str, language: str | None) -> dict:
 
 def localized_template_nodes(template: dict, language: str | None) -> list[tuple]:
     return [
-        (key, node_type, label, localize_config(config, node_type, language), x, y)
+        (key, node_type, label, normalize_template_node_config(node_type, localize_config(config, node_type, language)), x, y)
         for key, node_type, label, config, x, y in template["nodes"]
     ]
+
+
+def normalize_template_node_config(node_type: str, config: dict) -> dict:
+    normalized = {**(config or {})}
+    if node_type in {"rag_answer", "knowledge_search"}:
+        normalized.setdefault("answer_only_from_documents", False)
+        normalized.setdefault("strict_context", False)
+        normalized.setdefault("response_length", "medium")
+        if node_type == "knowledge_search":
+            normalized.setdefault("retrieval_only", True)
+    return normalized
 
 
 def template_generated_payload(template_key: str, language: str | None = None) -> tuple[list[dict], list[dict]]:

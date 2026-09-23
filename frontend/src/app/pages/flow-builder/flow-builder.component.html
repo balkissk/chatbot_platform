@@ -1,6 +1,5 @@
 <div class="page-header">
   <div>
-    <p class="eyebrow">{{ context()?.chatbot?.name || ('Chatbot ' + chatbotId) }}</p>
     <h2>Flow Builder</h2>
   </div>
 
@@ -87,17 +86,11 @@
   <form class="setup-edit-modal" (ngSubmit)="saveAssistantSetup()">
     <button class="close-button" type="button" (click)="closeAssistantSetup()" aria-label="Close assistant setup">x</button>
     <div class="setup-edit-header">
-      <p class="eyebrow">Assistant setup</p>
       <h2>Assistant Setup</h2>
       <p class="muted">Update assistant metadata and manage the original creation method without switching modes.</p>
     </div>
 
     <section class="setup-section">
-      <div class="setup-section-title">
-        <p class="eyebrow">General</p>
-        <span>Common editable settings</span>
-      </div>
-
     <div class="setup-edit-grid">
       <label>
         Assistant name
@@ -195,14 +188,12 @@
 
 <section class="modal-backdrop" *ngIf="setupOpen() && setupLoading()">
   <div class="setup-loading-modal">
-    <p class="eyebrow">Assistant setup</p>
     <h3>Loading setup...</h3>
   </div>
 </section>
 
 <section class="modal-backdrop" *ngIf="setupOpen() && !setupLoading() && setupError() && !setupInitialState()">
   <div class="setup-loading-modal">
-    <p class="eyebrow">Assistant setup</p>
     <h3>Could not load setup</h3>
     <p class="error">{{ setupError() }}</p>
     <button class="secondary" type="button" (click)="closeAssistantSetup()">Close</button>
@@ -637,39 +628,6 @@
           <small class="field-help">Requests are not executed in the builder. Runtime allows only GET/POST HTTP(S) URLs.</small>
         </section>
 
-        <section class="condition-box" *ngIf="node.type === 'handoff'">
-          <p class="eyebrow">Human Handoff</p>
-          <label>
-            Department
-            <select [ngModel]="nodeConfigValue(node, 'department') || 'Support'" (ngModelChange)="updateNodeConfig('department', $event)">
-              <option value="Admissions">Admissions</option>
-              <option value="Finance">Finance</option>
-              <option value="Support">Support</option>
-              <option value="Technical">Technical</option>
-            </select>
-          </label>
-          <label>
-            Email variable
-            <input [ngModel]="nodeConfigValue(node, 'email_field')" (ngModelChange)="updateNodeConfig('email_field', $event)" placeholder="user_email">
-          </label>
-          <label>
-            Phone variable
-            <input [ngModel]="nodeConfigValue(node, 'phone_field')" (ngModelChange)="updateNodeConfig('phone_field', $event)" placeholder="user_phone">
-          </label>
-          <label class="checkbox-row">
-            <input type="checkbox" [ngModel]="!!node.config['collect_email_if_missing']" (ngModelChange)="updateNodeConfig('collect_email_if_missing', $event)">
-            Require email if missing
-          </label>
-          <label class="checkbox-row">
-            <input type="checkbox" [ngModel]="!!node.config['collect_phone_if_missing']" (ngModelChange)="updateNodeConfig('collect_phone_if_missing', $event)">
-            Require phone if missing
-          </label>
-          <label>
-            Message
-            <textarea rows="3" [ngModel]="nodeConfigValue(node, 'message')" (ngModelChange)="updateNodeConfig('message', $event)"></textarea>
-          </label>
-        </section>
-
         <section class="routing-box" *ngIf="node.type !== 'buttons' && node.type !== 'condition' && !isTerminalNode(node)">
           <p class="eyebrow">Then go to</p>
           <select [ngModel]="nextBlockKey(node)" (ngModelChange)="setNextBlock($event)">
@@ -748,7 +706,7 @@
         </div>
         <div class="empty-panel" *ngIf="!validationErrors().length">
           <h3>No validation errors loaded</h3>
-          <p>Run validation to check paths, variables, AI/RAG fallback, handoff contact, and API settings.</p>
+          <p>Run validation to check paths, variables, AI/RAG fallback, and API settings.</p>
         </div>
       </section>
 

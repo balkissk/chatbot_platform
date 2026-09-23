@@ -1,9 +1,7 @@
 <section class="template-qa-page">
   <header class="page-hero">
     <div>
-      <p class="eyebrow">Template QA</p>
       <h1>Template readiness</h1>
-      <p>Validate code-defined starter templates before they are used to create assistant draft flows.</p>
     </div>
     <button class="secondary-button" type="button" (click)="load()" [disabled]="loading()">
       {{ loading() ? 'Refreshing...' : 'Refresh' }}
@@ -40,7 +38,7 @@
   <section class="filter-card">
     <label class="wide">
       Search
-      <input [(ngModel)]="search" placeholder="Template key, name or block type" (keyup.enter)="applyFilters()">
+      <input [(ngModel)]="search" placeholder="Search templates..." (keyup.enter)="applyFilters()">
     </label>
     <label>
       Status
@@ -77,7 +75,6 @@
   <section class="table-card">
     <div class="table-header">
       <div>
-        <p class="eyebrow">Readiness report</p>
         <h2>{{ filteredItems().length }} templates</h2>
       </div>
       <span>{{ summary().hidden_block_templates || 0 }} use hidden blocks</span>
@@ -93,7 +90,7 @@
       <article *ngFor="let template of filteredItems()" class="template-row" [class.invalid]="template.status === 'invalid'" [class.warning]="template.status === 'warning'">
         <header>
           <div>
-            <p class="eyebrow">{{ template.key }}</p>
+            <p class="eyebrow">{{ purposeLabel(template.primary_purpose) }}</p>
             <h3>{{ template.name }}</h3>
             <small>{{ ownershipLabel(template) }} · {{ exposedLabel(template) }}</small>
           </div>
@@ -122,22 +119,36 @@
           </div>
         </section>
 
-        <section class="block-strip">
-          <span *ngFor="let block of template.block_types">{{ block.type }} x{{ block.count }}</span>
-        </section>
+        <details class="block-summary" *ngIf="template.block_types?.length">
+          <summary>{{ blockTypeCount(template) }} block {{ blockTypeCount(template) === 1 ? 'type' : 'types' }}</summary>
+          <section class="block-strip">
+            <span *ngFor="let block of template.block_types">{{ block.type }} x{{ block.count }}</span>
+          </section>
+        </details>
 
-        <section class="issue-list" *ngIf="template.issues.length">
+        <details class="issue-list" *ngIf="template.issues.length">
+          <summary>{{ template.issues.length }} {{ template.issues.length === 1 ? 'issue' : 'issues' }}</summary>
           <div *ngFor="let issue of template.issues">
             <span [class.error]="issue.severity === 'error'">{{ issue.severity }}</span>
             <p>{{ issue.node_key ? (issue.node_key + ': ') : '' }}{{ issue.message }}</p>
           </div>
-        </section>
+        </details>
       </article>
     </div>
   </section>
 
-  <aside class="detail-panel" *ngIf="detail() || detailLoading() || detailError()" aria-label="Template detail">
-    <button class="close-button" type="button" (click)="closeDetail()" aria-label="Close template detail">x</button>
+  <aside class="detail-panel" [class.expanded]="detailExpanded()" *ngIf="detail() || detailLoading() || detailError()" aria-label="Template detail">
+    <header class="detail-shell-header">
+      <div>
+        <h2>{{ detail()?.name || 'Template' }}</h2>
+      </div>
+      <div class="detail-controls">
+        <span class="status-badge" [ngClass]="'status-' + detail()?.status" *ngIf="detail()">{{ statusLabel(detail()?.status) }}</span>
+        <button class="ghost-button compact-control" type="button" *ngIf="detailExpanded()" (click)="collapseDetail()" aria-label="Collapse detail drawer">&rarr;</button>
+        <button class="ghost-button compact-control expand-control" type="button" *ngIf="!detailExpanded()" (click)="expandDetail()" aria-label="Expand detail drawer">&larr;</button>
+        <button class="close-button" type="button" (click)="closeDetail()" aria-label="Close template detail">x</button>
+      </div>
+    </header>
 
     <p *ngIf="detailLoading()" class="muted loading-state">Loading template detail...</p>
     <p *ngIf="detailError()" class="error-banner">{{ detailError() }}</p>
@@ -146,10 +157,8 @@
       <header class="detail-header">
         <div>
           <p class="eyebrow">{{ selected.source === 'custom' ? 'Manager template' : 'Built-in template' }}</p>
-          <h2>{{ selected.name }}</h2>
           <p>{{ selected.description || 'Reusable assistant flow template.' }}</p>
         </div>
-        <span class="status-badge" [ngClass]="'status-' + selected.status">{{ statusLabel(selected.status) }}</span>
       </header>
 
       <section class="detail-grid">
@@ -175,15 +184,15 @@
         </div>
       </section>
 
-      <section class="preview-panel revision-panel">
-        <div class="test-header">
-          <div>
-            <p class="eyebrow">Version history</p>
-            <h3>{{ selected.revisions?.length || 1 }} revisions</h3>
-          </div>
-          <small>Latest v{{ latestRevision(selected) }}</small>
-        </div>
-        <div class="revision-list">
+      <section class="collapsible-panel">
+        <button class="section-toggle" type="button" (click)="toggleVersionHistory()" [attr.aria-expanded]="versionHistoryOpen()">
+          <span>
+            <strong>Version History</strong>
+            <small>{{ selected.revisions?.length || 1 }} {{ (selected.revisions?.length || 1) === 1 ? 'revision' : 'revisions' }} - Latest v{{ latestRevision(selected) }}</small>
+          </span>
+          <span [innerHTML]="versionHistoryOpen() ? '&#9662;' : '&#9656;'"></span>
+        </button>
+        <div class="revision-list collapsible-body" *ngIf="versionHistoryOpen()">
           <button
             type="button"
             *ngFor="let revision of selected.revisions"
@@ -197,7 +206,14 @@
         </div>
       </section>
 
-      <form class="template-form" *ngIf="selected.can_edit" (ngSubmit)="saveDetail()">
+      <section class="readonly-note compact-notice" *ngIf="selected.can_edit">
+        <strong>Editable template</strong>
+        <button class="ghost-button inline-toggle" type="button" (click)="toggleMetadata()">
+          {{ metadataOpen() ? 'Hide metadata' : 'Edit metadata' }}
+        </button>
+      </section>
+
+      <form class="template-form collapsible-body" *ngIf="selected.can_edit && metadataOpen()" (ngSubmit)="saveDetail()">
         <label>
           Template name
           <input [(ngModel)]="detailForm.name" name="template-name" required>
@@ -226,14 +242,18 @@
         </button>
       </form>
 
-      <section class="readonly-note" *ngIf="!selected.can_edit">
-        <strong>Read-only template</strong>
-        <p>Built-in templates can be inspected and applied, but their metadata is managed in code.</p>
+      <section class="readonly-note compact-notice" *ngIf="!selected.can_edit">
+        <strong>Read-only built-in template</strong>
+        <p>Metadata is managed in code.</p>
       </section>
 
       <section class="preview-panel">
-        <p class="eyebrow">Flow preview</p>
-        <h3>{{ nodeTypeSummary(selected) || 'No blocks' }}</h3>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Flow preview</p>
+            <h3>{{ flowStats(selected) }}</h3>
+          </div>
+        </div>
         <div class="node-preview">
           <article *ngFor="let node of selected.nodes">
             <span>{{ node.type }}</span>
@@ -245,51 +265,69 @@
 
       <section class="preview-panel">
         <p class="eyebrow">Paths</p>
-        <div class="path-list" *ngIf="selected.transitions?.length; else noPaths">
+        <div class="path-flow" *ngIf="selected.transitions?.length; else noPaths">
           <span *ngFor="let transition of selected.transitions">
-            {{ transition.source_node_key }} -> {{ transition.target_node_key }}
-            <em *ngIf="transition.label">({{ transition.label }})</em>
+            {{ transitionLabel(transition) }}
           </span>
         </div>
         <ng-template #noPaths><p class="muted">No paths configured.</p></ng-template>
       </section>
 
-      <section class="preview-panel test-panel">
-        <div class="test-header">
-          <div>
-            <p class="eyebrow">Runtime confidence</p>
-            <h3>Template test runner</h3>
-          </div>
+      <section class="preview-panel test-panel compact-test-panel">
+        <div class="test-header compact-test-header">
+          <button class="section-toggle test-toggle" type="button" (click)="toggleTestRunner()" [attr.aria-expanded]="testRunnerOpen()">
+            <span>
+              <span class="eyebrow">Runtime confidence</span>
+              <strong>Template Test Runner</strong>
+              <small>Run a structural runtime check for this template.</small>
+            </span>
+            <span [innerHTML]="testRunnerOpen() ? '&#9662;' : '&#9656;'"></span>
+          </button>
           <span class="status-badge" [ngClass]="testResult()?.status === 'failed' ? 'status-invalid' : 'status-valid'" *ngIf="testResult()">
             {{ testResult()?.status }}
           </span>
         </div>
 
-        <div class="template-form">
+        <div class="test-actions compact-default-actions" *ngIf="!testRunnerOpen()">
+          <button class="secondary-button" type="button" (click)="runSavedTemplateTest()" [disabled]="testLoading()">
+            {{ testLoading() ? 'Running...' : 'Run default test' }}
+          </button>
+          <button class="ghost-button" type="button" (click)="toggleTestRunner()">Expand</button>
+        </div>
+
+        <div class="template-form collapsible-body" *ngIf="testRunnerOpen()">
           <label>
             Scenario name
             <input [(ngModel)]="scenarioName" name="scenario-name">
-          </label>
-          <label>
-            Expected final node
-            <input [(ngModel)]="expectedFinalNode" name="expected-final-node" placeholder="Optional node key">
           </label>
           <label class="wide">
             Test messages
             <textarea rows="5" [(ngModel)]="scenarioMessages" name="scenario-messages" placeholder="One user message per line. Leave empty to auto-drive the first path."></textarea>
           </label>
-          <label class="wide">
-            Expected variables JSON
-            <textarea rows="4" [(ngModel)]="expectedVariables" name="expected-variables" placeholder='{"user_email":"test@example.com"}'></textarea>
-          </label>
+          <section class="advanced-expectations wide">
+            <button class="section-toggle slim-toggle" type="button" (click)="toggleAdvancedExpectations()" [attr.aria-expanded]="advancedExpectationsOpen()">
+              <span>Advanced expectations</span>
+              <span [innerHTML]="advancedExpectationsOpen() ? '&#9662;' : '&#9656;'"></span>
+            </button>
+            <div class="advanced-grid" *ngIf="advancedExpectationsOpen()">
+              <label>
+                Expected final node
+                <input [(ngModel)]="expectedFinalNode" name="expected-final-node" placeholder="Optional node key">
+              </label>
+              <label>
+                Expected variables JSON
+                <textarea rows="4" [(ngModel)]="expectedVariables" name="expected-variables" placeholder='{"user_email":"test@example.com"}'></textarea>
+              </label>
+            </div>
+          </section>
         </div>
 
-        <div class="test-actions">
+        <div class="test-actions" *ngIf="testRunnerOpen()">
           <button class="secondary-button" type="button" (click)="runTemplateTest(false)" [disabled]="testLoading()">
-            {{ testLoading() ? 'Running...' : 'Run ad hoc test' }}
+            {{ testLoading() ? 'Running...' : 'Run custom test' }}
           </button>
           <button class="ghost-button" type="button" (click)="runSavedTemplateTest()" [disabled]="testLoading()">
-            Run saved/default
+            Run default test
           </button>
           <button class="ghost-button" type="button" *ngIf="selected.can_edit" (click)="runTemplateTest(true)" [disabled]="testLoading()">
             Save scenario and run

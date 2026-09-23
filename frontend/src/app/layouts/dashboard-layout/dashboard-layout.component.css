@@ -197,17 +197,6 @@
   transform: translateY(-1px);
 }
 
-.notification-dot {
-  background: var(--danger);
-  border: 2px solid var(--ds-surface);
-  border-radius: 100px;
-  height: 9px;
-  position: absolute;
-  right: 7px;
-  top: 7px;
-  width: 9px;
-}
-
 .profile-menu {
   position: relative;
 }
@@ -546,6 +535,14 @@
   white-space: nowrap;
 }
 
+.topbar-search-wrap {
+  flex: 1 1 420px;
+  margin: 0 16px;
+  max-width: 520px;
+  min-width: 180px;
+  position: relative;
+}
+
 .topbar-search {
   align-items: center;
   background: #fff;
@@ -553,13 +550,10 @@
   border-radius: 11px;
   color: #8ba0b6;
   display: flex;
-  flex: 1 1 420px;
   gap: 8px;
   height: 32px;
-  margin: 0 16px;
-  max-width: 520px;
-  min-width: 180px;
   padding: 0 11px;
+  width: 100%;
 }
 
 .topbar-search:focus-within {
@@ -576,6 +570,66 @@
   min-width: 0;
   outline: 0;
   width: 100%;
+}
+
+.topbar-search-panel {
+  background: #fff;
+  border: 1px solid var(--ga-border);
+  border-radius: 12px;
+  box-shadow: 0 18px 38px rgba(16, 34, 56, .14);
+  display: grid;
+  gap: 4px;
+  left: 0;
+  margin-top: 8px;
+  max-height: min(420px, calc(100vh - 110px));
+  overflow-y: auto;
+  padding: 8px;
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 1200;
+}
+
+.search-result {
+  align-items: start;
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  color: var(--ga-text);
+  cursor: pointer;
+  display: grid;
+  gap: 2px;
+  padding: 9px 10px;
+  text-align: left;
+}
+
+.search-result:hover,
+.search-result:focus-visible {
+  background: rgba(24, 185, 168, .1);
+  outline: 0;
+}
+
+.search-type {
+  color: var(--ga-primary-dark);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.search-title {
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.search-subtitle,
+.search-state {
+  color: var(--ga-muted);
+  font-size: 12px;
+}
+
+.search-state {
+  padding: 10px;
 }
 
 .profile-copy {
@@ -741,6 +795,7 @@
 :host-context(.landing-dark-mode) .notification-button,
 :host-context(.landing-dark-mode) .profile-toggle,
 :host-context(.landing-dark-mode) .topbar-search,
+:host-context(.landing-dark-mode) .topbar-search-panel,
 :host-context(.landing-dark-mode) .context-toggle {
   background: rgba(12, 31, 50, .94) !important;
   border-color: var(--ga-border) !important;
@@ -850,7 +905,7 @@
     display: none;
   }
 
-  .topbar-search {
+  .topbar-search-wrap {
     flex-basis: 150px;
     margin: 0 8px;
   }

@@ -57,6 +57,24 @@ export class ChatbotAnalyticsComponent implements OnInit {
     return `${Math.max((Number(value) / this.maxValue(items)) * 100, value ? 8 : 2)}%`;
   }
 
+  hasSeriesData(items: any[]) {
+    return Boolean((items || []).some(item => Number(item?.count || 0) > 0));
+  }
+
+  responseTimeLabel(data: any) {
+    const value = Number(data?.kpis?.average_response_time_ms || 0);
+    return value ? `${value}ms` : '-';
+  }
+
+  knowledgeUsageValue(data: any) {
+    return Number(data?.kpis?.rag_queries || 0);
+  }
+
+  knowledgeUsageHint(data: any) {
+    const conversations = Number(data?.kpis?.conversations_using_knowledge || 0);
+    return `${conversations} conversation${conversations === 1 ? '' : 's'} using knowledge`;
+  }
+
   goBack() {
     this.router.navigate(['/dashboard/projects', this.projectId, 'chatbots']);
   }

@@ -92,7 +92,7 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
     { value: 'set_variable', label: 'Set Variable', icon: 'V', category: 'Logic', description: 'Set a variable value silently or with confirmation.', iconBg: '#eef2f6', iconColor: '#5f7185', status: 'ready' },
     { value: 'meeting_scheduler', label: 'Meeting Preference', icon: 'MP', category: 'Integration', description: 'Ask for and save a meeting preference.', iconBg: '#dbeafe', iconColor: '#2563eb', status: 'ready' },
     { value: 'api_request', label: 'API Call', icon: 'API', category: 'Integration', description: 'Legacy block. Hidden until integrations are productized.', iconBg: '#ffe4e6', iconColor: '#e11d48', status: 'placeholder', hidden: true },
-    { value: 'handoff', label: 'Human Handoff', icon: 'H', category: 'Integration', description: 'Route to a human team.', iconBg: '#cffafe', iconColor: '#0e7490', status: 'ready' },
+    { value: 'handoff', label: 'Legacy Terminal', icon: 'L', category: 'Integration', description: 'Legacy terminal block.', iconBg: '#f1f5f9', iconColor: '#475569', status: 'placeholder', hidden: true },
     { value: 'ai_router', label: 'AI Router', icon: 'RT', category: 'AI', description: 'Placeholder: stores a simple route value, not real AI routing yet.', iconBg: '#e0e7ff', iconColor: '#4f46e5', status: 'placeholder', hidden: true },
     { value: 'ai_classifier', label: 'AI Classifier', icon: 'CL', category: 'AI', description: 'Placeholder: stores a simple classification value, not real AI classification yet.', iconBg: '#f5d0fe', iconColor: '#a21caf', status: 'placeholder', hidden: true },
     { value: 'confidence_check', label: 'Confidence Check', icon: 'CF', category: 'Logic', description: 'Placeholder: pass-through confidence metadata block.', iconBg: '#fef9c3', iconColor: '#a16207', status: 'placeholder', hidden: true },
@@ -113,7 +113,6 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
   ];
   actionTypes = [
     { value: 'set_variable', label: 'Set variable' },
-    { value: 'handoff', label: 'Request handoff' },
     { value: 'end', label: 'End conversation' }
   ];
   responseLengths = [
@@ -1006,8 +1005,6 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
             ? { prompt: 'What phone number can we use?', field: 'user_phone', invalid_message: 'Please enter a valid phone number.' }
           : type === 'api_request'
             ? { method: 'POST', url: '', headers: {}, body: {}, timeout: 8, response_field: 'api_response', success_message: 'Request completed.', error_message: 'The request failed.' }
-          : type === 'handoff'
-            ? { message: 'A teammate will review this conversation.', department: 'Support', email_field: 'user_email', phone_field: 'user_phone', collect_email_if_missing: true }
           : type === 'end'
             ? { message: 'Thanks. The conversation is now closed.' }
           : { text: 'New message' };
@@ -1386,13 +1383,13 @@ export class FlowBuilderComponent implements OnInit, AfterViewInit {
       confidence_check: 'Stores or evaluates a confidence signal before the next step.',
       lead_score: 'Scores a lead using collected variables.',
       meeting_scheduler: 'Collects a preferred meeting time for manager follow-up. It does not create calendar events.',
-      action: 'Updates saved conversation data or hands off the conversation.',
+      action: 'Updates saved conversation data.',
       collect_name: 'Asks for the visitor name and saves it to a variable.',
       collect_email: 'Asks for an email address and validates the format before continuing.',
       collect_phone: 'Asks for a phone number and validates a basic phone format.',
       set_variable: 'Sets a variable value without asking the visitor.',
       api_request: 'Calls an external webhook only when the live conversation reaches this block.',
-      handoff: 'Stops the flow and marks the conversation for human follow-up.',
+      handoff: 'Legacy terminal block.',
       end: 'Ends the conversation.'
     };
     return helpers[node.type] || 'Configure how this block behaves in the conversation.';

@@ -31,8 +31,7 @@ export const ASSISTANT_TEMPLATE_OPTIONS: Readonly<Record<AssistantPurposeCode, R
   customer_support: [
     { key: 'customer_support_basic', name: 'Customer Support Basic', description: 'Message, customer question, AI/RAG answer, and closing step.' },
     { key: 'customer_support_rag', name: 'Customer Support + RAG', description: 'Support assistant optimized for answering from uploaded knowledge.' },
-    { key: 'customer_support_handoff', name: 'Customer Support + Human Handoff', description: 'Support answer flow with a handoff step for complex issues.' },
-    { key: 'customer_support_ticket_creation', name: 'Customer Support + Ticket Creation', description: 'Collect issue details and prepare a support ticket handoff.' }
+    { key: 'customer_support_ticket_creation', name: 'Customer Support + Ticket Creation', description: 'Collect issue details and prepare a support ticket draft.' }
   ],
   employee_knowledge: [
     { key: 'hr_knowledge_bot', name: 'HR Knowledge Bot', description: 'Answer HR policy and employee process questions from knowledge.' },

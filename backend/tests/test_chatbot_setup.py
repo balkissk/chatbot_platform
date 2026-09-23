@@ -19,7 +19,7 @@ from models.project import Project
 from models.runtime_log import RuntimeLog
 from models.user import User
 from models.version import VersionChatbot
-from routes.chat_routes import prepare_rag_generation
+from routes.chat_routes import merge_node_rag_settings, prepare_rag_generation
 from routes.chatbot_routes import create_chatbot, get_chatbot_setup, regenerate_ai_draft, reapply_template_to_new_draft, update_chatbot, update_chatbot_setup
 from routes.flow_routes import AiGenerateRequest, FlowTemplateApply, FlowTemplateCreate, FlowTemplateRevisionCreate, FlowTemplateTestRun, FlowTemplateUpdate, GeneratedFlowApply, _normalize_ai_generation, apply_flow_template, apply_generated_flow, create_flow_template_from_flow, create_flow_template_revision_from_flow, get_flow_template_detail, list_flow_templates, run_flow_template_test, update_flow_template
 from services.auth import require_roles
@@ -428,7 +428,7 @@ class ChatbotSetupTest(unittest.TestCase):
             db=self.db,
             version=self.version,
             config=config,
-            message="Bonjour",
+            message="Quelle est la politique VPN INSOMEA ?",
             variables={"__language": "fr"},
             history=[],
             node_config={
@@ -469,6 +469,72 @@ class ChatbotSetupTest(unittest.TestCase):
         self.assertEqual(generation["retrieval_mode"], "ai_only")
         self.assertEqual(generation["fallback_response"], "")
         self.assertEqual(generation["sources"], [])
+
+    def test_node_document_only_false_overrides_global_strict_context(self):
+        settings = merge_node_rag_settings(
+            {"strict_context": True, "show_sources": True, "response_length": "short", "max_chunks": 3, "min_score": 0.2, "retrieval_mode": "auto"},
+            {"use_knowledge_base": True, "answer_only_from_documents": False},
+        )
+
+        self.assertFalse(settings["strict_context"])
+
+    def test_conversational_rag_inputs_do_not_short_circuit_to_fallback(self):
+        config = LLMConfig(
+            version_id=self.version.id,
+            model="phi3",
+            temperature=0.7,
+            system_prompt="You are a helpful assistant",
+        )
+        self.db.add(config)
+        self.chatbot.rag_settings = {"strict_context": True}
+        self.db.commit()
+
+        for message in ("merci", "bonjour", "merci beaucoup", "ok", "au revoir"):
+            with self.subTest(message=message):
+                generation = prepare_rag_generation(
+                    db=self.db,
+                    version=self.version,
+                    config=config,
+                    message=message,
+                    variables={"__language": "fr"},
+                    history=[],
+                    node_config={
+                        "use_knowledge_base": True,
+                        "fallback": "I do not have enough information to answer that yet.",
+                    },
+                )
+
+                self.assertEqual(generation["sources"], [])
+                self.assertEqual(generation["fallback_response"], "")
+                self.assertIn("Respond naturally", generation["prompt"])
+
+    def test_unknown_grounded_rag_question_keeps_safe_fallback_without_sources(self):
+        config = LLMConfig(
+            version_id=self.version.id,
+            model="phi3",
+            temperature=0.7,
+            system_prompt="You are a helpful assistant",
+        )
+        self.db.add(config)
+        self.chatbot.rag_settings = {"strict_context": False}
+        self.db.commit()
+
+        generation = prepare_rag_generation(
+            db=self.db,
+            version=self.version,
+            config=config,
+            message="Quelle est la politique VPN INSOMEA ?",
+            variables={"__language": "fr"},
+            history=[],
+            node_config={
+                "use_knowledge_base": True,
+                "answer_only_from_documents": False,
+                "fallback": "I do not have enough information to answer that yet.",
+            },
+        )
+
+        self.assertEqual(generation["sources"], [])
+        self.assertIn("Je n'ai pas encore assez", generation["fallback_response"])
 
     def test_noop_update_does_not_create_audit_log(self):
         update_chatbot_setup(
@@ -799,6 +865,10 @@ class ChatbotSetupTest(unittest.TestCase):
         )
 
         self.assertEqual([node.key for node in nodes].count("start"), 1)
+        answer_node = next(node for node in nodes if node.key == "answer")
+        self.assertFalse(answer_node.config["answer_only_from_documents"])
+        self.assertFalse(answer_node.config["strict_context"])
+        self.assertEqual(answer_node.config["response_length"], "medium")
         node_keys = {node.key for node in nodes}
         self.assertTrue(all(edge.source_node_key in node_keys and edge.target_node_key in node_keys for edge in transitions))
 
@@ -820,6 +890,14 @@ class ChatbotSetupTest(unittest.TestCase):
                 [{"key": "start", "type": "unknown", "label": "Start", "config": {}, "position_x": 0, "position_y": 0}],
                 [],
             )
+
+    def test_template_generated_payload_includes_explicit_rag_context_defaults(self):
+        nodes, _ = template_generated_payload("ai_assistant_starter", "fr")
+        answer = next(node for node in nodes if node["type"] == "rag_answer")
+
+        self.assertFalse(answer["config"]["answer_only_from_documents"])
+        self.assertFalse(answer["config"]["strict_context"])
+        self.assertEqual(answer["config"]["response_length"], "medium")
 
     def test_invalid_ai_output_does_not_create_draft_or_change_existing_flow(self):
         self.chatbot.build_method = "ai"

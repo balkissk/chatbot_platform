@@ -2,6 +2,7 @@ import json
 import os
 
 from fastapi import FastAPI
+from fastapi.responses import Response
 from routes.chatbot_routes import router as chatbot_router
 from database.db import Base, engine
 from models import chatbot, project, flow_template
@@ -9,6 +10,7 @@ from routes.project_routes import router as project_router
 from routes.version_routes import router as version_router
 from routes.llm_config_routes import router as llm_config_router
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from models import llm_config
 from routes.chat_routes import router as chat_router
 from routes.knowledge_routes import router as knowledge_router
@@ -21,6 +23,7 @@ from routes.channel_routes import router as channel_router
 from routes.evaluation_routes import router as evaluation_router
 from routes.legal_routes import router as legal_router
 from routes.platform_settings_routes import router as platform_settings_router
+from routes.search_routes import router as search_router
 from services.ai_provider import AIProviderError, azure_openai_configuration_warnings, validate_ai_configuration, warm_ai_client
 from services.embeddings import EmbeddingError, validate_embedding_configuration
 from config.settings import load_environment
@@ -31,6 +34,17 @@ DEFAULT_ALLOWED_ORIGINS = [
     "http://localhost:4200",
     "http://127.0.0.1:4200",
 ]
+
+DEFAULT_PUBLIC_WIDGET_ALLOWED_ORIGINS = [
+    "http://localhost:5500",
+    "http://127.0.0.1:5500",
+]
+
+PUBLIC_CORS_PATH_PREFIXES = (
+    "/public/chat",
+    "/public/chatbots",
+    "/public/widget.js",
+)
 
 
 openapi_tags = [
@@ -83,6 +97,90 @@ def allowed_origins() -> list[str]:
     return list(dict.fromkeys(origins))
 
 
+def parse_public_allowed_origins(value: str) -> list[str]:
+    value = value.strip()
+    if not value:
+        return []
+
+    if value.startswith("["):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError("PUBLIC_WIDGET_ALLOWED_ORIGINS must be a JSON array or comma-separated list.") from exc
+
+        if not isinstance(parsed, list) or not all(isinstance(origin, str) for origin in parsed):
+            raise ValueError("PUBLIC_WIDGET_ALLOWED_ORIGINS JSON value must be a list of strings.")
+        raw_origins = parsed
+    else:
+        raw_origins = value.split(",")
+
+    origins = [origin.strip().rstrip("/") for origin in raw_origins if origin.strip()]
+    if "*" in origins:
+        return ["*"]
+    return origins
+
+
+def public_widget_allowed_origins() -> list[str]:
+    configured_origins = []
+
+    for env_name in ("PUBLIC_WIDGET_ALLOWED_ORIGINS", "PUBLIC_CHAT_ALLOWED_ORIGINS"):
+        configured_origins.extend(parse_public_allowed_origins(os.getenv(env_name, "")))
+
+    if configured_origins:
+        return list(dict.fromkeys(configured_origins))
+
+    environment = os.getenv("ENVIRONMENT", "development").strip().lower()
+    if environment == "production":
+        return ["*"]
+
+    return list(dict.fromkeys([*DEFAULT_ALLOWED_ORIGINS, *DEFAULT_PUBLIC_WIDGET_ALLOWED_ORIGINS]))
+
+
+def _is_public_cors_path(path: str) -> bool:
+    return any(path == prefix or path.startswith(f"{prefix}/") for prefix in PUBLIC_CORS_PATH_PREFIXES)
+
+
+class PublicWidgetCORSMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, allowed_public_origins: list[str]):
+        super().__init__(app)
+        self.allowed_public_origins = allowed_public_origins
+
+    def _allowed_origin(self, origin: str) -> str | None:
+        if not origin or origin == "null":
+            return None
+        if "*" in self.allowed_public_origins or origin.rstrip("/") in self.allowed_public_origins:
+            return origin
+        return None
+
+    def _cors_headers(self, origin: str, requested_headers: str | None = None) -> dict[str, str]:
+        headers = {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": requested_headers or "content-type",
+            "Access-Control-Max-Age": "600",
+            "Vary": "Origin",
+        }
+        return headers
+
+    async def dispatch(self, request, call_next):
+        origin = request.headers.get("origin")
+        allowed_origin = self._allowed_origin(origin or "")
+        is_public_path = _is_public_cors_path(request.url.path)
+
+        if request.method == "OPTIONS" and is_public_path and allowed_origin:
+            requested_headers = request.headers.get("access-control-request-headers")
+            return Response(status_code=200, headers=self._cors_headers(allowed_origin, requested_headers))
+
+        response = await call_next(request)
+        if is_public_path and allowed_origin:
+            requested_headers = request.headers.get("access-control-request-headers")
+            if "Access-Control-Allow-Credentials" in response.headers:
+                del response.headers["Access-Control-Allow-Credentials"]
+            for key, value in self._cors_headers(allowed_origin, requested_headers).items():
+                response.headers[key] = value
+        return response
+
+
 app = FastAPI(
     title="ChatBot Factory API",
     description="Backend API for chatbot project management, flow building, knowledge bases, and public chat.",
@@ -105,6 +203,7 @@ app.include_router(admin_analytics_router, tags=["Admin Analytics"])
 app.include_router(health_router)
 app.include_router(legal_router)
 app.include_router(platform_settings_router)
+app.include_router(search_router, tags=["Search"])
 
 @app.get("/", tags=["System"])
 def home():
@@ -121,6 +220,11 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+app.add_middleware(
+    PublicWidgetCORSMiddleware,
+    allowed_public_origins=public_widget_allowed_origins(),
 )
 
 

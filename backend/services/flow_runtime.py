@@ -66,6 +66,9 @@ def _node_text(node: FlowNode) -> str:
 
 
 def _options_for(node: FlowNode, transitions: list[FlowTransition]) -> list[str]:
+    if node.type != "buttons":
+        return []
+
     config = node.config or {}
     buttons = config.get("buttons") or []
     transition_labels = [

@@ -3,14 +3,12 @@
     <div class="lifecycle-title">
       <span class="lifecycle-header-icon"><svg lucideBot size="18" aria-hidden="true"></svg></span>
       <div>
-        <p class="eyebrow">{{ project()?.name || ('Project ' + projectId) }}</p>
         <h2>Assistants</h2>
-        <p class="muted">Create, configure, publish, and deploy assistants for this workspace.</p>
       </div>
     </div>
 
     <div class="lifecycle-actions">
-      <button class="lifecycle-refresh-button" type="button" (click)="loadChatbots(true, true)" [disabled]="refreshing()">
+      <button class="lifecycle-refresh-button" type="button" (click)="loadChatbots(true, true)" [disabled]="loading() || refreshing()">
         <svg lucideRefreshCw size="14" aria-hidden="true"></svg>
         <span>{{ refreshing() ? 'Refreshing...' : 'Refresh' }}</span>
       </button>
@@ -50,9 +48,16 @@
           [ngModel]="assistantSearch()"
           (ngModelChange)="setAssistantSearch($event)">
       </label>
-      <button class="lifecycle-filter-button" type="button">
+      <button
+        class="lifecycle-filter-button"
+        type="button"
+        aria-controls="assistant-filter-popover"
+        [attr.aria-expanded]="filtersOpen()"
+        [class.active]="activeFilterCount() > 0"
+        (click)="toggleFilters($event)">
         <svg lucideFilter size="14" aria-hidden="true"></svg>
         <span>Filters</span>
+        <b *ngIf="activeFilterCount()">{{ activeFilterCount() }}</b>
       </button>
     </div>
   </section>
@@ -88,6 +93,7 @@
           </span>
         </div>
         <button
+          *ngIf="canManageWorkspace() && !isArchivedProject()"
           type="button"
           class="assistant-menu-button"
           aria-label="More assistant actions"
@@ -115,10 +121,6 @@
           <span>Open assistant</span>
           <svg lucideArrowRight size="14" aria-hidden="true"></svg>
         </button>
-        <button class="assistant-info-button" type="button" (click)="openPanel(bot, 'overview')" aria-label="View assistant info">
-          <svg lucideGrid2X2 size="14" aria-hidden="true"></svg>
-          <span>Info</span>
-        </button>
       </div>
     </article>
   </section>
@@ -142,16 +144,68 @@
   </footer>
 
   <div
+    *ngIf="filtersOpen()"
+    id="assistant-filter-popover"
+    class="filter-popover"
+    (click)="$event.stopPropagation()">
+    <div class="filter-section">
+      <strong>Status</strong>
+      <label><input type="radio" name="assistantStatusFilter" value="all" [ngModel]="statusFilter()" (ngModelChange)="setStatusFilter($event)"> All</label>
+      <label><input type="radio" name="assistantStatusFilter" value="live" [ngModel]="statusFilter()" (ngModelChange)="setStatusFilter($event)"> Live</label>
+      <label><input type="radio" name="assistantStatusFilter" value="draft" [ngModel]="statusFilter()" (ngModelChange)="setStatusFilter($event)"> Draft</label>
+      <label><input type="radio" name="assistantStatusFilter" value="attention" [ngModel]="statusFilter()" (ngModelChange)="setStatusFilter($event)"> Needs attention</label>
+    </div>
+    <div class="filter-section">
+      <strong>Purpose</strong>
+      <label><input type="radio" name="assistantPurposeFilter" value="all" [ngModel]="purposeFilter()" (ngModelChange)="setPurposeFilter($event)"> All</label>
+      <label *ngFor="let option of purposeOptions">
+        <input type="radio" name="assistantPurposeFilter" [value]="option.value" [ngModel]="purposeFilter()" (ngModelChange)="setPurposeFilter($event)">
+        {{ option.label }}
+      </label>
+    </div>
+    <div class="filter-section">
+      <strong>Channel</strong>
+      <label><input type="radio" name="assistantChannelFilter" value="all" [ngModel]="channelFilter()" (ngModelChange)="setChannelFilter($event)"> All</label>
+      <label *ngFor="let option of channelOptions">
+        <input type="radio" name="assistantChannelFilter" [value]="option.value" [ngModel]="channelFilter()" (ngModelChange)="setChannelFilter($event)">
+        {{ option.label }}
+      </label>
+    </div>
+    <div class="filter-section">
+      <strong>Language</strong>
+      <label><input type="radio" name="assistantLanguageFilter" value="all" [ngModel]="languageFilter()" (ngModelChange)="setLanguageFilter($event)"> All</label>
+      <label *ngFor="let option of languageOptions">
+        <input type="radio" name="assistantLanguageFilter" [value]="option.value" [ngModel]="languageFilter()" (ngModelChange)="setLanguageFilter($event)">
+        {{ option.label }}
+      </label>
+    </div>
+    <div class="filter-section">
+      <strong>Creation</strong>
+      <label><input type="radio" name="assistantCreationFilter" value="all" [ngModel]="creationFilter()" (ngModelChange)="setCreationFilter($event)"> All</label>
+      <label *ngFor="let option of creationOptions">
+        <input type="radio" name="assistantCreationFilter" [value]="option.value" [ngModel]="creationFilter()" (ngModelChange)="setCreationFilter($event)">
+        {{ option.label }}
+      </label>
+    </div>
+    <div class="filter-actions">
+      <button type="button" class="secondary" (click)="clearFilters()">Clear all</button>
+      <button type="button" class="primary" (click)="applyFilters()">Apply filters</button>
+    </div>
+  </div>
+
+  <div
     *ngIf="activeActionBot() as bot"
+    #actionPopover
     id="assistant-actions-menu"
     class="action-popover"
     role="menu"
     aria-label="Assistant actions"
     [style.top.px]="actionMenuPosition().top"
     [style.left.px]="actionMenuPosition().left"
+    [style.visibility]="actionMenuReady() ? 'visible' : 'hidden'"
     (click)="$event.stopPropagation()">
-    <div class="menu-group" role="group" aria-label="Build">
-      <span class="menu-group-label">Build</span>
+    <div class="menu-group quick-access-group" role="group" aria-label="Quick access">
+      <span class="menu-group-label">Quick access</span>
       <button *ngIf="canManageWorkspace() && !isArchivedProject()" type="button" role="menuitem" [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'flow']" (click)="closeActionMenu()">
         <span class="menu-icon">FL</span>
         <span>Flow Builder</span>
@@ -160,30 +214,13 @@
         <span class="menu-icon">KB</span>
         <span>Knowledge</span>
       </button>
-      <button type="button" role="menuitem" [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'versions']" (click)="closeActionMenu()">
-        <span class="menu-icon">V</span>
-        <span>Versions</span>
-      </button>
-    </div>
-
-    <div class="menu-group" role="group" aria-label="Operate">
-      <span class="menu-group-label">Operate</span>
-      <button type="button" role="menuitem" [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'conversations']" (click)="closeActionMenu()">
-        <span class="menu-icon">CH</span>
-        <span>Conversations</span>
-      </button>
-      <button type="button" role="menuitem" [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'analytics']" (click)="closeActionMenu()">
-        <span class="menu-icon">AN</span>
-        <span>Analytics</span>
-      </button>
       <button *ngIf="canManageWorkspace() && !isArchivedProject()" type="button" role="menuitem" [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'deployment']" (click)="closeActionMenu()">
         <span class="menu-icon">DP</span>
         <span>Deploy</span>
       </button>
     </div>
 
-    <div class="menu-group" role="group" aria-label="Manage">
-      <span class="menu-group-label">Manage</span>
+    <div class="menu-group settings-group" role="group" aria-label="Settings">
       <button *ngIf="canManageWorkspace() && !isArchivedProject()" type="button" role="menuitem" [routerLink]="['/dashboard/projects', projectId, 'chatbots', bot.id, 'settings']" (click)="closeActionMenu()">
         <span class="menu-icon">ST</span>
         <span>Settings</span>
@@ -210,7 +247,6 @@
           <header class="info-hero">
             <div class="info-avatar">{{ (details.name || 'A').slice(0, 1).toUpperCase() }}</div>
             <div class="info-title">
-              <p class="eyebrow">{{ details.project?.name || 'Project workspace' }}</p>
               <h2>{{ details.name }}</h2>
               <p>{{ details.description || 'No description has been added yet.' }}</p>
             </div>
@@ -270,9 +306,7 @@
         <section *ngSwitchCase="'deploy'" class="deploy-panel channels-deploy">
           <div class="deploy-header">
             <div>
-              <p class="eyebrow">Deploy</p>
               <h2>Channels & Deployment</h2>
-              <p class="muted">Deploy the same assistant flow to multiple channel adapters without duplicating builders.</p>
             </div>
             <button class="secondary" type="button" (click)="loadChannels(details.id)" [disabled]="channelsLoading()">
               {{ channelsLoading() ? 'Refreshing...' : 'Refresh channels' }}

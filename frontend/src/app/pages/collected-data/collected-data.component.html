@@ -1,9 +1,7 @@
 <div class="collected-page">
   <header class="page-header">
     <div>
-      <p class="eyebrow">Assistant {{ chatbotId }}</p>
       <h2>Collected data</h2>
-      <p>Review contact details, meeting preferences, selections and custom answers captured by this assistant.</p>
     </div>
     <div class="actions">
       <button class="secondary" type="button" (click)="load()" [disabled]="loading()">
@@ -61,7 +59,6 @@
   <section class="data-panel">
     <div class="panel-header">
       <div>
-        <p class="eyebrow">Captured fields</p>
         <h3>{{ total() }} saved values</h3>
       </div>
       <span class="soft-badge">Session variables</span>

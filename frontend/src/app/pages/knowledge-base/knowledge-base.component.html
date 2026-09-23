@@ -1,9 +1,7 @@
 <section class="kb-page">
   <header class="kb-header">
     <div>
-      <p class="eyebrow">{{ chatbot()?.name || ('Assistant ' + chatbotId) }}</p>
       <h2>Knowledge Base</h2>
-      <p class="subtitle">Upload documents, wait until knowledge is ready, then test what the assistant can find.</p>
     </div>
 
     <div class="header-controls">
@@ -29,7 +27,7 @@
     <div class="health-state">
       <span>Knowledge status</span>
       <strong><i></i>{{ managerStatusLabel() }}</strong>
-      <small>{{ managerStatusDetail() }}</small>
+      <small *ngIf="managerStatusDetail()">{{ managerStatusDetail() }}</small>
     </div>
   </section>
 
@@ -40,9 +38,7 @@
 
   <section class="upload-section">
     <div>
-      <p class="eyebrow">Add Knowledge</p>
       <h3>Upload source documents</h3>
-      <p>Add approved files so the assistant can find reliable information from them.</p>
     </div>
     <label class="file-dropzone" [class.disabled]="uploadLoading() || !selectedVersionId()">
       <input
@@ -67,7 +63,6 @@
     <aside class="documents-panel panel">
       <div class="panel-header compact">
         <div>
-          <p class="eyebrow">Documents</p>
           <h3>{{ filteredDocuments().length }} files</h3>
         </div>
       </div>
@@ -89,7 +84,6 @@
         class="document-row"
         [class.selected]="selectedDocument()?.id === document.id">
         <button
-          *ngIf="editingDocumentId() !== document.id"
           type="button"
           class="document-main"
           (click)="openDocument(document)">
@@ -106,21 +100,8 @@
           </span>
         </button>
 
-        <div *ngIf="editingDocumentId() === document.id" class="document-edit">
-          <input [(ngModel)]="documentEdit.filename" placeholder="Filename">
-          <input [(ngModel)]="documentEdit.content_type" placeholder="Content type">
-          <button
-            type="button"
-            class="primary"
-            (click)="saveDocument(document)"
-            [disabled]="savingDocumentId() === document.id || !documentEdit.filename.trim()">
-            {{ savingDocumentId() === document.id ? 'Saving...' : 'Save' }}
-          </button>
-          <button type="button" class="secondary" (click)="cancelDocumentEdit()">Cancel</button>
-        </div>
-
         <button
-          *ngIf="hasFailedChunks(document) && editingDocumentId() !== document.id"
+          *ngIf="hasFailedChunks(document)"
           type="button"
           class="retry-link secondary"
           (click)="reprocessEmbeddings(document)"
@@ -128,32 +109,16 @@
           {{ reprocessId() === document.id ? 'Retrying...' : 'Retry failed content' }}
         </button>
 
-        <div class="row-menu" *ngIf="editingDocumentId() !== document.id">
+        <div class="row-menu">
           <button
             type="button"
             class="icon-button"
             aria-label="Document actions"
+            aria-controls="document-actions-menu"
             [attr.aria-expanded]="menuIsOpen(document)"
             (click)="toggleDocumentMenu(document, $event)">
             ...
           </button>
-          <div
-            *ngIf="menuIsOpen(document)"
-            class="document-menu"
-            role="menu"
-            (click)="$event.stopPropagation()">
-            <button type="button" class="secondary" role="menuitem" (click)="viewDocument(document)">View details</button>
-            <button type="button" class="secondary" role="menuitem" (click)="startDocumentEdit(document)">Rename</button>
-            <button
-              type="button"
-              class="secondary"
-              role="menuitem"
-              (click)="reprocessChunks(document)"
-              [disabled]="isDocumentActionBusy(document)">
-              Reprocess
-            </button>
-            <button type="button" role="menuitem" class="danger danger-item" (click)="deleteDocument(document)">Delete</button>
-          </div>
         </div>
       </article>
     </aside>
@@ -167,7 +132,6 @@
       <ng-container *ngIf="selectedDocument() as document">
         <div class="details-header">
           <div>
-            <p class="eyebrow">Document details</p>
             <h3>{{ document.filename }}</h3>
             <p>{{ documentManagerSummary(document) }}</p>
           </div>
@@ -214,7 +178,6 @@
           <section class="chunk-explorer">
           <div class="section-title-row">
             <div>
-              <p class="eyebrow">Chunk Explorer</p>
               <h3>{{ filteredChunks().length }} chunks</h3>
             </div>
             <input
@@ -401,6 +364,25 @@
     </section>
   </section>
 </section>
+
+<div
+  *ngIf="openDocumentMenu() as document"
+  id="document-actions-menu"
+  class="document-menu"
+  role="menu"
+  [style.top.px]="documentMenuPosition().top"
+  [style.left.px]="documentMenuPosition().left"
+  (click)="$event.stopPropagation()">
+  <button
+    type="button"
+    class="secondary"
+    role="menuitem"
+    (click)="reprocessChunks(document)"
+    [disabled]="isDocumentActionBusy(document)">
+    Reprocess
+  </button>
+  <button type="button" role="menuitem" class="danger danger-item" (click)="deleteDocument(document)">Delete</button>
+</div>
 
 <section
   *ngIf="duplicateDocument() as duplicate"

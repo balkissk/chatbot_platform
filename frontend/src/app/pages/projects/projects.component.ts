@@ -1,10 +1,9 @@
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { Component, HostListener, Inject, OnDestroy, OnInit, PLATFORM_ID, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { RouterModule } from '@angular/router';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import {
   LucideActivity,
-  LucideArrowRight,
   LucideBot,
   LucideCheckCircle2,
   LucideClock3,
@@ -35,7 +34,6 @@ import { ProjectActionsMenuComponent } from './project-actions-menu.component';
     FormsModule,
     RouterModule,
     LucideActivity,
-    LucideArrowRight,
     LucideBot,
     LucideCheckCircle2,
     LucideClock3,
@@ -128,12 +126,6 @@ export class ProjectsComponent implements OnInit, OnDestroy {
     const ready = this.projects().filter(project => !this.isArchived(project) && this.assistantCount(project) > 0 && this.publishedCount(project) > 0).length;
     return Math.round((ready / total) * 100);
   });
-  runtimeHealthLabel = computed(() => {
-    if (!this.projects().length) return 'No projects';
-    if (this.projectsNeedingPublication()) return 'Needs publication';
-    if (this.emptyProjectCount()) return 'Setup needed';
-    return 'Healthy';
-  });
   activeFilterCount = computed(() => {
     const filters = this.activeFilters();
     return Number(filters.status !== 'all') + Number(filters.activity !== 'any') + Number(filters.assistants !== 'any');
@@ -156,6 +148,8 @@ export class ProjectsComponent implements OnInit, OnDestroy {
     public auth: AuthService,
     private api: ApiService,
     private toast: ToastService,
+    private route: ActivatedRoute,
+    private router: Router,
     @Inject(PLATFORM_ID) platformId: object
   ) {
     this.isBrowser = isPlatformBrowser(platformId);
@@ -165,6 +159,7 @@ export class ProjectsComponent implements OnInit, OnDestroy {
     if (!this.isBrowser) return;
     this.restoreViewMode();
     this.loadProjects();
+    this.consumeStartBuildingIntent();
   }
 
   ngOnDestroy() {
@@ -791,6 +786,18 @@ export class ProjectsComponent implements OnInit, OnDestroy {
     if (saved === 'grid' || saved === 'table') {
       this.viewMode.set(saved);
     }
+  }
+
+  private consumeStartBuildingIntent() {
+    if (this.route.snapshot.queryParamMap.get('intent') !== 'start-building') return;
+    if (this.canManageWorkspace()) {
+      this.openCreateModal();
+    }
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: {},
+      replaceUrl: true
+    });
   }
 
   private safeLocalStorage(): Storage | null {

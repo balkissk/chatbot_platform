@@ -1,6 +1,9 @@
 import base64
 import binascii
+import logging
 from io import BytesIO
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentExtractionError(Exception):
@@ -46,16 +49,27 @@ def extract_pdf_text(content: str, content_encoding: str | None = None) -> tuple
         raise DocumentExtractionError("PDF text extraction dependency is not installed") from exc
 
     try:
-        reader = PdfReader(BytesIO(pdf_bytes))
+        reader = PdfReader(BytesIO(pdf_bytes), strict=False)
         if reader.is_encrypted:
             try:
-                reader.decrypt("")
-            except Exception:
-                pass
+                decrypt_result = reader.decrypt("")
+            except Exception as exc:
+                raise DocumentExtractionError("Encrypted PDFs are not supported unless they can be opened without a password") from exc
+            if not decrypt_result:
+                raise DocumentExtractionError("Encrypted PDFs are not supported unless they can be opened without a password")
 
+        page_count = len(reader.pages)
         pages = []
         for page_number, page in enumerate(reader.pages, start=1):
-            text = page.extract_text() or ""
+            try:
+                text = page.extract_text() or ""
+            except Exception as exc:
+                logger.warning(
+                    "PDF page text extraction failed page=%s error=%s",
+                    page_number,
+                    str(exc)[:300],
+                )
+                text = ""
             text = text.strip()
             if text:
                 pages.append(f"Page {page_number}\n{text}")
@@ -68,6 +82,13 @@ def extract_pdf_text(content: str, content_encoding: str | None = None) -> tuple
             "PDF has no extractable text. Scanned/image-only PDFs need OCR before upload."
         )
 
+    logger.info(
+        "knowledge_ingestion extractor=pdf input_bytes=%s page_count=%s extracted_chars=%s readable_pages=%s",
+        len(pdf_bytes),
+        page_count,
+        len(extracted_text),
+        len(pages),
+    )
     return extracted_text, len(pdf_bytes)
 
 
@@ -87,4 +108,10 @@ def extract_document_text(
         except UnicodeDecodeError as exc:
             raise DocumentExtractionError("Uploaded text document is not valid UTF-8") from exc
 
-    return text, len(text.encode("utf-8"))
+    size_bytes = len(text.encode("utf-8"))
+    logger.info(
+        "knowledge_ingestion extractor=text input_bytes=%s extracted_chars=%s",
+        size_bytes,
+        len((text or "").strip()),
+    )
+    return text, size_bytes

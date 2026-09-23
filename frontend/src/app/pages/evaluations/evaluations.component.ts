@@ -1347,10 +1347,6 @@ export class EvaluationsComponent implements OnInit, AfterViewInit, OnDestroy {
     return 'Save case';
   }
 
-  showExpectedHandoffControl() {
-    return this.flowNodes().some((node: any) => node.type === 'handoff') || this.caseForm.expected_handoff !== null;
-  }
-
   selectedFlowLabels(value: string) {
     return this.list(value).map(nodeKey => this.nodeName(nodeKey));
   }
@@ -1368,7 +1364,6 @@ export class EvaluationsComponent implements OnInit, AfterViewInit, OnDestroy {
       collect_email: 'Collect email',
       collect_phone: 'Collect phone',
       meeting_scheduler: 'Meeting scheduler',
-      handoff: 'Handoff',
       end: 'End'
     };
     return labels[type] || String(type || 'block').replace(/_/g, ' ');
@@ -1620,21 +1615,6 @@ export class EvaluationsComponent implements OnInit, AfterViewInit, OnDestroy {
         });
       }
 
-      if (node.type === 'handoff') {
-        const path = this.messagesToNode(node.node_key);
-        addSuggestion({
-          id: `handoff-${node.node_key}`,
-          type: 'Handoff',
-          name: `${node.label || node.node_key} handoff path`,
-          description: 'Verifies that a route reaches the handoff block.',
-          turns: path.messages,
-          input_message: path.input_message || '',
-          expected_flow_node_ids: [...path.nodes, node.node_key],
-          expected_final_node_id: node.node_key,
-          expected_handoff: true,
-          tags: ['flow', 'handoff']
-        });
-      }
     }
 
     for (const terminal of nodes.filter((node: any) => node.type === 'end')) {

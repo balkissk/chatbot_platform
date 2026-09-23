@@ -29,22 +29,6 @@
   padding: 18px;
 }
 
-.breadcrumb {
-  align-items: center;
-  color: var(--ink-muted);
-  display: flex;
-  flex-wrap: wrap;
-  font-size: 12px;
-  font-weight: 750;
-  gap: 7px;
-  margin-bottom: 10px;
-}
-
-.breadcrumb a {
-  color: var(--ink-muted);
-  text-decoration: none;
-}
-
 .eyebrow {
   color: var(--brand-teal-dark);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
