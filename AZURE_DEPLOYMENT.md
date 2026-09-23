@@ -2,7 +2,7 @@
 
 This project is prepared as two deployable services:
 
-- `frontend`: Angular SSR app running on Node.
+- `frontend`: Angular SPA served from the production browser build.
 - `backend`: FastAPI app running with Gunicorn/Uvicorn.
 
 ## Required Azure Resources
@@ -116,7 +116,15 @@ VITE_FRONTEND_BASE_URL=https://your-frontend-domain
 PORT=8080
 ```
 
-The Angular SSR server serves `/config.js` dynamically from these values, so the frontend does not need local API URLs baked into the bundle.
+The frontend startup writes `/config.js` from these values before serving the compiled SPA, so the frontend does not need local API URLs baked into the bundle.
+
+Azure frontend startup command:
+
+```sh
+node scripts/write-runtime-config.mjs && pm2 serve dist/frontend/browser --no-daemon --spa
+```
+
+The `--spa` flag preserves client-side routing for direct refreshes such as `/login`, `/projects`, and assistant detail pages.
 
 `FRONTEND_BASE_URL` is used by the backend to generate absolute frontend links, including password reset links. `FRONTEND_URL` and `ALLOWED_ORIGINS` are CORS inputs and should not be treated as the password reset link source. In local development use `FRONTEND_BASE_URL=http://localhost:4200`; in production set it in Azure App Service application settings to the deployed frontend URL.
 

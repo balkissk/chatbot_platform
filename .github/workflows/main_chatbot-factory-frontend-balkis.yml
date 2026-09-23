@@ -15,7 +15,7 @@ on:
 env:
   NODE_VERSION: '22.x'
   FRONTEND_PATH: frontend
-  ANGULAR_DIST_PATH: dist/frontend
+  ANGULAR_BROWSER_DIST_PATH: dist/frontend/browser
   AZURE_WEBAPP_NAME: chatbot-factory-frontend-balkis
 
 jobs:
@@ -43,12 +43,13 @@ jobs:
         working-directory: ${{ env.FRONTEND_PATH }}
         run: npm run build --if-present
 
-      - name: Verify Angular SSR build output
+      - name: Verify Angular static build output
         working-directory: ${{ env.FRONTEND_PATH }}
         run: |
           test -f package.json
-          test -d ${{ env.ANGULAR_DIST_PATH }}/browser
-          test -f ${{ env.ANGULAR_DIST_PATH }}/server/server.mjs
+          test -d ${{ env.ANGULAR_BROWSER_DIST_PATH }}
+          test -f ${{ env.ANGULAR_BROWSER_DIST_PATH }}/index.html
+          test -f ${{ env.ANGULAR_BROWSER_DIST_PATH }}/config.js
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
@@ -101,7 +102,7 @@ jobs:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
           slot-name: 'Production'
           package: frontend-app
-          startup-command: node dist/frontend/server/server.mjs
+          startup-command: node scripts/write-runtime-config.mjs && pm2 serve dist/frontend/browser --no-daemon --spa
 
       - name: Verify frontend after deployment
         run: |
