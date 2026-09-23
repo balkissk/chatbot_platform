@@ -3,7 +3,7 @@ import time
 from datetime import datetime
 from urllib.parse import urlparse
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from sqlalchemy import func, text
 
 from database.db import SessionLocal
@@ -72,6 +72,21 @@ def database_health():
             "duration_ms": _duration_ms(start),
             "checked_at": _now_iso(),
         }
+    finally:
+        db.close()
+
+
+@router.get("/warmup")
+def warmup_health():
+    db = SessionLocal()
+    try:
+        db.execute(text("SELECT 1")).scalar_one()
+        return {"status": "ready"}
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Backend is not ready",
+        ) from exc
     finally:
         db.close()
 

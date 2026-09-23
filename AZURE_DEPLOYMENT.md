@@ -92,8 +92,17 @@ alembic upgrade head && gunicorn -k uvicorn.workers.UvicornWorker -w ${WEB_CONCU
 Health check path:
 
 ```text
-/health
+/health/warmup
 ```
+
+For Azure App Service warm-up, set these application settings manually:
+
+```text
+WEBSITE_WARMUP_PATH=/health/warmup
+WEBSITE_WARMUP_STATUSES=200
+```
+
+Keep **Always On** enabled. Azure Monitoring > Health check can also use `/health/warmup`. This endpoint performs only a lightweight database connectivity check and does not call Azure OpenAI, embeddings, RAG, or user/project data.
 
 ## Frontend Settings
 
