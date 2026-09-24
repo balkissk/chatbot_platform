@@ -160,8 +160,11 @@ def _add_cycle_errors(
             visit(node.node_key)
 
 
-def validate_flow_version(db: Session, version_id: int) -> dict:
-    flow = db.query(Flow).filter(Flow.version_id == version_id).first()
+def validate_flow_definition(
+    flow: Flow | None,
+    nodes: list[FlowNode] | None = None,
+    transitions: list[FlowTransition] | None = None,
+) -> dict:
     if not flow:
         validation_errors = [_error(
             "FLOW_MISSING",
@@ -174,8 +177,8 @@ def validate_flow_version(db: Session, version_id: int) -> dict:
             "validation_errors": validation_errors,
         }
 
-    nodes = db.query(FlowNode).filter(FlowNode.flow_id == flow.id).all()
-    transitions = db.query(FlowTransition).filter(FlowTransition.flow_id == flow.id).all()
+    nodes = nodes or []
+    transitions = transitions or []
     validation_errors: list[dict] = []
 
     if not nodes:
@@ -452,3 +455,13 @@ def validate_flow_version(db: Session, version_id: int) -> dict:
         "errors": [item["message"] for item in unique_errors],
         "validation_errors": unique_errors,
     }
+
+
+def validate_flow_version(db: Session, version_id: int) -> dict:
+    flow = db.query(Flow).filter(Flow.version_id == version_id).first()
+    if not flow:
+        return validate_flow_definition(None)
+
+    nodes = db.query(FlowNode).filter(FlowNode.flow_id == flow.id).all()
+    transitions = db.query(FlowTransition).filter(FlowTransition.flow_id == flow.id).all()
+    return validate_flow_definition(flow, nodes, transitions)

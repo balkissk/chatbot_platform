@@ -1,7 +1,7 @@
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, or_, select, union_all
+from sqlalchemy import case, func, or_, select, union_all
 from sqlalchemy.orm import Session
 from database.db import SessionLocal
 from models.chatbot import Chatbot
@@ -27,7 +27,7 @@ from models.user import User
 from models.version import VersionChatbot
 from services.auth import require_roles, require_workspace_manager
 from services.audit import record_audit_log
-from services.flow_validation import validate_flow_version
+from services.flow_validation import validate_flow_definition
 
 router = APIRouter()
 
@@ -737,48 +737,112 @@ def get_project_workspace_dashboard(
     chatbot_ids = [chatbot.id for chatbot in chatbots]
     chatbot_by_id = {chatbot.id: chatbot for chatbot in chatbots}
 
-    versions = db.query(VersionChatbot).filter(
-        VersionChatbot.chatbot_id.in_(chatbot_ids)
-    ).order_by(VersionChatbot.version_number.desc()).all() if chatbot_ids else []
-    versions_by_chatbot: dict[int, list[VersionChatbot]] = {}
-    for version in versions:
-        versions_by_chatbot.setdefault(version.chatbot_id, []).append(version)
+    latest_versions: list[VersionChatbot] = []
+    published_version = None
+    published_version_count = stats.get("published_version_count", 0) if stats else 0
+    if chatbot_ids:
+        latest_version_ids = select(
+            VersionChatbot.id.label("id"),
+            func.row_number().over(
+                partition_by=VersionChatbot.chatbot_id,
+                order_by=VersionChatbot.version_number.desc(),
+            ).label("rank"),
+        ).where(VersionChatbot.chatbot_id.in_(chatbot_ids)).subquery()
+        latest_versions = db.query(VersionChatbot).join(
+            latest_version_ids,
+            VersionChatbot.id == latest_version_ids.c.id,
+        ).filter(latest_version_ids.c.rank == 1).all()
+        published_version = db.query(VersionChatbot).filter(
+            VersionChatbot.chatbot_id.in_(chatbot_ids),
+            VersionChatbot.status == "published",
+        ).order_by(
+            func.coalesce(VersionChatbot.published_at, VersionChatbot.created_at).desc()
+        ).first()
 
-    latest_versions = [
-        rows[0] for rows in versions_by_chatbot.values()
-        if rows
-    ]
+    versions_by_chatbot: dict[int, list[VersionChatbot]] = {
+        version.chatbot_id: [version]
+        for version in latest_versions
+    }
+
     latest_version = max(latest_versions, key=lambda row: row.created_at or datetime.min) if latest_versions else None
-    published_versions = [version for version in versions if version.status == "published"]
-    published_version = max(
-        published_versions,
-        key=lambda row: row.published_at or row.created_at or datetime.min,
-    ) if published_versions else None
 
-    version_ids = [version.id for version in versions]
-    knowledge_base_ids = [
-        row.id for row in db.query(KnowledgeBase.id).filter(KnowledgeBase.version_id.in_(version_ids)).all()
-    ] if version_ids else []
-    documents = db.query(Document).filter(Document.knowledge_base_id.in_(knowledge_base_ids)).all() if knowledge_base_ids else []
-    document_ids = [document.id for document in documents]
-    chunks = db.query(Chunk).filter(Chunk.document_id.in_(document_ids)).all() if document_ids else []
-    failed_documents = [document for document in documents if document.status == "failed" or document.error_message]
-    processing_documents = [document for document in documents if document.status in {"processing", "uploaded"}]
-    failed_embeddings = [chunk for chunk in chunks if chunk.embedding_status == "failed" or chunk.embedding_error]
-    ready_embeddings = [chunk for chunk in chunks if is_searchable_chunk(chunk)]
+    knowledge_base_scope = db.query(KnowledgeBase.id).join(
+        VersionChatbot,
+        KnowledgeBase.version_id == VersionChatbot.id,
+    ).filter(VersionChatbot.chatbot_id.in_(chatbot_ids)) if chatbot_ids else None
+    document_total = 0
+    failed_documents_count = 0
+    if knowledge_base_scope is not None:
+        document_total, failed_documents_count = knowledge_base_scope.outerjoin(
+            Document,
+            Document.knowledge_base_id == KnowledgeBase.id,
+        ).with_entities(
+            func.count(Document.id),
+            func.coalesce(func.sum(case((
+                or_(Document.status == "failed", Document.error_message.isnot(None)),
+                1,
+            ), else_=0)), 0),
+        ).one()
+
+    chunk_scope = db.query(Chunk.id).join(
+        Document,
+        Chunk.document_id == Document.id,
+    ).join(
+        KnowledgeBase,
+        Document.knowledge_base_id == KnowledgeBase.id,
+    ).join(
+        VersionChatbot,
+        KnowledgeBase.version_id == VersionChatbot.id,
+    ).filter(VersionChatbot.chatbot_id.in_(chatbot_ids)) if chatbot_ids else None
+    chunk_total = 0
+    ready_embeddings_count = 0
+    failed_embeddings_count = 0
+    if chunk_scope is not None:
+        chunk_total, ready_embeddings_count, failed_embeddings_count = chunk_scope.with_entities(
+            func.count(Chunk.id),
+            func.coalesce(func.sum(case((
+                (
+                    (Chunk.embedding_status == "ready")
+                    & or_(Chunk.embedding_vector.isnot(None), Chunk.embedding.isnot(None))
+                ),
+                1,
+            ), else_=0)), 0),
+            func.coalesce(func.sum(case((
+                or_(Chunk.embedding_status == "failed", Chunk.embedding_error.isnot(None)),
+                1,
+            ), else_=0)), 0),
+        ).one()
+    document_alerts = knowledge_base_scope.join(
+        Document,
+        Document.knowledge_base_id == KnowledgeBase.id,
+    ).filter(
+        or_(
+            Document.status == "failed",
+            Document.error_message.isnot(None),
+            Document.status.in_(["processing", "uploaded"]),
+        )
+    ).with_entities(
+        Document.id,
+        Document.status,
+        Document.error_message,
+        Document.filename,
+        Document.created_at,
+    ).order_by(Document.created_at.desc()).limit(5).all() if knowledge_base_scope is not None else []
 
     ready_kb_version_ids = {
         version_id for (version_id,) in db.query(KnowledgeBase.version_id)
         .join(Document, Document.knowledge_base_id == KnowledgeBase.id)
         .join(Chunk, Chunk.document_id == Document.id)
         .filter(
-            KnowledgeBase.version_id.in_(version_ids),
+            KnowledgeBase.version_id.in_(
+                select(VersionChatbot.id).where(VersionChatbot.chatbot_id.in_(chatbot_ids))
+            ),
             Chunk.embedding_status == "ready",
             or_(Chunk.embedding_vector.isnot(None), Chunk.embedding.isnot(None)),
         )
         .distinct()
         .all()
-    } if version_ids else set()
+    } if chatbot_ids else set()
 
     sessions = db.query(ConversationSession).filter(
         ConversationSession.chatbot_id.in_(chatbot_ids)
@@ -865,13 +929,13 @@ def get_project_workspace_dashboard(
     runtime_query = db.query(RuntimeLog).filter(
         or_(RuntimeLog.project_id == project.id, RuntimeLog.chatbot_id.in_(chatbot_ids))
     ) if chatbot_ids else db.query(RuntimeLog).filter(RuntimeLog.project_id == project.id)
-    runtime_total = runtime_query.count()
-    runtime_success = runtime_query.filter(RuntimeLog.status == "success").count()
-    runtime_failed = runtime_query.filter(RuntimeLog.status == "failed").count()
+    runtime_total, runtime_success, runtime_failed, average_response_time = runtime_query.with_entities(
+        func.count(RuntimeLog.id),
+        func.coalesce(func.sum(case((RuntimeLog.status == "success", 1), else_=0)), 0),
+        func.coalesce(func.sum(case((RuntimeLog.status == "failed", 1), else_=0)), 0),
+        func.avg(RuntimeLog.response_time_ms),
+    ).one()
     runtime_success_rate = percent_or_none(runtime_success, runtime_total)
-    average_response_time = runtime_query.filter(RuntimeLog.response_time_ms.isnot(None)).with_entities(
-        func.avg(RuntimeLog.response_time_ms)
-    ).scalar()
 
     runtime_alerts = runtime_query.filter(RuntimeLog.status == "failed").order_by(
         RuntimeLog.created_at.desc()
@@ -896,7 +960,7 @@ def get_project_workspace_dashboard(
             "affected_assistant_id": affected.id if affected else None,
             "affected_assistant_name": affected.name if affected else None,
         })
-    for document in sorted(failed_documents + processing_documents, key=lambda item: item.created_at or datetime.min, reverse=True)[:5]:
+    for document in document_alerts:
         is_failed = document.status == "failed" or document.error_message
         operational_alerts.append({
             "type": "error" if is_failed else "warning",
@@ -955,14 +1019,44 @@ def get_project_workspace_dashboard(
     flow_valid_by_chatbot: dict[int, bool] = {}
     llm_ready_count = 0
     active_chatbots = [chatbot for chatbot in chatbots if chatbot.is_active]
+    active_latest_version_ids = [
+        versions_by_chatbot[chatbot.id][0].id
+        for chatbot in active_chatbots
+        if versions_by_chatbot.get(chatbot.id)
+    ]
+    flows_by_version: dict[int, Flow] = {}
+    nodes_by_flow: dict[int, list[FlowNode]] = {}
+    transitions_by_flow: dict[int, list[FlowTransition]] = {}
+    configured_llm_version_ids: set[int] = set()
+    if active_latest_version_ids:
+        flows = db.query(Flow).filter(Flow.version_id.in_(active_latest_version_ids)).all()
+        flow_ids = [flow.id for flow in flows]
+        flows_by_version = {flow.version_id: flow for flow in flows}
+        if flow_ids:
+            for node in db.query(FlowNode).filter(FlowNode.flow_id.in_(flow_ids)).all():
+                nodes_by_flow.setdefault(node.flow_id, []).append(node)
+            for transition in db.query(FlowTransition).filter(FlowTransition.flow_id.in_(flow_ids)).all():
+                transitions_by_flow.setdefault(transition.flow_id, []).append(transition)
+        configured_llm_version_ids = {
+            version_id for version_id, in db.query(LLMConfig.version_id).filter(
+                LLMConfig.version_id.in_(active_latest_version_ids),
+                LLMConfig.model.isnot(None),
+                LLMConfig.model != "",
+            ).all()
+        }
+
     for chatbot in active_chatbots:
         latest = versions_by_chatbot.get(chatbot.id, [None])[0]
         if latest:
-            is_flow_valid = validate_flow_version(db, latest.id).get("valid", False)
+            flow = flows_by_version.get(latest.id)
+            is_flow_valid = validate_flow_definition(
+                flow,
+                nodes_by_flow.get(flow.id, []) if flow else [],
+                transitions_by_flow.get(flow.id, []) if flow else [],
+            ).get("valid", False)
             flow_results.append(is_flow_valid)
             flow_valid_by_chatbot[chatbot.id] = is_flow_valid
-            llm_config = db.query(LLMConfig).filter(LLMConfig.version_id == latest.id).first()
-            if llm_config and llm_config.model:
+            if latest.id in configured_llm_version_ids:
                 llm_ready_count += 1
         else:
             flow_results.append(False)
@@ -970,8 +1064,8 @@ def get_project_workspace_dashboard(
 
     has_active_assistants = bool(active_chatbots)
     flow_ready = has_active_assistants and all(flow_results)
-    kb_ready = not failed_documents and not failed_embeddings and (
-        not documents or (bool(chunks) and len(ready_embeddings) == len(chunks))
+    kb_ready = not failed_documents_count and not failed_embeddings_count and (
+        not document_total or (bool(chunk_total) and ready_embeddings_count == chunk_total)
     )
     ai_ready = has_active_assistants and llm_ready_count == len(active_chatbots)
     publication_ready = flow_ready and ai_ready and kb_ready
@@ -1000,10 +1094,10 @@ def get_project_workspace_dashboard(
     ]
 
     recommendations = []
-    if failed_documents or failed_embeddings:
+    if failed_documents_count or failed_embeddings_count:
         recommendations.append({
             "title": "Resolve Knowledge Base processing issues",
-            "message": f"{len(failed_documents)} document and {len(failed_embeddings)} embedding issue(s) need attention.",
+            "message": f"{failed_documents_count} document and {failed_embeddings_count} embedding issue(s) need attention.",
             "priority": "high",
             "action": "knowledge",
             "expected_impact": "Restores searchable knowledge for grounded answers.",
@@ -1110,7 +1204,7 @@ def get_project_workspace_dashboard(
             "latest_version_status": latest_version.status if latest_version else None,
             "published_version": version_payload(published_version),
             "last_published_at": published_version.published_at if published_version else None,
-            "rollback_available": len(published_versions) > 1,
+            "rollback_available": published_version_count > 1,
         },
         "operational_alerts": operational_alerts,
         "quality_signals": quality_signals,
