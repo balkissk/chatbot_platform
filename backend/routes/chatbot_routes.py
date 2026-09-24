@@ -3,7 +3,7 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
-from sqlalchemy import func, text
+from sqlalchemy import case, func, or_, text
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.orm import Session
 from database.db import SessionLocal
@@ -542,6 +542,39 @@ def unanswered_question_rows(db: Session, chatbot_id: int) -> list[dict]:
     return sorted(grouped.values(), key=lambda item: (item["count"], item["last_asked_at"]), reverse=True)[:25]
 
 
+def unanswered_question_rows_from_grouped(
+    sessions: list[ConversationSession],
+    grouped_messages: dict[int, list[ConversationMessage]],
+) -> list[dict]:
+    grouped: dict[str, dict] = {}
+
+    for session in sessions:
+        previous_user = None
+        for message in grouped_messages.get(session.id, []):
+            if message.role == "user":
+                previous_user = message
+                continue
+            if message.role != "bot" or message_response_mode(message) != "fallback" or not previous_user:
+                continue
+
+            question = (previous_user.content or "").strip()
+            if not question:
+                continue
+            key = " ".join(question.lower().split())
+            row = grouped.setdefault(key, {
+                "question": question,
+                "count": 0,
+                "last_asked_at": previous_user.created_at,
+                "session_id": session.id
+            })
+            row["count"] += 1
+            if previous_user.created_at and previous_user.created_at >= row["last_asked_at"]:
+                row["last_asked_at"] = previous_user.created_at
+                row["session_id"] = session.id
+
+    return sorted(grouped.values(), key=lambda item: (item["count"], item["last_asked_at"]), reverse=True)[:25]
+
+
 def percent(part: int, total: int) -> int:
     return round((part / total) * 100) if total else 0
 
@@ -753,24 +786,59 @@ def get_chatbot_operations_dashboard(
     last_published = published_versions[0] if published_versions else None
 
     version_ids = [version.id for version in version_rows]
-    knowledge_base_ids = [
-        row.id for row in db.query(KnowledgeBase.id).filter(
-            KnowledgeBase.version_id.in_(version_ids)
-        ).all()
-    ] if version_ids else []
-    documents = db.query(Document).filter(Document.knowledge_base_id.in_(knowledge_base_ids)).all() if knowledge_base_ids else []
-    document_ids = [document.id for document in documents]
-    chunks = db.query(Chunk).filter(Chunk.document_id.in_(document_ids)).all() if document_ids else []
-    failed_documents = len([document for document in documents if document.status == "failed" or document.error_message])
-    failed_embeddings = len([chunk for chunk in chunks if chunk.embedding_status == "failed" or chunk.embedding_error])
-    ready_embeddings = len([chunk for chunk in chunks if chunk.embedding_status == "ready" or chunk.embedding])
+    knowledge_base_scope = db.query(KnowledgeBase.id).filter(
+        KnowledgeBase.version_id.in_(version_ids)
+    ) if version_ids else None
+    document_count = 0
+    failed_documents = 0
+    chunk_count = 0
+    failed_embeddings = 0
+    ready_embeddings = 0
+    recent_documents = []
+    if knowledge_base_scope is not None:
+        document_count, failed_documents = knowledge_base_scope.outerjoin(
+            Document,
+            Document.knowledge_base_id == KnowledgeBase.id,
+        ).with_entities(
+            func.count(Document.id),
+            func.coalesce(func.sum(case((
+                or_(Document.status == "failed", Document.error_message.isnot(None)),
+                1,
+            ), else_=0)), 0),
+        ).one()
+        chunk_count, failed_embeddings, ready_embeddings = db.query(Chunk.id).join(
+            Document,
+            Chunk.document_id == Document.id,
+        ).join(
+            KnowledgeBase,
+            Document.knowledge_base_id == KnowledgeBase.id,
+        ).filter(KnowledgeBase.version_id.in_(version_ids)).with_entities(
+            func.count(Chunk.id),
+            func.coalesce(func.sum(case((
+                or_(Chunk.embedding_status == "failed", Chunk.embedding_error.isnot(None)),
+                1,
+            ), else_=0)), 0),
+            func.coalesce(func.sum(case((
+                or_(Chunk.embedding_status == "ready", Chunk.embedding.isnot(None)),
+                1,
+            ), else_=0)), 0),
+        ).one()
+        recent_documents = knowledge_base_scope.join(
+            Document,
+            Document.knowledge_base_id == KnowledgeBase.id,
+        ).with_entities(
+            Document.status,
+            Document.error_message,
+            Document.filename,
+            Document.created_at,
+        ).order_by(Document.created_at.desc()).limit(5).all()
 
     flow_validation = validate_flow_version(db, draft_version.id) if draft_version else {
         "valid": False,
         "errors": ["No version exists for this chatbot."]
     }
     llm_config = db.query(LLMConfig).filter(LLMConfig.version_id == draft_version.id).first() if draft_version else None
-    knowledge_gap_rows = unanswered_question_rows(db, chatbot.id)
+    knowledge_gap_rows = unanswered_question_rows_from_grouped(sessions, grouped_messages)
     coverage_score = percent(len(source_backed_answers), len(user_messages))
     resolution_rate = percent(len(sessions) - len(handoff_sessions), len(sessions))
     retrieval_failures = len(fallback_answers)
@@ -783,7 +851,7 @@ def get_chatbot_operations_dashboard(
     runtime_health = max(0, 100 - health_penalty)
 
     recent_events = []
-    for document in sorted(documents, key=lambda item: item.created_at or datetime.min, reverse=True)[:5]:
+    for document in recent_documents:
         if document.status == "failed" or document.error_message:
             recent_events.append({
                 "type": "error",
@@ -846,8 +914,8 @@ def get_chatbot_operations_dashboard(
         },
         {
             "label": "Knowledge Base",
-            "status": "ready" if documents and not failed_documents and len(chunks) == ready_embeddings else "needs_attention",
-            "message": f"{len(documents)} documents, {len(chunks)} chunks, {ready_embeddings} embeddings ready."
+            "status": "ready" if document_count and not failed_documents and chunk_count == ready_embeddings else "needs_attention",
+            "message": f"{document_count} documents, {chunk_count} chunks, {ready_embeddings} embeddings ready."
         },
         {
             "label": "AI configuration",

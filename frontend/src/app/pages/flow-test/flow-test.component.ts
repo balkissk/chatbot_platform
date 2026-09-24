@@ -100,8 +100,12 @@ export class FlowTestComponent implements OnInit {
     const shouldShowUserMessage = text !== '__start__';
     this.messages.update(messages => [
       ...messages,
-      ...(shouldShowUserMessage ? [{ role: 'user' as const, text }] : []),
-      { role: 'bot' as const, text: '', streaming: true, pending: true }
+      ...(shouldShowUserMessage
+        ? [
+            { role: 'user' as const, text },
+            { role: 'bot' as const, text: '', streaming: true, pending: true }
+          ]
+        : [])
     ]);
     this.queueChatUiUpdate();
     this.input = '';
@@ -112,7 +116,7 @@ export class FlowTestComponent implements OnInit {
     let requestPreparedMs = 0;
     let firstFrontendChunkReceivedMs: number | null = null;
     let firstTokenRenderedMs: number | null = null;
-    const streamingIndex = this.messages().length - 1;
+    let streamingIndex = shouldShowUserMessage ? this.messages().length - 1 : -1;
 
     try {
       const payload = {
@@ -134,6 +138,12 @@ export class FlowTestComponent implements OnInit {
           if (firstFrontendChunkReceivedMs === null) {
             firstFrontendChunkReceivedMs = (event.__frontend_chunk_received_at_ms || this.nowMs()) - requestStartedAt;
           }
+          if (streamingIndex < 0) {
+            this.messages.update(messages => {
+              streamingIndex = messages.length;
+              return [...messages, { role: 'bot' as const, text: '', streaming: true, pending: false }];
+            });
+          }
           this.messages.update(messages => messages.map((item, index) => (
             index === streamingIndex
               ? { ...item, text: `${item.text}${event.text || ''}`, pending: false }
@@ -154,13 +164,14 @@ export class FlowTestComponent implements OnInit {
           this.sessionId.set(event.session_id);
           this.updateDebugState(event);
           const botMessages = this.toBotMessages(event);
-          this.messages.update(messages => {
-            return [
-              ...messages.slice(0, streamingIndex),
-              ...botMessages,
-              ...messages.slice(streamingIndex + 1)
-            ];
-          });
+          this.messages.update(messages => streamingIndex >= 0
+            ? [
+                ...messages.slice(0, streamingIndex),
+                ...botMessages,
+                ...messages.slice(streamingIndex + 1)
+              ]
+            : [...messages, ...botMessages]
+          );
           if (firstTokenRenderedMs === null && firstFrontendChunkReceivedMs !== null) {
             firstTokenRenderedMs = this.nowMs() - requestStartedAt;
           }

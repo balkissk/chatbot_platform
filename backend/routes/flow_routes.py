@@ -4,7 +4,8 @@ import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy import case
+from sqlalchemy.orm import Session, selectinload
 
 from database.db import SessionLocal
 from models.flow import Flow, FlowNode, FlowTransition
@@ -1862,19 +1863,19 @@ def get_chatbot_builder(
     chatbot = ensure_chatbot_access(db, chatbot_id, current_user)
 
     version = db.query(VersionChatbot).filter(
-        VersionChatbot.chatbot_id == chatbot_id,
-        VersionChatbot.status == "draft"
-    ).order_by(VersionChatbot.version_number.desc()).first()
-
-    if not version:
-        version = db.query(VersionChatbot).filter(
-            VersionChatbot.chatbot_id == chatbot_id
-        ).order_by(VersionChatbot.version_number.desc()).first()
+        VersionChatbot.chatbot_id == chatbot_id
+    ).order_by(
+        case((VersionChatbot.status == "draft", 0), else_=1),
+        VersionChatbot.version_number.desc(),
+    ).first()
 
     if not version:
         raise HTTPException(status_code=404, detail="No version found for chatbot")
 
-    flow = db.query(Flow).filter(Flow.version_id == version.id).first()
+    flow = db.query(Flow).options(
+        selectinload(Flow.nodes),
+        selectinload(Flow.transitions),
+    ).filter(Flow.version_id == version.id).first()
     if not flow:
         flow = create_starter_flow(db, version.id, "blank", chatbot.language)
 

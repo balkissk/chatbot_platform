@@ -12,7 +12,9 @@ from database.db import SessionLocal
 from models.chatbot import Chatbot
 from models.chatbot_schema import safe_chatbot_language
 from models.conversation import ConversationMessage, ConversationSession
+from models.flow import Flow, FlowNode, FlowTransition
 from models.llm_config import LLMConfig
+from models.runtime_log import RuntimeLog
 from models.version import VersionChatbot
 from services.flow_runtime import execute_flow
 from routes.chat_routes import add_message, build_rag_response, prepare_rag_generation, session_history, stream_ai_answer, stream_event
@@ -37,6 +39,12 @@ class PublicChatSessionCreate(BaseModel):
 class PublicChatRequest(BaseModel):
     chatbot_id: int
     message: str
+    session_id: int | None = None
+    channel: str | None = None
+
+
+class PublicWidgetBootstrapRequest(BaseModel):
+    chatbot_id: int
     session_id: int | None = None
     channel: str | None = None
 
@@ -95,6 +103,165 @@ def get_active_version(db: Session, chatbot: Chatbot) -> VersionChatbot:
 def request_channel(payload: PublicChatRequest | None) -> str:
     channel = str(getattr(payload, "channel", "") or "").strip().lower()
     return "widget" if channel == "widget" else "web"
+
+
+def bootstrap_channel(payload: PublicWidgetBootstrapRequest | None) -> str:
+    channel = str(getattr(payload, "channel", "") or "").strip().lower()
+    return "widget" if channel == "widget" else "web"
+
+
+def flow_node_text(node: FlowNode) -> str:
+    config = node.config or {}
+    return config.get("text") or config.get("prompt") or config.get("message") or node.label
+
+
+def flow_node_options(db: Session, flow_id: int, node: FlowNode) -> list[str]:
+    if node.type != "buttons":
+        return []
+
+    config = node.config or {}
+    buttons = config.get("buttons") or []
+    if buttons:
+        return buttons
+
+    return [
+        label for (label,) in db.query(FlowTransition.label).filter(
+            FlowTransition.flow_id == flow_id,
+            FlowTransition.source_node_key == node.node_key,
+            FlowTransition.label.isnot(None),
+        ).all()
+        if label
+    ]
+
+
+def is_silent_bootstrap_input(node: FlowNode) -> bool:
+    config = node.config or {}
+    for key in ("silent", "silent_input", "hide_prompt", "hide_message"):
+        value = config.get(key)
+        if isinstance(value, bool) and value:
+            return True
+        if str(value or "").strip().lower() in {"1", "true", "yes", "on"}:
+            return True
+    return False
+
+
+def first_flow_transition(db: Session, flow_id: int, source_key: str) -> FlowTransition | None:
+    return db.query(FlowTransition).filter(
+        FlowTransition.flow_id == flow_id,
+        FlowTransition.source_node_key == source_key,
+    ).order_by(FlowTransition.id.asc()).first()
+
+
+def deterministic_initial_flow_state(
+    db: Session,
+    version_id: int,
+    variables: dict,
+) -> dict:
+    started_at = time.perf_counter()
+    flow = db.query(Flow).filter(Flow.version_id == version_id).first()
+    if not flow:
+        return {
+            "deterministic": True,
+            "messages": [{"text": "This chatbot does not have a flow yet.", "options": []}],
+            "options": [],
+            "current_node_key": None,
+            "variables": variables,
+            "db_ms": runtime_response_time_ms(started_at),
+        }
+
+    node = db.query(FlowNode).filter(
+        FlowNode.flow_id == flow.id,
+        FlowNode.node_key == "start",
+    ).first()
+    if not node:
+        node = db.query(FlowNode).filter(FlowNode.flow_id == flow.id).order_by(FlowNode.id.asc()).first()
+    if not node:
+        return {
+            "deterministic": True,
+            "messages": [{"text": "This flow is empty.", "options": []}],
+            "options": [],
+            "current_node_key": None,
+            "variables": variables,
+            "db_ms": runtime_response_time_ms(started_at),
+        }
+
+    messages: list[dict] = []
+    seen: set[str] = set()
+    current = node
+    waiting_types = {"question", "buttons", "collect_name", "collect_email", "collect_phone", "meeting_scheduler"}
+    deterministic_types = {"message", *waiting_types, "end"}
+
+    while current and current.node_key not in seen and len(seen) < 8:
+        seen.add(current.node_key)
+        if current.type not in deterministic_types:
+            return {
+                "deterministic": False,
+                "messages": [],
+                "options": [],
+                "current_node_key": None,
+                "variables": variables,
+                "db_ms": runtime_response_time_ms(started_at),
+            }
+
+        if current.type == "message":
+            messages.append({"text": flow_node_text(current), "options": []})
+            transition = first_flow_transition(db, flow.id, current.node_key)
+            if not transition:
+                return {
+                    "deterministic": True,
+                    "messages": messages,
+                    "options": [],
+                    "current_node_key": None,
+                    "variables": variables,
+                    "db_ms": runtime_response_time_ms(started_at),
+                }
+            current = db.query(FlowNode).filter(
+                FlowNode.flow_id == flow.id,
+                FlowNode.node_key == transition.target_node_key,
+            ).first()
+            continue
+
+        if current.type in waiting_types:
+            options = flow_node_options(db, flow.id, current)
+            if is_silent_bootstrap_input(current):
+                return {
+                    "deterministic": True,
+                    "messages": messages,
+                    "options": [],
+                    "current_node_key": current.node_key,
+                    "variables": variables,
+                    "db_ms": runtime_response_time_ms(started_at),
+                }
+            message = {"text": flow_node_text(current), "options": options}
+            messages.append(message)
+            return {
+                "deterministic": True,
+                "messages": messages,
+                "options": options,
+                "current_node_key": current.node_key,
+                "variables": variables,
+                "db_ms": runtime_response_time_ms(started_at),
+            }
+
+        if current.type == "end":
+            messages.append({"text": flow_node_text(current), "options": []})
+            return {
+                "deterministic": True,
+                "messages": messages,
+                "options": [],
+                "current_node_key": None,
+                "variables": variables,
+                "db_ms": runtime_response_time_ms(started_at),
+            }
+
+    return {
+        "deterministic": False,
+        "messages": [],
+        "options": [],
+        "current_node_key": None,
+        "variables": variables,
+        "db_ms": runtime_response_time_ms(started_at),
+    }
 
 
 def create_public_session(db: Session, chatbot_id: int, version_id: int, channel: str = "web", language: str | None = None) -> ConversationSession:
@@ -218,6 +385,87 @@ def public_chat(data: PublicChatRequest, db: Session = Depends(get_db)):
         message=data.message,
         session_id=data.session_id,
     ))
+
+
+@router.post("/chat/widget-bootstrap")
+def public_widget_bootstrap(
+    data: PublicWidgetBootstrapRequest,
+    db: Session = Depends(get_db)
+):
+    started_at = time.perf_counter()
+    chatbot = get_public_chatbot(db, data.chatbot_id)
+    version = get_active_version(db, chatbot)
+    channel = bootstrap_channel(data)
+    variables = {"__channel": channel, "__language": safe_chatbot_language(chatbot.language)}
+    initial = deterministic_initial_flow_state(db, version.id, variables)
+    if not initial["deterministic"]:
+        return {
+            "requires_runtime": True,
+            "session_id": None,
+            "chatbot_id": chatbot.id,
+            "version_id": version.id,
+            "messages": [],
+            "options": [],
+            "timing": {
+                "total_ms": runtime_response_time_ms(started_at),
+                "flow_lookup_ms": initial.get("db_ms", 0),
+            },
+        }
+
+    session = ConversationSession(
+        chatbot_id=chatbot.id,
+        version_id=version.id,
+        user_id=None,
+        current_node_key=initial.get("current_node_key"),
+        variables=initial.get("variables") or variables,
+    )
+    db.add(session)
+    db.flush()
+    session.current_node_key = initial.get("current_node_key")
+    session.variables = initial.get("variables") or variables
+    for item in initial.get("messages") or []:
+        if str(item.get("text") or "").strip() or item.get("options"):
+            add_message(
+                db,
+                session.id,
+                "bot",
+                item.get("text", ""),
+                options=item.get("options") or [],
+                sources=[],
+            )
+    response_time = runtime_response_time_ms(started_at)
+    db.add(RuntimeLog(
+        chatbot_id=chatbot.id,
+        version_id=version.id,
+        conversation_id=session.id,
+        project_id=chatbot.project_id,
+        user_id=None,
+        channel=channel,
+        execution_mode="static_initial",
+        status="success",
+        rag_used=False,
+        response_time_ms=response_time,
+        current_block=session.current_node_key,
+        retrieval_count=0,
+        source="public_widget_bootstrap",
+        completed_at=datetime.utcnow(),
+    ))
+    db.commit()
+    db.refresh(session)
+    return {
+        "requires_runtime": False,
+        "session_id": session.id,
+        "chatbot_id": session.chatbot_id,
+        "version_id": session.version_id,
+        "current_node_key": session.current_node_key,
+        "variables": session.variables or {},
+        "messages": initial.get("messages") or [],
+        "options": initial.get("options") or [],
+        "timing": {
+            "total_ms": response_time,
+            "flow_lookup_ms": initial.get("db_ms", 0),
+        },
+    }
 
 
 @router.post("/chat/feedback")
@@ -643,7 +891,7 @@ def widget_script():
   function startConversation() {
     if (hasStarted || isLoading) return;
     hasStarted = true;
-    requestRuntime("", false, true);
+    requestBootstrap();
   }
 
   function send(text) {
@@ -739,6 +987,44 @@ def widget_script():
       hideTyping();
       showError(err.message || "Chat failed");
     }).finally(function () {
+      setLoading(false);
+      input.focus();
+    });
+  }
+
+  function requestBootstrap() {
+    var delegatedRuntime = false;
+    setLoading(true);
+    fetch(apiBase + "/public/chat/widget-bootstrap", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chatbot_id: Number(chatbotId), session_id: sessionId, channel: "widget" })
+    }).then(function (res) {
+      return res.json().then(function (body) {
+        if (!res.ok) throw new Error(body.detail || "Chat failed");
+        return body;
+      });
+    }).then(function (body) {
+      if (body.requires_runtime) {
+        delegatedRuntime = true;
+        setLoading(false);
+        requestRuntime("", false, true);
+        return;
+      }
+      sessionId = body.session_id || sessionId;
+      var items = usableMessages(responseMessages(body));
+      if (!items.length) {
+        addMessage("bot", "Hi, how can I help?");
+        return;
+      }
+      items.forEach(function (item, index) {
+        addMessage("bot", item.text, item.options || [], index === 0 ? body.sources : []);
+      });
+    }).catch(function (err) {
+      hasStarted = false;
+      showError(err.message || "Chat failed");
+    }).finally(function () {
+      if (delegatedRuntime) return;
       setLoading(false);
       input.focus();
     });

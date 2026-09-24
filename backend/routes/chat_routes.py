@@ -731,14 +731,27 @@ def chat_stream(
     chatbot = get_chatbot(db, data.chatbot_id)
     latency_trace["db_query_ms"] += elapsed_ms(db_started_at)
     db_started_at = time.perf_counter()
-    version = get_chat_version(db, data.chatbot_id, data.version_id, current_user)
-    latency_trace["db_query_ms"] += elapsed_ms(db_started_at)
-    db_started_at = time.perf_counter()
-    config = db.query(LLMConfig).filter(LLMConfig.version_id == version.id).first()
+    if data.version_id is not None:
+        version = get_chat_version(db, data.chatbot_id, data.version_id, current_user)
+    elif chatbot.active_version_id:
+        version = db.query(VersionChatbot).filter(
+            VersionChatbot.id == chatbot.active_version_id,
+            VersionChatbot.chatbot_id == chatbot.id,
+        ).first()
+        if not version:
+            version = db.query(VersionChatbot).filter(
+                VersionChatbot.chatbot_id == chatbot.id,
+                VersionChatbot.status == "published",
+            ).first()
+    else:
+        version = db.query(VersionChatbot).filter(
+            VersionChatbot.chatbot_id == chatbot.id,
+            VersionChatbot.status == "published",
+        ).first()
     latency_trace["db_query_ms"] += elapsed_ms(db_started_at)
 
-    if not config:
-        raise HTTPException(status_code=404, detail="No config")
+    if not version:
+        raise HTTPException(status_code=404, detail="No version available")
 
     db_started_at = time.perf_counter()
     session = get_or_create_session(db, data, version, current_user, chatbot.language)
@@ -748,9 +761,17 @@ def chat_stream(
     user_message = data.message.strip()
 
     generation_holder: dict = {}
+    config_holder: dict = {}
     flow_trace: dict = {}
 
     def rag_answer(message: str, fallback_variables: dict | None = None, node_config: dict | None = None):
+        if "config" not in config_holder:
+            db_started_at = time.perf_counter()
+            config_holder["config"] = db.query(LLMConfig).filter(LLMConfig.version_id == version.id).first()
+            latency_trace["db_query_ms"] += elapsed_ms(db_started_at)
+        config = config_holder["config"]
+        if not config:
+            raise HTTPException(status_code=404, detail="No config")
         generation_holder["generation"] = prepare_rag_generation(
             db=db,
             version=version,
@@ -800,6 +821,9 @@ def chat_stream(
         if not generation:
             session.current_node_key = result.get("current_node_key")
             session.variables = result.get("variables") or {}
+            final_session_id = session.id
+            final_current_node_key = session.current_node_key
+            final_variables = session.variables or {}
             bot_messages = result.get("messages") or [
                 {"text": result.get("response", ""), "options": result.get("options", [])}
             ]
@@ -819,9 +843,9 @@ def chat_stream(
             latency_trace["db_query_ms"] += elapsed_ms(db_started_at)
             yield sse_event("final", {
                 **result,
-                "session_id": session.id,
-                "current_node_key": session.current_node_key,
-                "variables": session.variables or {},
+                "session_id": final_session_id,
+                "current_node_key": final_current_node_key,
+                "variables": final_variables,
                 "latency": {
                     **latency_trace,
                     "flow_db_query_ms": flow_trace.get("flow_db_query_ms", 0),

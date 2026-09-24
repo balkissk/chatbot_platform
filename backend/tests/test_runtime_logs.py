@@ -1,26 +1,37 @@
+import asyncio
+import json
 import unittest
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 from fastapi import HTTPException
 from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 from sqlalchemy.orm import sessionmaker
 
 from database.db import Base
+from models.chat_schema import ChatRequest
 from models.chatbot import Chatbot
-from models.flow import Flow, FlowNode
+from models.conversation import ConversationMessage, ConversationSession
+from models.flow import Flow, FlowNode, FlowTransition
 from models.llm_config import LLMConfig
 from models.project import Project
 from models.runtime_log import RuntimeLog
 from models.user import User
 from models.version import VersionChatbot
 from routes.admin_analytics_routes import analytics_runtime_logs, dashboard_usage, system_health
+from routes.chat_routes import chat_stream
+from routes.public_routes import PublicWidgetBootstrapRequest, public_widget_bootstrap
 from services.unified_runtime import run_chatbot_message, sanitize_error_message
 
 
 class RuntimeLogTest(unittest.TestCase):
     def setUp(self):
-        engine = create_engine("sqlite:///:memory:")
+        engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
         self.engine = engine
         Base.metadata.create_all(bind=engine)
         Session = sessionmaker(bind=engine)
@@ -31,7 +42,7 @@ class RuntimeLogTest(unittest.TestCase):
         self.db.close()
         self.engine.dispose()
 
-    def create_runtime_chatbot(self, node_type: str = "message"):
+    def create_runtime_chatbot(self, node_type: str = "message", add_config: bool = True):
         owner = User(name="Manager", email="manager@example.com", password_hash="x", role="manager", status="active")
         self.db.add(owner)
         self.db.commit()
@@ -45,7 +56,8 @@ class RuntimeLogTest(unittest.TestCase):
         self.db.add(version)
         self.db.commit()
         chatbot.active_version_id = version.id
-        self.db.add(LLMConfig(version_id=version.id, model="test-model", temperature=0.1))
+        if add_config:
+            self.db.add(LLMConfig(version_id=version.id, model="test-model", temperature=0.1))
         flow = Flow(version_id=version.id, name="Flow")
         self.db.add(flow)
         self.db.commit()
@@ -58,6 +70,18 @@ class RuntimeLogTest(unittest.TestCase):
         ))
         self.db.commit()
         return owner, project, chatbot, version
+
+    def consume_stream(self, response) -> list[dict]:
+        async def collect():
+            events = []
+            async for chunk in response.body_iterator:
+                text = chunk.decode() if isinstance(chunk, bytes) else chunk
+                for line in text.splitlines():
+                    if line.startswith("data: "):
+                        events.append(json.loads(line.removeprefix("data: ")))
+            return events
+
+        return asyncio.run(collect())
 
     def test_successful_runtime_execution_creates_success_log(self):
         _, _, chatbot, version = self.create_runtime_chatbot()
@@ -108,6 +132,76 @@ class RuntimeLogTest(unittest.TestCase):
         log = self.db.query(RuntimeLog).one()
         self.assertEqual(log.channel, "widget")
         self.assertTrue(log.rag_used)
+
+    def test_public_widget_bootstrap_returns_static_start_without_rag(self):
+        _, _, chatbot, version = self.create_runtime_chatbot()
+        flow = self.db.query(Flow).filter(Flow.version_id == version.id).one()
+        question = FlowNode(
+            flow_id=flow.id,
+            node_key="email",
+            type="collect_email",
+            label="Email",
+            config={"text": "What email should we use?"},
+        )
+        self.db.add(question)
+        self.db.flush()
+        self.db.add(FlowTransition(flow_id=flow.id, source_node_key="start", target_node_key="email", label="next"))
+        self.db.commit()
+
+        payload = public_widget_bootstrap(
+            PublicWidgetBootstrapRequest(chatbot_id=chatbot.id, channel="widget"),
+            db=self.db,
+        )
+
+        self.assertFalse(payload["requires_runtime"])
+        self.assertEqual(payload["current_node_key"], "email")
+        self.assertEqual([item["text"] for item in payload["messages"]], ["Hello from flow", "What email should we use?"])
+        session = self.db.query(ConversationSession).filter(ConversationSession.id == payload["session_id"]).one()
+        self.assertEqual(session.current_node_key, "email")
+        self.assertEqual(self.db.query(ConversationMessage).filter(ConversationMessage.session_id == session.id).count(), 2)
+        log = self.db.query(RuntimeLog).order_by(RuntimeLog.id.desc()).first()
+        self.assertEqual(log.source, "public_widget_bootstrap")
+        self.assertEqual(log.execution_mode, "static_initial")
+        self.assertFalse(log.rag_used)
+
+    def test_public_widget_bootstrap_defers_dynamic_start_to_runtime(self):
+        _, _, chatbot, version = self.create_runtime_chatbot(node_type="rag_answer")
+
+        payload = public_widget_bootstrap(
+            PublicWidgetBootstrapRequest(chatbot_id=chatbot.id, channel="widget"),
+            db=self.db,
+        )
+
+        self.assertTrue(payload["requires_runtime"])
+        self.assertIsNone(payload["session_id"])
+        self.assertEqual(self.db.query(ConversationSession).count(), 0)
+        self.assertEqual(self.db.query(RuntimeLog).count(), 0)
+
+    def test_stream_deterministic_start_does_not_require_llm_config(self):
+        owner, _, chatbot, version = self.create_runtime_chatbot(add_config=False)
+
+        response = chat_stream(
+            ChatRequest(chatbot_id=chatbot.id, version_id=version.id, message=""),
+            db=self.db,
+            current_user=owner,
+        )
+        events = self.consume_stream(response)
+
+        final = next(event for event in events if event["type"] == "final")
+        self.assertEqual(final["response"], "Hello from flow")
+        self.assertEqual(final["mode_used"], "flow")
+
+    def test_stream_rag_start_still_requires_llm_config(self):
+        owner, _, chatbot, version = self.create_runtime_chatbot(node_type="rag_answer", add_config=False)
+
+        with self.assertRaises(HTTPException) as error:
+            chat_stream(
+                ChatRequest(chatbot_id=chatbot.id, version_id=version.id, message=""),
+                db=self.db,
+                current_user=owner,
+            )
+
+        self.assertEqual(error.exception.status_code, 404)
 
     def test_sensitive_error_message_is_sanitized(self):
         exc = RuntimeError("api_key=secret-token postgresql://user:pass@host/db Bearer abc.def")
