@@ -1,5 +1,6 @@
 import os
 import time
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -30,6 +31,17 @@ from services.unified_runtime import (
 router = APIRouter(prefix="/public")
 load_environment()
 PUBLIC_API_BASE_URL = os.getenv("PUBLIC_API_BASE_URL") or os.getenv("API_BASE_URL") or ""
+logger = logging.getLogger(__name__)
+
+
+def int_env(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+PUBLIC_STREAM_DB_TRACE_THRESHOLD_MS = int_env("PUBLIC_STREAM_DB_TRACE_THRESHOLD_MS", 0)
 
 
 class PublicChatSessionCreate(BaseModel):
@@ -274,19 +286,19 @@ def create_public_session(db: Session, chatbot_id: int, version_id: int, channel
     )
     db.add(session)
     db.commit()
-    db.refresh(session)
     return session
 
 
 def get_or_create_public_session(
     db: Session,
     payload: PublicChatRequest,
-    version: VersionChatbot
+    version: VersionChatbot,
+    chatbot_language: str | None = None,
 ) -> ConversationSession:
     channel = request_channel(payload)
+    normalized_language = safe_chatbot_language(chatbot_language)
     if payload.session_id is None:
-        chatbot = db.query(Chatbot).filter(Chatbot.id == payload.chatbot_id).first()
-        return create_public_session(db, payload.chatbot_id, version.id, channel, chatbot.language if chatbot else None)
+        return create_public_session(db, payload.chatbot_id, version.id, channel, normalized_language)
 
     session = db.query(ConversationSession).filter(
         ConversationSession.id == payload.session_id,
@@ -298,18 +310,19 @@ def get_or_create_public_session(
         raise HTTPException(status_code=404, detail="Conversation session not found")
 
     if session.version_id != version.id:
-        chatbot = db.query(Chatbot).filter(Chatbot.id == payload.chatbot_id).first()
-        return create_public_session(db, payload.chatbot_id, version.id, channel, chatbot.language if chatbot else None)
+        return create_public_session(db, payload.chatbot_id, version.id, channel, normalized_language)
 
     variables = session.variables or {}
+    changed = False
     if variables.get("__channel") != channel:
         variables["__channel"] = channel
-    chatbot = db.query(Chatbot).filter(Chatbot.id == payload.chatbot_id).first()
-    normalized_language = safe_chatbot_language(chatbot.language if chatbot else None)
+        changed = True
     if variables.get("__language") != normalized_language:
         variables["__language"] = normalized_language
-    session.variables = variables
-    db.commit()
+        changed = True
+    if changed:
+        session.variables = variables
+        db.commit()
 
     return session
 
@@ -535,35 +548,43 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
     version = None
     session = None
     rag_used = False
+    flow_trace: dict = {}
     try:
         chatbot = get_public_chatbot(db, data.chatbot_id)
         version = get_active_version(db, chatbot)
-        config = db.query(LLMConfig).filter(LLMConfig.version_id == version.id).first()
-        if not config:
-            raise HTTPException(status_code=404, detail="Chatbot configuration is missing")
+        version_id_value = version.id
+        chatbot_language = chatbot.language
 
-        session = get_or_create_public_session(db, data, version)
+        session = get_or_create_public_session(db, data, version, chatbot_language=chatbot_language)
+        session_id_value = session.id
+        current_node_key = session.current_node_key
         variables = {
             **(session.variables or {}),
             "__channel": channel,
-            "__language": safe_chatbot_language(chatbot.language),
+            "__language": safe_chatbot_language(chatbot_language),
         }
 
         if data.message.strip():
-            add_message(db, session.id, "user", data.message.strip())
+            add_message(db, session_id_value, "user", data.message.strip())
             db.commit()
 
         generation_holder: dict = {}
+        config_holder: dict = {}
 
         def rag_answer(message: str, fallback_variables: dict | None = None, node_config: dict | None = None):
             nonlocal rag_used
+            if "config" not in config_holder:
+                config_holder["config"] = db.query(LLMConfig).filter(LLMConfig.version_id == version_id_value).first()
+            config = config_holder["config"]
+            if not config:
+                raise HTTPException(status_code=404, detail="Chatbot configuration is missing")
             generation_holder["generation"] = prepare_rag_generation(
                 db=db,
                 version=version,
                 config=config,
                 message=message,
                 variables=fallback_variables or variables,
-                history=session_history(db, session.id),
+                history=session_history(db, session_id_value),
                 mode_used="public_flow_rag",
                 node_config=node_config
             )
@@ -573,7 +594,7 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
                 "mode_used": "fallback" if generation_holder["generation"].get("fallback_response") else "public_flow_rag",
                 "retrieval_mode": generation_holder["generation"]["retrieval_mode"],
                 "model_used": generation_holder["generation"]["model_used"],
-                "version_used": version.id,
+                "version_used": version_id_value,
                 "current_node_key": None,
                 "variables": fallback_variables or variables,
                 "options": [],
@@ -584,12 +605,13 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
 
         result = execute_flow(
             db=db,
-            version_id=version.id,
+            version_id=version_id_value,
             message=data.message,
-            current_node_key=session.current_node_key,
+            current_node_key=current_node_key,
             variables=variables,
             rag_answer=rag_answer,
-            allow_rag_fallback=False
+            allow_rag_fallback=False,
+            trace=flow_trace,
         )
     except Exception as exc:
         chatbot_id = chatbot.id if chatbot else None
@@ -622,6 +644,16 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
     version_id = version.id
     project_id = chatbot.project_id
     user_id = session.user_id
+    pre_stream_db_ms = runtime_response_time_ms(started_at)
+    if PUBLIC_STREAM_DB_TRACE_THRESHOLD_MS and pre_stream_db_ms >= PUBLIC_STREAM_DB_TRACE_THRESHOLD_MS:
+        logger.info(
+            "Public stream pre-stream DB phase: chatbot_id=%s session_id=%s duration_ms=%s flow_db_query_ms=%s flow_invocations=%s",
+            chatbot_id,
+            session_id,
+            pre_stream_db_ms,
+            flow_trace.get("flow_db_query_ms", 0),
+            flow_trace.get("flow_invocations", 0),
+        )
     db.rollback()
     db.close()
 

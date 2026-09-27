@@ -212,6 +212,22 @@ class RuntimeLogTest(unittest.TestCase):
         self.assertEqual(log.status, "success")
         self.assertEqual(log.conversation_id, session_id)
 
+    def test_public_stream_deterministic_flow_does_not_require_llm_config(self):
+        _, _, chatbot, _ = self.create_runtime_chatbot(add_config=False)
+        Session = sessionmaker(bind=self.engine)
+
+        with patch("routes.public_routes.SessionLocal", Session), patch("services.unified_runtime.SessionLocal", Session):
+            response = public_chat_stream(
+                PublicChatRequest(chatbot_id=chatbot.id, message="hi", channel="widget"),
+                db=self.db,
+            )
+            events = self.consume_ndjson_stream(response)
+
+        final = next(event for event in events if event["type"] == "final")
+        self.assertEqual(final["response"], "Hello from flow")
+        self.assertEqual(final["messages"][0]["text"], "Hello from flow")
+        self.assertEqual(self.db.query(RuntimeLog).filter(RuntimeLog.source == "public_stream").count(), 1)
+
     def test_stream_deterministic_start_does_not_require_llm_config(self):
         owner, _, chatbot, version = self.create_runtime_chatbot(add_config=False)
 
