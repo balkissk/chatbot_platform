@@ -343,6 +343,10 @@ def public_chat_payload(result: dict, session_id: int | None = None) -> dict:
         ],
         "options": result.get("options") or []
     }
+    if "current_node_key" in result:
+        payload["current_node_key"] = result.get("current_node_key")
+    if "variables" in result:
+        payload["variables"] = result.get("variables") or {}
     sources = result.get("sources") or []
     if sources:
         payload["sources"] = [

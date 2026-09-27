@@ -426,7 +426,9 @@ def stream_chat_completion(
             for chunk in stream:
                 if not chunk.choices:
                     continue
-                token = chunk.choices[0].delta.content
+                choice = chunk.choices[0]
+                delta = getattr(choice, "delta", None)
+                token = getattr(delta, "content", None)
                 if token:
                     if metrics is not None and "azure_first_token_from_request_ms" not in metrics:
                         metrics["azure_first_token_from_request_ms"] = _ms(request_started_at)

@@ -51,6 +51,33 @@ class _ChatCompletions:
         return self.response
 
 
+class _Delta:
+    def __init__(self, content):
+        self.content = content
+
+
+class _StreamChoice:
+    def __init__(self, delta):
+        self.delta = delta
+
+
+class _StreamChunk:
+    def __init__(self, choices):
+        self.choices = choices
+
+
+class _StreamingChatCompletions(_ChatCompletions):
+    def __init__(self, chunks):
+        super().__init__()
+        self.chunks = chunks
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        if kwargs.get("stream"):
+            return iter(self.chunks)
+        return self.response
+
+
 class _Embeddings:
     def __init__(self):
         self.calls = []
@@ -69,6 +96,12 @@ class _Client:
     def __init__(self, response=None):
         self.chat = _Chat(response)
         self.embeddings = _Embeddings()
+
+
+class _StreamingClient(_Client):
+    def __init__(self, chunks):
+        super().__init__()
+        self.chat.completions = _StreamingChatCompletions(chunks)
 
 
 class AzureOpenAIProviderTest(unittest.TestCase):
@@ -111,6 +144,21 @@ class AzureOpenAIProviderTest(unittest.TestCase):
         self.assertEqual(request["reasoning_effort"], "minimal")
         self.assertNotIn("max_tokens", request)
         self.assertNotIn("temperature", request)
+
+    def test_streaming_ignores_chunks_without_text_content(self):
+        client = _StreamingClient([
+            _StreamChunk([]),
+            _StreamChunk([_StreamChoice(None)]),
+            _StreamChunk([_StreamChoice(_Delta(None))]),
+            _StreamChunk([_StreamChoice(_Delta(""))]),
+            _StreamChunk([_StreamChoice(_Delta("ok"))]),
+        ])
+        with patch.dict("os.environ", self.azure_env(), clear=False), \
+             patch.object(ai_provider, "AI_PROVIDER", "azure_openai"), \
+             patch.object(ai_provider, "_azure_client", return_value=client):
+            tokens = list(stream_chat_completion("Hello", model=None, temperature=0.7, max_tokens=45))
+
+        self.assertEqual(tokens, ["ok"])
 
     def test_empty_gpt5_response_is_reported_as_error(self):
         client = _Client(_EmptyCompletionResponse())

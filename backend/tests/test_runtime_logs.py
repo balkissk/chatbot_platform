@@ -21,7 +21,14 @@ from models.user import User
 from models.version import VersionChatbot
 from routes.admin_analytics_routes import analytics_runtime_logs, dashboard_usage, system_health
 from routes.chat_routes import chat_stream
-from routes.public_routes import PublicChatRequest, PublicWidgetBootstrapRequest, public_chat_stream, public_widget_bootstrap
+from routes.public_routes import (
+    PublicChatRequest,
+    PublicChatSessionCreate,
+    PublicWidgetBootstrapRequest,
+    public_chat_stream,
+    public_widget_bootstrap,
+    start_public_chat_session,
+)
 from services.unified_runtime import run_chatbot_message, sanitize_error_message
 
 
@@ -227,6 +234,53 @@ class RuntimeLogTest(unittest.TestCase):
         self.assertEqual(final["response"], "Hello from flow")
         self.assertEqual(final["messages"][0]["text"], "Hello from flow")
         self.assertEqual(self.db.query(RuntimeLog).filter(RuntimeLog.source == "public_stream").count(), 1)
+
+    def test_public_start_session_device_button_path_does_not_invoke_ai_or_rag(self):
+        _, _, chatbot, version = self.create_runtime_chatbot(add_config=False)
+        flow = self.db.query(Flow).filter(Flow.version_id == version.id).one()
+        start = self.db.query(FlowNode).filter(FlowNode.flow_id == flow.id, FlowNode.node_key == "start").one()
+        start.type = "buttons"
+        start.config = {"text": "Choose a category", "buttons": ["Device"], "field": "category"}
+        end = FlowNode(
+            flow_id=flow.id,
+            node_key="device_done",
+            type="end",
+            label="Device done",
+            config={"message": "Device selected."},
+        )
+        self.db.add(end)
+        self.db.flush()
+        self.db.add(FlowTransition(flow_id=flow.id, source_node_key="start", target_node_key="device_done", label="Device"))
+        self.db.commit()
+        Session = sessionmaker(bind=self.engine)
+
+        start_payload = start_public_chat_session(
+            PublicChatSessionCreate(chatbot_id=chatbot.id),
+            db=self.db,
+        )
+        with patch("routes.public_routes.SessionLocal", Session), \
+             patch("services.unified_runtime.SessionLocal", Session), \
+             patch("routes.public_routes.prepare_rag_generation", side_effect=AssertionError("RAG should not run")), \
+             patch("routes.public_routes.stream_ai_answer", side_effect=AssertionError("Azure OpenAI streaming should not run")):
+            response = public_chat_stream(
+                PublicChatRequest(
+                    chatbot_id=chatbot.id,
+                    session_id=start_payload["session_id"],
+                    message="Device",
+                    channel="widget",
+                ),
+                db=self.db,
+            )
+            events = self.consume_ndjson_stream(response)
+
+        final = next(event for event in events if event["type"] == "final")
+        self.assertEqual(final["session_id"], start_payload["session_id"])
+        self.assertEqual(final["response"], "Device selected.")
+        self.assertEqual(final["messages"], [{"text": "Device selected.", "options": []}])
+        self.assertEqual(final["options"], [])
+        self.assertIsNone(final["current_node_key"])
+        self.assertEqual(final["variables"]["category"], "Device")
+        self.assertTrue(final["variables"]["__ended"])
 
     def test_stream_deterministic_start_does_not_require_llm_config(self):
         owner, _, chatbot, version = self.create_runtime_chatbot(add_config=False)
