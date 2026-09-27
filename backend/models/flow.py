@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, String
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, JSON, String
 from sqlalchemy.orm import relationship
 
 from database.db import Base
@@ -20,6 +20,9 @@ class Flow(Base):
 
 class FlowNode(Base):
     __tablename__ = "flow_nodes"
+    __table_args__ = (
+        Index("ix_flow_nodes_flow_node_key", "flow_id", "node_key"),
+    )
 
     id = Column(Integer, primary_key=True)
     flow_id = Column(Integer, ForeignKey("flows.id"))
@@ -35,6 +38,9 @@ class FlowNode(Base):
 
 class FlowTransition(Base):
     __tablename__ = "flow_transitions"
+    __table_args__ = (
+        Index("ix_flow_transitions_flow_source", "flow_id", "source_node_key"),
+    )
 
     id = Column(Integer, primary_key=True)
     flow_id = Column(Integer, ForeignKey("flows.id"))

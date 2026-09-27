@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, JSON, String, Text
 from sqlalchemy.orm import relationship
 
 from database.db import Base
@@ -8,6 +8,9 @@ from database.db import Base
 
 class ConversationSession(Base):
     __tablename__ = "conversation_sessions"
+    __table_args__ = (
+        Index("ix_conversation_sessions_public_lookup", "id", "chatbot_id", "user_id"),
+    )
 
     id = Column(Integer, primary_key=True)
     chatbot_id = Column(Integer, ForeignKey("chatbots.id"), nullable=False)
@@ -23,6 +26,9 @@ class ConversationSession(Base):
 
 class ConversationMessage(Base):
     __tablename__ = "conversation_messages"
+    __table_args__ = (
+        Index("ix_conversation_messages_session_id_id", "session_id", "id"),
+    )
 
     id = Column(Integer, primary_key=True)
     session_id = Column(Integer, ForeignKey("conversation_sessions.id"), nullable=False)

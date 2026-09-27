@@ -821,6 +821,79 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
             flow_invocations=flow_trace.get("flow_invocations", 0),
             **pool_state,
         )
+
+    generation = generation_holder.get("generation")
+    if not generation:
+        final_current_node_key = result.get("current_node_key")
+        final_variables = result.get("variables") or {}
+        bot_messages = result.get("messages") or [
+            {"text": result.get("response", ""), "options": result.get("options", [])}
+        ]
+        final_persistence_started_at = time.perf_counter()
+        final_write_started_at = time.perf_counter()
+        session.current_node_key = final_current_node_key
+        session.variables = final_variables
+        for item in bot_messages:
+            add_message(
+                db,
+                session_id,
+                "bot",
+                item.get("text", ""),
+                options=item.get("options") or [],
+                sources=result.get("sources") or [],
+            )
+        final_write_ms = _elapsed_ms(final_write_started_at)
+        db.add(RuntimeLog(
+            chatbot_id=chatbot_id,
+            version_id=version_id,
+            conversation_id=session_id,
+            project_id=project_id,
+            user_id=user_id,
+            channel=channel,
+            status="success",
+            rag_used=rag_used,
+            response_time_ms=_elapsed_ms(started_at),
+            source="public_stream",
+            completed_at=datetime.utcnow(),
+        ))
+        final_commit_started_at = time.perf_counter()
+        db.commit()
+        final_commit_ms = _elapsed_ms(final_commit_started_at)
+        final_persistence_ms = _elapsed_ms(final_persistence_started_at)
+        total_ms = _elapsed_ms(started_at)
+        if (
+            PUBLIC_STREAM_DB_TRACE_THRESHOLD_MS
+            and (
+                total_ms >= PUBLIC_STREAM_DB_TRACE_THRESHOLD_MS
+                or final_persistence_ms >= PUBLIC_STREAM_DB_TRACE_THRESHOLD_MS
+            )
+        ):
+            log_slow_public_db_phase(
+                "Public stream slow final persistence phase",
+                endpoint="public_chat_stream",
+                chatbot_id=chatbot_id,
+                version_id=version_id,
+                session_id=session_id,
+                total_request_ms=total_ms,
+                total_pre_stream_ms=pre_stream_db_ms,
+                final_persistence_ms=final_persistence_ms,
+                final_db_checkout_ms=0,
+                final_session_lookup_ms=0,
+                final_write_ms=final_write_ms,
+                final_commit_ms=final_commit_ms,
+                **{
+                    f"final_{key}": value
+                    for key, value in pool_state.items()
+                    if key in {"pool_size", "checked_out", "overflow", "checked_in"}
+                },
+            )
+        db.close()
+        body = (
+            stream_event("start", {"session_id": session_id})
+            + stream_event("final", public_chat_payload({**result}, session_id))
+        )
+        return Response(content=body, media_type="application/x-ndjson")
+
     db.rollback()
     db.close()
 

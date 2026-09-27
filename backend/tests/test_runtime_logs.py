@@ -92,6 +92,10 @@ class RuntimeLogTest(unittest.TestCase):
         return asyncio.run(collect())
 
     def consume_ndjson_stream(self, response) -> list[dict]:
+        if hasattr(response, "body") and response.body is not None:
+            text = response.body.decode() if isinstance(response.body, bytes) else response.body
+            return [json.loads(line) for line in text.splitlines() if line.strip()]
+
         async def collect():
             events = []
             async for chunk in response.body_iterator:
@@ -336,6 +340,11 @@ class RuntimeLogTest(unittest.TestCase):
         self.assertIsNone(final["current_node_key"])
         self.assertEqual(final["variables"]["category"], "Device")
         self.assertTrue(final["variables"]["__ended"])
+        self.assertEqual(
+            self.db.query(ConversationMessage).filter(ConversationMessage.session_id == start_payload["session_id"]).count(),
+            2,
+        )
+        self.assertEqual(self.db.query(RuntimeLog).filter(RuntimeLog.source == "public_stream").count(), 1)
 
     def test_stream_deterministic_start_does_not_require_llm_config(self):
         owner, _, chatbot, version = self.create_runtime_chatbot(add_config=False)
