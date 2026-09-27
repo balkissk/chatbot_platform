@@ -44,6 +44,49 @@ def int_env(name: str, default: int) -> int:
 PUBLIC_STREAM_DB_TRACE_THRESHOLD_MS = int_env("PUBLIC_STREAM_DB_TRACE_THRESHOLD_MS", 0)
 
 
+def _elapsed_ms(started_at: float) -> int:
+    return runtime_response_time_ms(started_at)
+
+
+def _pool_metric(pool, name: str):
+    value = getattr(pool, name, None)
+    if value is None:
+        return None
+    try:
+        return value() if callable(value) else value
+    except Exception:
+        return None
+
+
+def db_pool_state(db: Session) -> dict:
+    try:
+        pool = db.get_bind().pool
+    except Exception:
+        return {}
+
+    state = {
+        "pool_size": _pool_metric(pool, "size"),
+        "checked_out": _pool_metric(pool, "checkedout"),
+        "overflow": _pool_metric(pool, "overflow"),
+        "checked_in": _pool_metric(pool, "checkedin"),
+    }
+    return {key: value for key, value in state.items() if value is not None}
+
+
+def measure_db_checkout_ms(db: Session) -> int:
+    started_at = time.perf_counter()
+    db.connection()
+    return _elapsed_ms(started_at)
+
+
+def log_slow_public_db_phase(message: str, **fields) -> None:
+    if not PUBLIC_STREAM_DB_TRACE_THRESHOLD_MS:
+        return
+
+    details = " ".join(f"{key}={value}" for key, value in fields.items())
+    logger.info("%s: %s", message, details)
+
+
 class PublicChatSessionCreate(BaseModel):
     chatbot_id: int
 
@@ -366,16 +409,27 @@ def persist_public_stream_response(
     variables: dict,
     messages: list[dict],
     sources: list[dict] | None = None,
-) -> None:
+) -> dict:
+    started_at = time.perf_counter()
     db = SessionLocal()
+    db_checkout_ms = 0
+    pool_state: dict = {}
+    lookup_ms = 0
+    write_ms = 0
+    commit_ms = 0
     try:
+        db_checkout_ms = measure_db_checkout_ms(db)
+        pool_state = db_pool_state(db)
+        lookup_started_at = time.perf_counter()
         session = db.query(ConversationSession).filter(
             ConversationSession.id == session_id,
             ConversationSession.user_id.is_(None),
         ).first()
+        lookup_ms = _elapsed_ms(lookup_started_at)
         if not session:
             raise HTTPException(status_code=404, detail="Conversation session not found")
 
+        write_started_at = time.perf_counter()
         session.current_node_key = current_node_key
         session.variables = variables or {}
         for item in messages:
@@ -387,7 +441,18 @@ def persist_public_stream_response(
                 options=item.get("options") or [],
                 sources=sources or [],
             )
+        write_ms = _elapsed_ms(write_started_at)
+        commit_started_at = time.perf_counter()
         db.commit()
+        commit_ms = _elapsed_ms(commit_started_at)
+        return {
+            "total_ms": _elapsed_ms(started_at),
+            "db_checkout_ms": db_checkout_ms,
+            "session_lookup_ms": lookup_ms,
+            "write_ms": write_ms,
+            "commit_ms": commit_ms,
+            **pool_state,
+        }
     except Exception:
         db.rollback()
         raise
@@ -446,12 +511,44 @@ def public_widget_bootstrap(
     db: Session = Depends(get_db)
 ):
     started_at = time.perf_counter()
+    db_checkout_ms = measure_db_checkout_ms(db)
+    pool_state = db_pool_state(db)
+    chatbot_started_at = time.perf_counter()
     chatbot = get_public_chatbot(db, data.chatbot_id)
+    get_public_chatbot_ms = _elapsed_ms(chatbot_started_at)
+    version_started_at = time.perf_counter()
     version = get_active_version(db, chatbot)
+    get_active_version_ms = _elapsed_ms(version_started_at)
     channel = bootstrap_channel(data)
     variables = {"__channel": channel, "__language": safe_chatbot_language(chatbot.language)}
+    deterministic_started_at = time.perf_counter()
     initial = deterministic_initial_flow_state(db, version.id, variables)
+    deterministic_initial_flow_state_ms = _elapsed_ms(deterministic_started_at)
     if not initial["deterministic"]:
+        total_ms = _elapsed_ms(started_at)
+        db_related_ms = (
+            db_checkout_ms
+            + get_public_chatbot_ms
+            + get_active_version_ms
+            + deterministic_initial_flow_state_ms
+        )
+        if PUBLIC_STREAM_DB_TRACE_THRESHOLD_MS and total_ms >= PUBLIC_STREAM_DB_TRACE_THRESHOLD_MS:
+            log_slow_public_db_phase(
+                "Public widget bootstrap slow request",
+                endpoint="public_chat_widget_bootstrap",
+                chatbot_id=chatbot.id,
+                version_id=version.id,
+                total_ms=total_ms,
+                db_checkout_ms=db_checkout_ms,
+                get_public_chatbot_ms=get_public_chatbot_ms,
+                get_active_version_ms=get_active_version_ms,
+                deterministic_initial_flow_state_ms=deterministic_initial_flow_state_ms,
+                deterministic_initial_flow_db_ms=initial.get("db_ms", 0),
+                session_creation_ms=0,
+                commit_ms=0,
+                db_related_ms=db_related_ms,
+                **pool_state,
+            )
         return {
             "requires_runtime": True,
             "session_id": None,
@@ -465,6 +562,7 @@ def public_widget_bootstrap(
             },
         }
 
+    session_started_at = time.perf_counter()
     session = ConversationSession(
         chatbot_id=chatbot.id,
         version_id=version.id,
@@ -503,8 +601,37 @@ def public_widget_bootstrap(
         source="public_widget_bootstrap",
         completed_at=datetime.utcnow(),
     ))
+    session_creation_ms = _elapsed_ms(session_started_at)
+    commit_started_at = time.perf_counter()
     db.commit()
+    commit_ms = _elapsed_ms(commit_started_at)
     db.refresh(session)
+    total_ms = _elapsed_ms(started_at)
+    db_related_ms = (
+        db_checkout_ms
+        + get_public_chatbot_ms
+        + get_active_version_ms
+        + deterministic_initial_flow_state_ms
+        + session_creation_ms
+        + commit_ms
+    )
+    if PUBLIC_STREAM_DB_TRACE_THRESHOLD_MS and total_ms >= PUBLIC_STREAM_DB_TRACE_THRESHOLD_MS:
+        log_slow_public_db_phase(
+            "Public widget bootstrap slow request",
+            endpoint="public_chat_widget_bootstrap",
+            chatbot_id=chatbot.id,
+            version_id=version.id,
+            total_ms=total_ms,
+            db_checkout_ms=db_checkout_ms,
+            get_public_chatbot_ms=get_public_chatbot_ms,
+            get_active_version_ms=get_active_version_ms,
+            deterministic_initial_flow_state_ms=deterministic_initial_flow_state_ms,
+            deterministic_initial_flow_db_ms=initial.get("db_ms", 0),
+            session_creation_ms=session_creation_ms,
+            commit_ms=commit_ms,
+            db_related_ms=db_related_ms,
+            **pool_state,
+        )
     return {
         "requires_runtime": False,
         "session_id": session.id,
@@ -553,13 +680,28 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
     session = None
     rag_used = False
     flow_trace: dict = {}
+    db_checkout_ms = 0
+    get_public_chatbot_ms = 0
+    get_active_version_ms = 0
+    session_lookup_ms = 0
+    user_message_commit_ms = 0
+    deterministic_flow_ms = 0
+    pool_state: dict = {}
     try:
+        db_checkout_ms = measure_db_checkout_ms(db)
+        pool_state = db_pool_state(db)
+        chatbot_started_at = time.perf_counter()
         chatbot = get_public_chatbot(db, data.chatbot_id)
+        get_public_chatbot_ms = _elapsed_ms(chatbot_started_at)
+        version_started_at = time.perf_counter()
         version = get_active_version(db, chatbot)
+        get_active_version_ms = _elapsed_ms(version_started_at)
         version_id_value = version.id
         chatbot_language = chatbot.language
 
+        session_started_at = time.perf_counter()
         session = get_or_create_public_session(db, data, version, chatbot_language=chatbot_language)
+        session_lookup_ms = _elapsed_ms(session_started_at)
         session_id_value = session.id
         current_node_key = session.current_node_key
         variables = {
@@ -570,7 +712,9 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
 
         if data.message.strip():
             add_message(db, session_id_value, "user", data.message.strip())
+            user_commit_started_at = time.perf_counter()
             db.commit()
+            user_message_commit_ms = _elapsed_ms(user_commit_started_at)
 
         generation_holder: dict = {}
         config_holder: dict = {}
@@ -607,6 +751,7 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
             rag_used = rag_used or runtime_rag_used(rag_result)
             return rag_result
 
+        deterministic_started_at = time.perf_counter()
         result = execute_flow(
             db=db,
             version_id=version_id_value,
@@ -617,6 +762,7 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
             allow_rag_fallback=False,
             trace=flow_trace,
         )
+        deterministic_flow_ms = _elapsed_ms(deterministic_started_at)
     except Exception as exc:
         chatbot_id = chatbot.id if chatbot else None
         version_id = version.id if version else None
@@ -650,16 +796,62 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
     user_id = session.user_id
     pre_stream_db_ms = runtime_response_time_ms(started_at)
     if PUBLIC_STREAM_DB_TRACE_THRESHOLD_MS and pre_stream_db_ms >= PUBLIC_STREAM_DB_TRACE_THRESHOLD_MS:
-        logger.info(
-            "Public stream pre-stream DB phase: chatbot_id=%s session_id=%s duration_ms=%s flow_db_query_ms=%s flow_invocations=%s",
-            chatbot_id,
-            session_id,
-            pre_stream_db_ms,
-            flow_trace.get("flow_db_query_ms", 0),
-            flow_trace.get("flow_invocations", 0),
+        initial_db_session_lookup_ms = (
+            db_checkout_ms
+            + get_public_chatbot_ms
+            + get_active_version_ms
+            + session_lookup_ms
+            + user_message_commit_ms
+        )
+        log_slow_public_db_phase(
+            "Public stream slow pre-stream phase",
+            endpoint="public_chat_stream",
+            chatbot_id=chatbot_id,
+            version_id=version_id,
+            session_id=session_id,
+            total_pre_stream_ms=pre_stream_db_ms,
+            db_checkout_ms=db_checkout_ms,
+            initial_db_session_lookup_ms=initial_db_session_lookup_ms,
+            get_public_chatbot_ms=get_public_chatbot_ms,
+            get_active_version_ms=get_active_version_ms,
+            session_lookup_ms=session_lookup_ms,
+            user_message_commit_ms=user_message_commit_ms,
+            deterministic_flow_ms=deterministic_flow_ms,
+            flow_db_query_ms=flow_trace.get("flow_db_query_ms", 0),
+            flow_invocations=flow_trace.get("flow_invocations", 0),
+            **pool_state,
         )
     db.rollback()
     db.close()
+
+    def log_final_persistence_if_slow(persistence_trace: dict) -> None:
+        if not PUBLIC_STREAM_DB_TRACE_THRESHOLD_MS:
+            return
+
+        total_ms = _elapsed_ms(started_at)
+        final_persistence_ms = persistence_trace.get("total_ms", 0)
+        if total_ms < PUBLIC_STREAM_DB_TRACE_THRESHOLD_MS and final_persistence_ms < PUBLIC_STREAM_DB_TRACE_THRESHOLD_MS:
+            return
+
+        log_slow_public_db_phase(
+            "Public stream slow final persistence phase",
+            endpoint="public_chat_stream",
+            chatbot_id=chatbot_id,
+            version_id=version_id,
+            session_id=session_id,
+            total_request_ms=total_ms,
+            total_pre_stream_ms=pre_stream_db_ms,
+            final_persistence_ms=final_persistence_ms,
+            final_db_checkout_ms=persistence_trace.get("db_checkout_ms", 0),
+            final_session_lookup_ms=persistence_trace.get("session_lookup_ms", 0),
+            final_write_ms=persistence_trace.get("write_ms", 0),
+            final_commit_ms=persistence_trace.get("commit_ms", 0),
+            **{
+                f"final_{key}": value
+                for key, value in persistence_trace.items()
+                if key in {"pool_size", "checked_out", "overflow", "checked_in"}
+            },
+        )
 
     def event_generator():
         yield stream_event("start", {
@@ -673,13 +865,14 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
             bot_messages = result.get("messages") or [
                 {"text": result.get("response", ""), "options": result.get("options", [])}
             ]
-            persist_public_stream_response(
+            persistence_trace = persist_public_stream_response(
                 session_id,
                 current_node_key=final_current_node_key,
                 variables=final_variables,
                 messages=bot_messages,
                 sources=result.get("sources") or [],
             )
+            log_final_persistence_if_slow(persistence_trace)
             persist_runtime_log(
                 chatbot_id=chatbot_id,
                 version_id=version_id,
@@ -710,13 +903,14 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
             }
             final_current_node_key = final_result.get("current_node_key")
             final_variables = final_result.get("variables") or {}
-            persist_public_stream_response(
+            persistence_trace = persist_public_stream_response(
                 session_id,
                 current_node_key=final_current_node_key,
                 variables=final_variables,
                 messages=[{"text": generation["fallback_response"], "options": []}],
                 sources=[],
             )
+            log_final_persistence_if_slow(persistence_trace)
             persist_runtime_log(
                 chatbot_id=chatbot_id,
                 version_id=version_id,
@@ -774,13 +968,14 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
         final_variables["__last_ai_answer"] = answer
         final_result["variables"] = final_variables
 
-        persist_public_stream_response(
+        persistence_trace = persist_public_stream_response(
             session_id,
             current_node_key=final_result.get("current_node_key"),
             variables=final_variables,
             messages=final_result.get("messages") or [],
             sources=final_result.get("sources") or [],
         )
+        log_final_persistence_if_slow(persistence_trace)
         persist_runtime_log(
             chatbot_id=chatbot_id,
             version_id=version_id,

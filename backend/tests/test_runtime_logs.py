@@ -19,6 +19,7 @@ from models.project import Project
 from models.runtime_log import RuntimeLog
 from models.user import User
 from models.version import VersionChatbot
+from routes import public_routes
 from routes.admin_analytics_routes import analytics_runtime_logs, dashboard_usage, system_health
 from routes.chat_routes import chat_stream
 from routes.public_routes import (
@@ -183,6 +184,30 @@ class RuntimeLogTest(unittest.TestCase):
         self.assertEqual(log.execution_mode, "static_initial")
         self.assertFalse(log.rag_used)
 
+    def test_public_widget_bootstrap_logs_slow_threshold_diagnostics(self):
+        _, _, chatbot, _ = self.create_runtime_chatbot()
+
+        with patch.object(public_routes, "PUBLIC_STREAM_DB_TRACE_THRESHOLD_MS", 1), \
+             patch.object(public_routes, "runtime_response_time_ms", return_value=101), \
+             self.assertLogs("routes.public_routes", level="INFO") as logs:
+            public_widget_bootstrap(
+                PublicWidgetBootstrapRequest(chatbot_id=chatbot.id, channel="widget"),
+                db=self.db,
+            )
+
+        output = "\n".join(logs.output)
+        self.assertIn("Public widget bootstrap slow request", output)
+        self.assertIn("endpoint=public_chat_widget_bootstrap", output)
+        self.assertIn(f"chatbot_id={chatbot.id}", output)
+        self.assertIn("version_id=", output)
+        self.assertIn("db_checkout_ms=", output)
+        self.assertIn("get_public_chatbot_ms=", output)
+        self.assertIn("get_active_version_ms=", output)
+        self.assertIn("deterministic_initial_flow_state_ms=", output)
+        self.assertIn("session_creation_ms=", output)
+        self.assertIn("commit_ms=", output)
+        self.assertIn("db_related_ms=", output)
+
     def test_public_widget_bootstrap_defers_dynamic_start_to_runtime(self):
         _, _, chatbot, version = self.create_runtime_chatbot(node_type="rag_answer")
 
@@ -218,6 +243,36 @@ class RuntimeLogTest(unittest.TestCase):
         log = self.db.query(RuntimeLog).filter(RuntimeLog.source == "public_stream").one()
         self.assertEqual(log.status, "success")
         self.assertEqual(log.conversation_id, session_id)
+
+    def test_public_stream_logs_slow_pre_stream_and_final_persistence_diagnostics(self):
+        _, _, chatbot, _ = self.create_runtime_chatbot()
+        chatbot_id = chatbot.id
+        Session = sessionmaker(bind=self.engine)
+
+        with patch("routes.public_routes.SessionLocal", Session), \
+             patch("services.unified_runtime.SessionLocal", Session), \
+             patch.object(public_routes, "PUBLIC_STREAM_DB_TRACE_THRESHOLD_MS", 1), \
+             patch.object(public_routes, "runtime_response_time_ms", return_value=101), \
+             self.assertLogs("routes.public_routes", level="INFO") as logs:
+            response = public_chat_stream(
+                PublicChatRequest(chatbot_id=chatbot.id, message="hi", channel="widget"),
+                db=self.db,
+            )
+            self.consume_ndjson_stream(response)
+
+        output = "\n".join(logs.output)
+        self.assertIn("Public stream slow pre-stream phase", output)
+        self.assertIn("endpoint=public_chat_stream", output)
+        self.assertIn(f"chatbot_id={chatbot_id}", output)
+        self.assertIn("total_pre_stream_ms=", output)
+        self.assertIn("db_checkout_ms=", output)
+        self.assertIn("initial_db_session_lookup_ms=", output)
+        self.assertIn("deterministic_flow_ms=", output)
+        self.assertIn("flow_db_query_ms=", output)
+        self.assertIn("Public stream slow final persistence phase", output)
+        self.assertIn("final_persistence_ms=", output)
+        self.assertIn("final_db_checkout_ms=", output)
+        self.assertIn("final_commit_ms=", output)
 
     def test_public_stream_deterministic_flow_does_not_require_llm_config(self):
         _, _, chatbot, _ = self.create_runtime_chatbot(add_config=False)
