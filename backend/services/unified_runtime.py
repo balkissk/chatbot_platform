@@ -7,6 +7,7 @@ from datetime import datetime
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from database.db import SessionLocal
 from models.chatbot import Chatbot
 from models.chatbot_schema import safe_chatbot_language
 from models.conversation import ConversationSession
@@ -60,11 +61,16 @@ def runtime_rag_used(result: dict | None) -> bool:
 
 
 def persist_runtime_log(
-    db: Session,
+    db: Session | None = None,
     *,
     chatbot: Chatbot | None = None,
     version: VersionChatbot | None = None,
     session: ConversationSession | None = None,
+    chatbot_id: int | None = None,
+    version_id: int | None = None,
+    conversation_id: int | None = None,
+    project_id: int | None = None,
+    user_id: int | None = None,
     channel: str = "unknown",
     status: str,
     rag_used: bool = False,
@@ -79,13 +85,15 @@ def persist_runtime_log(
     error_message: str | None = None,
     source: str | None = None,
 ) -> None:
+    target_db = db or SessionLocal()
+    owns_session = db is None
     try:
         log = RuntimeLog(
-            chatbot_id=chatbot.id if chatbot else None,
-            version_id=version.id if version else None,
-            conversation_id=session.id if session else None,
-            project_id=chatbot.project_id if chatbot else None,
-            user_id=session.user_id if session else None,
+            chatbot_id=chatbot_id if chatbot_id is not None else (chatbot.id if chatbot else None),
+            version_id=version_id if version_id is not None else (version.id if version else None),
+            conversation_id=conversation_id if conversation_id is not None else (session.id if session else None),
+            project_id=project_id if project_id is not None else (chatbot.project_id if chatbot else None),
+            user_id=user_id if user_id is not None else (session.user_id if session else None),
             channel=channel or "unknown",
             execution_id=execution_id,
             execution_mode=execution_mode,
@@ -101,11 +109,14 @@ def persist_runtime_log(
             source=source,
             completed_at=datetime.utcnow(),
         )
-        db.add(log)
-        db.commit()
+        target_db.add(log)
+        target_db.commit()
     except Exception:
-        db.rollback()
+        target_db.rollback()
         logger.exception("Failed to persist runtime log")
+    finally:
+        if owns_session:
+            target_db.close()
 
 
 def get_active_version(db: Session, chatbot: Chatbot) -> VersionChatbot:

@@ -342,6 +342,42 @@ def public_chat_payload(result: dict, session_id: int | None = None) -> dict:
     return payload
 
 
+def persist_public_stream_response(
+    session_id: int,
+    *,
+    current_node_key: str | None,
+    variables: dict,
+    messages: list[dict],
+    sources: list[dict] | None = None,
+) -> None:
+    db = SessionLocal()
+    try:
+        session = db.query(ConversationSession).filter(
+            ConversationSession.id == session_id,
+            ConversationSession.user_id.is_(None),
+        ).first()
+        if not session:
+            raise HTTPException(status_code=404, detail="Conversation session not found")
+
+        session.current_node_key = current_node_key
+        session.variables = variables or {}
+        for item in messages:
+            add_message(
+                db,
+                session.id,
+                "bot",
+                item.get("text", ""),
+                options=item.get("options") or [],
+                sources=sources or [],
+            )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
 @router.get("/chatbots/{chatbot_id}")
 def public_chatbot(chatbot_id: int, db: Session = Depends(get_db)):
     chatbot = get_public_chatbot(db, chatbot_id)
@@ -556,9 +592,18 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
             allow_rag_fallback=False
         )
     except Exception as exc:
+        chatbot_id = chatbot.id if chatbot else None
+        version_id = version.id if version else None
+        conversation_id = session.id if session else None
+        project_id = chatbot.project_id if chatbot else None
+        user_id = session.user_id if session else None
         db.rollback()
         persist_runtime_log(
-            db,
+            chatbot_id=chatbot_id,
+            version_id=version_id,
+            conversation_id=conversation_id,
+            project_id=project_id,
+            user_id=user_id,
             chatbot=chatbot,
             version=version,
             session=session,
@@ -572,33 +617,39 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
         )
         raise
 
+    session_id = session.id
+    chatbot_id = chatbot.id
+    version_id = version.id
+    project_id = chatbot.project_id
+    user_id = session.user_id
+    db.rollback()
+    db.close()
+
     def event_generator():
         yield stream_event("start", {
-            "session_id": session.id
+            "session_id": session_id
         })
 
         generation = generation_holder.get("generation")
         if not generation:
-            session.current_node_key = result.get("current_node_key")
-            session.variables = result.get("variables") or {}
+            final_current_node_key = result.get("current_node_key")
+            final_variables = result.get("variables") or {}
             bot_messages = result.get("messages") or [
                 {"text": result.get("response", ""), "options": result.get("options", [])}
             ]
-            for item in bot_messages:
-                add_message(
-                    db,
-                    session.id,
-                    "bot",
-                    item.get("text", ""),
-                    options=item.get("options") or [],
-                    sources=result.get("sources") or []
-                )
-            db.commit()
+            persist_public_stream_response(
+                session_id,
+                current_node_key=final_current_node_key,
+                variables=final_variables,
+                messages=bot_messages,
+                sources=result.get("sources") or [],
+            )
             persist_runtime_log(
-                db,
-                chatbot=chatbot,
-                version=version,
-                session=session,
+                chatbot_id=chatbot_id,
+                version_id=version_id,
+                conversation_id=session_id,
+                project_id=project_id,
+                user_id=user_id,
                 channel=channel,
                 status="success",
                 rag_used=rag_used,
@@ -607,7 +658,7 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
             )
             yield stream_event("final", public_chat_payload({
                 **result,
-            }, session.id))
+            }, session_id))
             return
 
         if generation.get("fallback_response"):
@@ -621,15 +672,21 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
                 "version_used": generation["version_used"],
                 "sources": []
             }
-            session.current_node_key = final_result.get("current_node_key")
-            session.variables = final_result.get("variables") or {}
-            add_message(db, session.id, "bot", generation["fallback_response"], sources=[])
-            db.commit()
+            final_current_node_key = final_result.get("current_node_key")
+            final_variables = final_result.get("variables") or {}
+            persist_public_stream_response(
+                session_id,
+                current_node_key=final_current_node_key,
+                variables=final_variables,
+                messages=[{"text": generation["fallback_response"], "options": []}],
+                sources=[],
+            )
             persist_runtime_log(
-                db,
-                chatbot=chatbot,
-                version=version,
-                session=session,
+                chatbot_id=chatbot_id,
+                version_id=version_id,
+                conversation_id=session_id,
+                project_id=project_id,
+                user_id=user_id,
                 channel=channel,
                 status="success",
                 rag_used=rag_used,
@@ -638,7 +695,7 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
             )
             yield stream_event("final", public_chat_payload({
                 **final_result,
-            }, session.id))
+            }, session_id))
             return
 
         try:
@@ -646,10 +703,11 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
                 yield stream_event("token", {"text": token})
         except HTTPException as exc:
             persist_runtime_log(
-                db,
-                chatbot=chatbot,
-                version=version,
-                session=session,
+                chatbot_id=chatbot_id,
+                version_id=version_id,
+                conversation_id=session_id,
+                project_id=project_id,
+                user_id=user_id,
                 channel=channel,
                 status="failed",
                 rag_used=rag_used,
@@ -680,23 +738,19 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
         final_variables["__last_ai_answer"] = answer
         final_result["variables"] = final_variables
 
-        session.current_node_key = final_result.get("current_node_key")
-        session.variables = final_variables
-        for item in final_result.get("messages") or []:
-            add_message(
-                db,
-                session.id,
-                "bot",
-                item.get("text", ""),
-                options=item.get("options") or [],
-                sources=final_result.get("sources") or []
-            )
-        db.commit()
+        persist_public_stream_response(
+            session_id,
+            current_node_key=final_result.get("current_node_key"),
+            variables=final_variables,
+            messages=final_result.get("messages") or [],
+            sources=final_result.get("sources") or [],
+        )
         persist_runtime_log(
-            db,
-            chatbot=chatbot,
-            version=version,
-            session=session,
+            chatbot_id=chatbot_id,
+            version_id=version_id,
+            conversation_id=session_id,
+            project_id=project_id,
+            user_id=user_id,
             channel=channel,
             status="success",
             rag_used=rag_used,
@@ -706,7 +760,7 @@ def public_chat_stream(data: PublicChatRequest, db: Session = Depends(get_db)):
 
         yield stream_event("final", public_chat_payload({
             **final_result,
-        }, session.id))
+        }, session_id))
 
     return StreamingResponse(event_generator(), media_type="application/x-ndjson")
 

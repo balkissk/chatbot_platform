@@ -21,7 +21,7 @@ from models.user import User
 from models.version import VersionChatbot
 from routes.admin_analytics_routes import analytics_runtime_logs, dashboard_usage, system_health
 from routes.chat_routes import chat_stream
-from routes.public_routes import PublicWidgetBootstrapRequest, public_widget_bootstrap
+from routes.public_routes import PublicChatRequest, PublicWidgetBootstrapRequest, public_chat_stream, public_widget_bootstrap
 from services.unified_runtime import run_chatbot_message, sanitize_error_message
 
 
@@ -79,6 +79,18 @@ class RuntimeLogTest(unittest.TestCase):
                 for line in text.splitlines():
                     if line.startswith("data: "):
                         events.append(json.loads(line.removeprefix("data: ")))
+            return events
+
+        return asyncio.run(collect())
+
+    def consume_ndjson_stream(self, response) -> list[dict]:
+        async def collect():
+            events = []
+            async for chunk in response.body_iterator:
+                text = chunk.decode() if isinstance(chunk, bytes) else chunk
+                for line in text.splitlines():
+                    if line.strip():
+                        events.append(json.loads(line))
             return events
 
         return asyncio.run(collect())
@@ -176,6 +188,29 @@ class RuntimeLogTest(unittest.TestCase):
         self.assertIsNone(payload["session_id"])
         self.assertEqual(self.db.query(ConversationSession).count(), 0)
         self.assertEqual(self.db.query(RuntimeLog).count(), 0)
+
+    def test_public_stream_releases_request_transaction_before_stream_is_consumed(self):
+        _, _, chatbot, _ = self.create_runtime_chatbot()
+        Session = sessionmaker(bind=self.engine)
+
+        with patch("routes.public_routes.SessionLocal", Session), patch("services.unified_runtime.SessionLocal", Session):
+            response = public_chat_stream(
+                PublicChatRequest(chatbot_id=chatbot.id, message="hi", channel="widget"),
+                db=self.db,
+            )
+            self.assertFalse(self.db.in_transaction())
+
+            events = self.consume_ndjson_stream(response)
+
+        final = next(event for event in events if event["type"] == "final")
+        self.assertEqual(final["response"], "Hello from flow")
+        session_id = final["session_id"]
+        conversation = self.db.query(ConversationSession).filter(ConversationSession.id == session_id).one()
+        self.assertEqual(conversation.variables.get("__channel"), "widget")
+        self.assertEqual(self.db.query(ConversationMessage).filter(ConversationMessage.session_id == session_id).count(), 2)
+        log = self.db.query(RuntimeLog).filter(RuntimeLog.source == "public_stream").one()
+        self.assertEqual(log.status, "success")
+        self.assertEqual(log.conversation_id, session_id)
 
     def test_stream_deterministic_start_does_not_require_llm_config(self):
         owner, _, chatbot, version = self.create_runtime_chatbot(add_config=False)
